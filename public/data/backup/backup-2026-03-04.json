@@ -1,5 +1,5 @@
 {
-  "_timestamp": "2026-03-04T06:43:20.241Z",
+  "_timestamp": "2026-03-04T06:43:33.596Z",
   "pbk_filter_weightSortBy": "bin",
   "pbk_dark_mode": "false",
   "pbk_filter_pickFilterStatus": "all",
@@ -16,9 +16,9 @@
   "pbk_filter_pickSortOrder": "asc",
   "pbk_filter_receiveFilterStatus": "all",
   "pbk_filter_receiveSortBy": "delivery",
-  "pbk_filter_inventorySortOrder": "asc",
-  "pbk_filter_pickFilterUrgent": "all",
   "pbk_rack_config": "{\"A1\":{\"maxBins\":6,\"maxWeight\":1200},\"A2\":{\"maxBins\":5,\"maxWeight\":1200},\"B1\":{\"maxBins\":14,\"maxWeight\":1800},\"B3\":{\"maxBins\":6,\"maxWeight\":1800},\"C3\":{\"maxBins\":25,\"maxWeight\":1200},\"A5\":{\"maxBins\":6,\"maxWeight\":600},\"A6\":{\"maxBins\":6,\"maxWeight\":600},\"A7\":{\"maxBins\":2,\"maxWeight\":600},\"B2\":{\"maxBins\":18,\"maxWeight\":600},\"C1\":{\"maxBins\":14,\"maxWeight\":600},\"A3\":{\"maxBins\":8,\"maxWeight\":1200},\"B4\":{\"maxBins\":17,\"maxWeight\":600},\"C2\":{\"maxBins\":25,\"maxWeight\":600},\"D2\":{\"maxBins\":1,\"maxWeight\":1000},\"E\":{\"maxBins\":1,\"maxWeight\":99999},\"E3\":{\"maxBins\":4,\"maxWeight\":600},\"Tablet\":{\"maxBins\":1,\"maxWeight\":600},\"Stand\":{\"maxBins\":1,\"maxWeight\":600},\"S1\":{\"maxBins\":4,\"maxWeight\":1200},\"F1\":{\"maxBins\":1,\"maxWeight\":99999},\"LABEL\":{\"maxBins\":1,\"maxWeight\":99999}}",
+  "pbk_filter_pickFilterUrgent": "all",
+  "pbk_filter_inventorySortOrder": "asc",
   "pbk_kpi_data": "{\"grCancel\":{\"2024-01\":1,\"2024-02\":0,\"2024-03\":0,\"2024-04\":0,\"2024-05\":0,\"2024-06\":0,\"2024-07\":0,\"2024-08\":0,\"2024-09\":0,\"2024-10\":1,\"2024-11\":0,\"2024-12\":0,\"2025-01\":0,\"2025-02\":0,\"2025-03\":0,\"2025-04\":0,\"2025-05\":0,\"2025-06\":0,\"2025-07\":0,\"2025-08\":0,\"2025-09\":1,\"2025-10\":0,\"2025-11\":0,\"2025-12\":0,\"2026-01\":0},\"grCancelQty\":{\"2024-01\":91,\"2024-02\":201,\"2024-03\":123,\"2024-04\":68,\"2024-05\":65,\"2024-06\":110,\"2024-07\":114,\"2024-08\":85,\"2024-09\":107,\"2024-10\":108,\"2024-11\":167,\"2024-12\":138,\"2025-01\":83,\"2025-02\":0,\"2025-03\":0,\"2025-04\":0,\"2025-05\":0,\"2025-06\":0,\"2025-07\":0,\"2025-08\":0,\"2025-09\":0,\"2025-10\":0,\"2025-11\":0,\"2025-12\":0,\"2026-01\":83},\"inventoryAdjust\":{}}",
   "pbk_receive_cycles": "[{\"id\":1,\"poNo\":\"PUR-2026-001\",\"vendor\":\"Metal Tech\",\"delivery\":\"2026-01-27 10:00\",\"migo\":\"2026-01-27 11:30\",\"cycleMin\":90,\"status\":\"completed\"},{\"id\":2,\"poNo\":\"PUR-2026-002\",\"vendor\":\"PCB Korea\",\"delivery\":\"2026-01-28 09:30\",\"migo\":\"2026-01-28 10:15\",\"cycleMin\":45,\"status\":\"completed\"}]",
   "pbk_previous_stats": "{\"avgPickTime\":37.5,\"avgReceiveTime\":67.5,\"avgLeadTime\":0,\"savedAt\":\"2026-02-25\"}",
