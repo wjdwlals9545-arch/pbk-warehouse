@@ -79,6 +79,14 @@ tr:hover td{background:#f8f9ff}
   var ABBOX = {"A1":{x:14,y:56,w:40,h:19},"A2":{x:14,y:78,w:40,h:10},"A3":{x:51,y:32,w:20,h:20},"A5":{x:56,y:56,w:20,h:10},"A6":{x:56,y:69,w:20,h:10},"A7":{x:56,y:81,w:20,h:16},"B1":{x:12,y:101,w:42,h:17},"B2":{x:56,y:118,w:10,h:22},"B3":{x:12,y:122,w:40,h:22},"B4":{x:63,y:5,w:10,h:33},"C1":{x:56,y:148,w:21,h:10},"C2":{x:51,y:7,w:10,h:22},"C3":{x:12,y:174,w:21,h:22},"S1":{x:85,y:56,w:40,h:17},"E3":{x:87,y:105,w:21,h:10},"D2":{x:63,y:222,w:20,h:5},"F1":{x:145,y:8,w:10,h:5}};
   var ASR = {"A1":"mx48","A2":"mx48","A3":"hsm","A5":"mx16","A6":"mx16","A7":"mx16","B1":"mx48","B2":"mx16","B3":"mx48","B4":"hsm","C1":"mx16","C2":"hsm","C3":"mx48","S1":"semi","E3":"etc","D2":"etc","F1":"spare"};
   var SHC = {"mx48":"#dc2626","mx16":"#2563eb","hsm":"#d97706","semi":"#eab308","spare":"#7c3aed","etc":"#06b6d4"};
+
+  function applyLayoutData(data) {
+    if (!data || !data.R || !data.R.length) return;
+    var newASR = {};
+    data.R.forEach(function(rack) { if (rack.a && rack.s && !newASR[rack.a]) newASR[rack.a] = rack.s; });
+    if (Object.keys(newASR).length > 0) ASR = newASR;
+  }
+
   var cq = "";
   var inp = document.getElementById("SI");
   var acd = document.getElementById("ACD");
@@ -230,10 +238,24 @@ tr:hover td{background:#f8f9ff}
   document.getElementById("SBTN").addEventListener("click", doSearch);
   document.addEventListener("click", function(ev){ if(!ev.target.closest(".sw")) acd.style.display="none"; });
 
-  var p = new URLSearchParams(location.search);
-  var m = p.get("m")||p.get("material");
-  if(m){ inp.value=m; setTimeout(doSearch,100); }
-  else { showHome(); }
+  function startApp() {
+    var p = new URLSearchParams(location.search);
+    var m = p.get("m")||p.get("material");
+    if(m){ inp.value=m; setTimeout(doSearch,100); }
+    else { showHome(); }
+  }
+
+  var _LAYOUT_URL = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/layout.json';
+  fetch(_LAYOUT_URL + '?t=' + Date.now())
+    .then(function(r) { return r.ok ? r.json() : Promise.reject('not found'); })
+    .then(function(data) { applyLayoutData(data); startApp(); })
+    .catch(function() {
+      try {
+        var saved = localStorage.getItem('pbk_layout_data');
+        if (saved) applyLayoutData(JSON.parse(saved));
+      } catch(e2) {}
+      startApp();
+    });
 })();
 </script>
 </body>

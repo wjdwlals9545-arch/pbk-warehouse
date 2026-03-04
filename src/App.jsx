@@ -2355,7 +2355,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         setLayoutData(null);
       }
       if (e.data.type === 'layoutSave') {
-        try { safeStorage.setItem('pbk_layout_data', e.data.data); setLayoutData(JSON.parse(e.data.data)); } catch(ex) {}
+        try { safeStorage.setItem('pbk_layout_data', e.data.data); setLayoutData(JSON.parse(e.data.data)); uploadLayoutToGitHub(e.data.data); } catch(ex) {}
       }
       if (e.data.type === 'layoutReady') {
         try {
@@ -2372,6 +2372,34 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     window.addEventListener('message', handleLayoutMessage);
     return () => window.removeEventListener('message', handleLayoutMessage);
   }, []);
+
+  // GitHub layout.json 자동 업로드
+  // 토큰은 소스에 포함하지 않고 localStorage에서 읽음.
+  // 브라우저 콘솔에서 한 번 실행: localStorage.setItem('pbk_gh_token', '토큰값')
+  const uploadLayoutToGitHub = async (jsonStr) => {
+    const TOKEN = safeStorage.getItem('pbk_gh_token');
+    if (!TOKEN) { showToast('GitHub 토큰 미설정 (localStorage: pbk_gh_token)', 'error'); return; }
+    const OWNER = 'wjdwlals9545-arch';
+    const REPO = 'pbk-warehouse';
+    const PATH = 'public/data/layout.json';
+    const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}`;
+    try {
+      let sha;
+      const getResp = await fetch(API, {
+        headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
+      });
+      if (getResp.ok) { const info = await getResp.json(); sha = info.sha; }
+      const content = btoa(unescape(encodeURIComponent(jsonStr)));
+      const body = { message: 'Update layout.json from dashboard', content, ...(sha ? { sha } : {}) };
+      const putResp = await fetch(API, {
+        method: 'PUT',
+        headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (putResp.ok) { showToast('☁️ 배치도 GitHub 업로드 완료', 'success'); }
+      else { const t = await putResp.text(); showToast('GitHub 업로드 실패: ' + t.slice(0,60), 'error'); }
+    } catch (err) { showToast('GitHub 업로드 오류: ' + err.message, 'error'); }
+  };
 
   // 3D 뷰 렌더링
   const view3dKeyRef = React.useRef(null);
@@ -8483,6 +8511,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           safeStorage.setItem('pbk_v9', jsonStr);
                           safeStorage.setItem('pbk_layout_data', jsonStr);
                           setLayoutData(parsed);
+                          uploadLayoutToGitHub(jsonStr);
                           if (layoutIframeRef.current?.contentWindow) {
                             layoutIframeRef.current.contentWindow.postMessage({ type: 'layoutLoad', data: jsonStr }, '*');
                           }
