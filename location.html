@@ -76,59 +76,26 @@ tr:hover td{background:#f8f9ff}
   var INV = JSON.parse(document.getElementById("inv-data").textContent);
   var RMS = {"A5":"Maxwell 16","A6":"Maxwell 16","A7":"Maxwell 16","B2":"Maxwell 16","C1":"Maxwell 16","A1":"Maxwell 48","A2":"Maxwell 48","B1":"Maxwell 48","B3":"Maxwell 48","C3":"Maxwell 48","A3":"HSM 3.0","B4":"HSM 3.0","C2":"HSM 3.0"};
   var BLM = {"A1-01":{l:3,p:1},"A1-02":{l:3,p:2},"A1-03":{l:3,p:3},"A1-04":{l:3,p:1},"A1-05":{l:3,p:2},"A1-06":{l:3,p:3},"A2-01":{l:3,p:1},"A2-02":{l:3,p:2},"A2-03":{l:3,p:1},"A2-04":{l:3,p:2},"A2-05":{l:3,p:3},"A3-01":{l:4,p:1},"A3-02":{l:4,p:2},"A3-03":{l:4,p:3},"A3-04":{l:4,p:4},"A5-01":{l:3,p:1},"A5-02":{l:3,p:2},"A5-03":{l:3,p:3},"A5-04":{l:3,p:1},"A5-05":{l:3,p:2},"A5-06":{l:3,p:3},"A6-01":{l:3,p:1},"A6-02":{l:3,p:2},"A6-03":{l:3,p:3},"A6-04":{l:3,p:1},"A6-05":{l:3,p:2},"A6-06":{l:3,p:3},"A7-01":{l:2,p:1},"A7-02":{l:1,p:1},"B1-01":{l:5,p:1},"B1-02":{l:5,p:2},"B1-03":{l:5,p:3},"B1-04":{l:5,p:4},"B1-05":{l:5,p:5},"B1-06":{l:5,p:1},"B1-07":{l:5,p:2},"B1-08":{l:5,p:3},"B1-09":{l:5,p:4},"B1-10":{l:5,p:5},"B1-11":{l:1,p:1},"B1-12":{l:1,p:1},"B1-14":{l:1,p:1},"B2-01":{l:5,p:1},"B2-02":{l:5,p:2},"B2-03":{l:5,p:3},"B2-04":{l:5,p:4},"B2-05":{l:5,p:5},"B2-06":{l:5,p:1},"B2-07":{l:5,p:2},"B2-08":{l:5,p:3},"B2-09":{l:5,p:4},"B2-10":{l:5,p:5},"B2-11":{l:5,p:1},"B2-12":{l:5,p:2},"B2-13":{l:5,p:3},"B2-14":{l:5,p:4},"B2-15":{l:5,p:5},"B2-18":{l:1,p:1},"B3-01":{l:1,p:1},"B3-02":{l:1,p:1},"B3-03":{l:1,p:1},"B3-04":{l:1,p:1},"B3-05":{l:1,p:1},"B4-01":{l:5,p:1},"B4-02":{l:5,p:2},"B4-03":{l:5,p:3},"B4-04":{l:5,p:4},"B4-05":{l:6,p:1},"B4-06":{l:6,p:2},"B4-07":{l:6,p:3},"B4-08":{l:6,p:4},"B4-09":{l:6,p:5},"B4-10":{l:6,p:6},"B4-11":{l:2,p:1},"B4-12":{l:2,p:2},"B4-13":{l:2,p:1},"B4-14":{l:2,p:2},"B4-15":{l:2,p:1},"B4-16":{l:2,p:2},"B4-17":{l:1,p:1},"C1-01":{l:7,p:1},"C1-02":{l:7,p:2},"C1-03":{l:7,p:3},"C1-04":{l:7,p:4},"C1-05":{l:7,p:5},"C1-06":{l:7,p:6},"C1-07":{l:7,p:7},"C1-08":{l:7,p:1},"C1-09":{l:7,p:2},"C1-10":{l:7,p:3},"C1-11":{l:7,p:4},"C1-12":{l:7,p:5},"C1-13":{l:7,p:6},"C1-14":{l:7,p:7},"C2-01":{l:7,p:1},"C2-02":{l:7,p:2},"C2-03":{l:7,p:3},"C2-04":{l:7,p:4},"C2-05":{l:7,p:5},"C2-06":{l:7,p:6},"C2-07":{l:7,p:7},"C2-08":{l:7,p:1},"C2-09":{l:7,p:2},"C2-10":{l:7,p:3},"C2-11":{l:7,p:4},"C2-12":{l:7,p:5},"C2-13":{l:7,p:6},"C2-14":{l:7,p:7},"C2-15":{l:4,p:1},"C2-16":{l:4,p:2},"C2-17":{l:4,p:3},"C2-18":{l:4,p:4},"C2-19":{l:5,p:1},"C2-20":{l:5,p:2},"C2-21":{l:5,p:3},"C2-22":{l:5,p:4},"C2-23":{l:5,p:5},"C3-01":{l:7,p:1},"C3-02":{l:7,p:2},"C3-03":{l:7,p:3},"C3-04":{l:7,p:4},"C3-05":{l:7,p:5},"C3-06":{l:7,p:6},"C3-07":{l:7,p:7},"C3-08":{l:7,p:1},"C3-09":{l:7,p:2},"C3-10":{l:7,p:3},"C3-11":{l:7,p:4},"C3-12":{l:7,p:5},"C3-13":{l:7,p:6},"C3-14":{l:7,p:7},"C3-15":{l:6,p:1},"C3-16":{l:6,p:2},"C3-17":{l:6,p:3},"C3-18":{l:6,p:4},"C3-19":{l:6,p:5},"C3-20":{l:6,p:6},"C3-21":{l:5,p:1},"C3-22":{l:5,p:2},"C3-23":{l:5,p:3},"C3-24":{l:5,p:4},"C3-25":{l:5,p:5},"D2":{l:1,p:1},"E3":{l:1,p:1},"S1":{l:3,p:1}};
-  var ABBOX = {"A1":{x:14,y:56,w:40,h:19},"A2":{x:14,y:78,w:40,h:10},"A3":{x:51,y:32,w:20,h:20},"A5":{x:56,y:56,w:20,h:10},"A6":{x:56,y:69,w:20,h:10},"A7":{x:56,y:81,w:20,h:16},"B1":{x:12,y:101,w:42,h:17},"B2":{x:56,y:118,w:10,h:22},"B3":{x:12,y:122,w:40,h:22},"B4":{x:63,y:5,w:10,h:33},"C1":{x:56,y:148,w:21,h:10},"C2":{x:51,y:7,w:10,h:22},"C3":{x:12,y:174,w:21,h:22},"S1":{x:85,y:56,w:40,h:17},"E3":{x:87,y:105,w:21,h:10},"D2":{x:63,y:222,w:20,h:5},"F1":{x:145,y:8,w:10,h:5}};
-  var ASR = {"A1":"mx48","A2":"mx48","A3":"hsm","A5":"mx16","A6":"mx16","A7":"mx16","B1":"mx48","B2":"mx16","B3":"mx48","B4":"hsm","C1":"mx16","C2":"hsm","C3":"mx48","S1":"semi","E3":"etc","D2":"etc","F1":"spare"};
+  var LD = null;
   var SHC = {"mx48":"#dc2626","mx16":"#2563eb","hsm":"#d97706","semi":"#eab308","spare":"#7c3aed","etc":"#06b6d4"};
+
+  function rpx2(r) {
+    var cw,ch;
+    if(r.t==='custom'){cw=(r.cw||1000)*0.06;ch=(r.ch||500)*0.06;}
+    else{cw=(r.t==='heavy'?1800:900)*0.06;ch=450*0.06;}
+    if(r.rot===true||r.rot===90||r.rot===270){var t=cw;cw=ch;ch=t;}
+    return{w:cw,h:ch};
+  }
 
   function applyLayoutData(data) {
     if (!data || !data.R || !data.R.length) return;
-    var SKIP = {"DOOR":1,"PLT":1};
-    var newASR = {};
-    var areaRacks = {};
+    LD = data;
+    var newRMS = {};
+    var seriesMap = {"mx48":"Maxwell 48","mx16":"Maxwell 16","hsm":"HSM 3.0","semi":"Semi","spare":"Spare","etc":"기타"};
     data.R.forEach(function(rack) {
-      if (!rack.a) return;
-      if (rack.s && !newASR[rack.a]) newASR[rack.a] = rack.s;
-      if (SKIP[rack.a]) return;
-      if (!areaRacks[rack.a]) areaRacks[rack.a] = [];
-      areaRacks[rack.a].push(rack);
+      if (rack.a && rack.s && !newRMS[rack.a]) newRMS[rack.a] = seriesMap[rack.s] || rack.s;
     });
-    if (Object.keys(newASR).length > 0) ASR = newASR;
-    var areaKeys = Object.keys(areaRacks);
-    if (areaKeys.length === 0) return;
-    function rackSz(r) {
-      var w, h;
-      if (r.t==='custom'){w=(r.cw||1800)*.06;h=(r.ch||450)*.06;}
-      else{w=(r.t==='heavy'?1800:900)*.06;h=450*.06;}
-      if(r.rot===true||r.rot===90||r.rot===270){var t=w;w=h;h=t;}
-      return{w:w,h:h};
-    }
-    var areaBounds = {};
-    var gx1=1e9,gy1=1e9,gx2=-1e9,gy2=-1e9;
-    areaKeys.forEach(function(a) {
-      var racks=areaRacks[a], bx1=1e9,by1=1e9,bx2=-1e9,by2=-1e9;
-      racks.forEach(function(r) {
-        var sz=rackSz(r);
-        var rx1=r.x,ry1=r.y,rx2=r.x+sz.w,ry2=r.y+sz.h;
-        if(rx1<bx1)bx1=rx1; if(ry1<by1)by1=ry1;
-        if(rx2>bx2)bx2=rx2; if(ry2>by2)by2=ry2;
-      });
-      areaBounds[a]={x1:bx1,y1:by1,x2:bx2,y2:by2};
-      if(bx1<gx1)gx1=bx1; if(by1<gy1)gy1=by1;
-      if(bx2>gx2)gx2=bx2; if(by2>gy2)gy2=by2;
-    });
-    var LW=(gx2-gx1)||1, LH=(gy2-gy1)||1;
-    var PAD=6, TX=8+PAD, TY=8+PAD, TW=134-8-PAD*2, TH=260-8-PAD*2;
-    var sx=TW/LW, sy=TH/LH;
-    var newABBOX = {};
-    areaKeys.forEach(function(a) {
-      var b=areaBounds[a];
-      var x=Math.round(TX+(b.x1-gx1)*sx);
-      var y=Math.round(TY+(b.y1-gy1)*sy);
-      var w=Math.max(8,Math.round((b.x2-b.x1)*sx));
-      var h=Math.max(4,Math.round((b.y2-b.y1)*sy));
-      newABBOX[a]={x:x,y:y,w:w,h:h};
-    });
-    ABBOX = newABBOX;
+    if (Object.keys(newRMS).length > 0) RMS = newRMS;
   }
 
   var cq = "";
@@ -209,7 +176,7 @@ tr:hover td{background:#f8f9ff}
         + '<div class="ic">'+loc.items.slice(0,4).map(function(i){
             return '<div class="ip"><span class="im">'+e(i.material)+'</span><span class="id2">'+e(i.description)+'</span><span class="iq">'+(i.stock||0).toLocaleString()+' EA</span></div>';
           }).join("")+(loc.items.length>4?'<span class="mt">외 '+(loc.items.length-4)+'개</span>':"")+
-          '</div><div class="mc"><canvas id="mm'+idx+'" width="160" height="280" style="border-radius:8px;border:1px solid #334155;max-width:100%"></canvas>'
+          '</div><div class="mc"><canvas id="mm'+idx+'" width="240" height="340" style="border-radius:8px;border:1px solid #334155;max-width:100%"></canvas>'
         + '<small style="font-size:10px;color:#94a3b8;margin-top:2px">'+e(loc.area)+' 영역</small></div></div></div></div>';
     });
     if(matches.length>4){
@@ -245,27 +212,47 @@ tr:hover td{background:#f8f9ff}
     var cv = document.getElementById(cid);
     if(!cv) return;
     var ctx = cv.getContext("2d"), W=cv.width, H=cv.height;
-    ctx.clearRect(0,0,W,H); ctx.fillStyle="#0f172a"; ctx.fillRect(0,0,W,H);
-    ctx.beginPath(); ctx.moveTo(12,4); ctx.lineTo(W-4,4); ctx.lineTo(W-4,H-4); ctx.lineTo(4,H-4); ctx.lineTo(4,4); ctx.closePath();
-    ctx.fillStyle="#1e293b"; ctx.fill(); ctx.strokeStyle="#475569"; ctx.lineWidth=1; ctx.stroke();
-    Object.keys(ABBOX).forEach(function(a){
-      var r=ABBOX[a], isT=(a===area);
-      ctx.globalAlpha = isT?0.95:0.4;
-      ctx.fillStyle = SHC[ASR[a]]||"#64748b";
-      ctx.fillRect(r.x,r.y,r.w,r.h);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = isT?"#fff":"#94a3b8";
-      ctx.font = (isT?"bold 7px":"7px") + " sans-serif";
-      ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillText(a, r.x+r.w/2, r.y+r.h/2);
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle="#0f172a"; ctx.fillRect(0,0,W,H);
+    if(!LD||!LD.R){ctx.fillStyle="#475569";ctx.font="10px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("배치도 없음",W/2,H/2);return;}
+    var BX=50,BY=50,WHW=564,WHH=1890,RX=982,JY=774;
+    var sc=Math.min((W-16)/WHW,(H-16)/WHH);
+    var ox=8,oy=8;
+    var mx=function(x){return ox+(x-BX)*sc;};
+    var my=function(y){return oy+(y-BY)*sc;};
+    ctx.beginPath();
+    ctx.moveTo(mx(BX),my(BY));ctx.lineTo(mx(BX+WHW),my(BY));
+    ctx.lineTo(mx(BX+WHW),my(BY+JY));ctx.lineTo(mx(RX),my(BY+JY));
+    ctx.lineTo(mx(RX),my(BY+WHH));ctx.lineTo(mx(BX),my(BY+WHH));
+    ctx.closePath();
+    ctx.fillStyle="#1e293b";ctx.fill();ctx.strokeStyle="#475569";ctx.lineWidth=1;ctx.stroke();
+    var bbox=null;
+    LD.R.forEach(function(r){
+      var nm=(r.a||"").toUpperCase();
+      if(nm.indexOf("DOOR")>=0||nm.indexOf("PILLAR")>=0||nm.indexOf("TBL")>=0||nm.indexOf("PLT")>=0) return;
+      var d=rpx2(r),rx=mx(r.x),ry=my(r.y),rw=Math.max(d.w*sc,1),rh=Math.max(d.h*sc,1);
+      var isT=(r.a===area);
+      ctx.globalAlpha=isT?1:0.6;
+      ctx.fillStyle=isT?"#f59e0b":(r.cc||(SHC[r.s]||"#64748b"));
+      ctx.fillRect(rx,ry,rw,rh);
+      ctx.globalAlpha=1;
+      if(isT){
+        if(!bbox)bbox={x1:rx,y1:ry,x2:rx+rw,y2:ry+rh};
+        else{bbox.x1=Math.min(bbox.x1,rx);bbox.y1=Math.min(bbox.y1,ry);bbox.x2=Math.max(bbox.x2,rx+rw);bbox.y2=Math.max(bbox.y2,ry+rh);}
+      }
     });
-    var bb = ABBOX[area];
-    if(bb){
-      ctx.strokeStyle="#fbbf24"; ctx.lineWidth=2; ctx.setLineDash([4,2]);
-      ctx.strokeRect(bb.x-2,bb.y-2,bb.w+4,bb.h+4); ctx.setLineDash([]);
-      ctx.fillStyle="#fbbf24"; ctx.font="bold 8px sans-serif";
-      ctx.textAlign="center"; ctx.textBaseline="bottom";
-      ctx.fillText(area, bb.x+bb.w/2, Math.max(bb.y-3,11));
+    if(LD.zones) LD.zones.forEach(function(z){
+      var zx=mx(z.x),zy=my(z.y),zw=z.w*sc,zh=z.h*sc;
+      ctx.fillStyle="#22c55e";ctx.globalAlpha=0.25;
+      ctx.fillRect(zx,zy,Math.max(zw,1),Math.max(zh,1));
+      ctx.globalAlpha=1;
+    });
+    if(bbox){
+      ctx.strokeStyle="#fbbf24";ctx.lineWidth=2;ctx.setLineDash([4,2]);
+      ctx.strokeRect(bbox.x1-3,bbox.y1-3,(bbox.x2-bbox.x1)+6,(bbox.y2-bbox.y1)+6);
+      ctx.setLineDash([]);
+      ctx.fillStyle="#fbbf24";ctx.font="bold 11px sans-serif";ctx.textAlign="center";ctx.textBaseline="bottom";
+      ctx.fillText(area,(bbox.x1+bbox.x2)/2,Math.max(bbox.y1-5,12));
     }
   }
 
