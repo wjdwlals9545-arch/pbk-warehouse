@@ -3586,6 +3586,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   }, [tempHumidityData, inventoryData, openPOData, dataHistory]);
 
   // GitHub에서 Stock/OpenPO 데이터 자동 로드 (8시, 14시에만)
+  // JSON 먼저 시도 → 없으면 Excel(.xlsx) fetch → 파싱
   useEffect(() => {
     const now = new Date();
     const h = now.getHours();
@@ -3593,7 +3594,71 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
 
+    // XLSX 라이브러리 로드 헬퍼
+    const ensureXLSX = () => new Promise((resolve, reject) => {
+      if (window.XLSX) { resolve(window.XLSX); return; }
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => resolve(window.XLSX);
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+
+    // Excel ArrayBuffer → Stock 데이터 파싱 (parseExcelFile 로직 동일)
+    const parseStockExcel = (arrayBuf) => {
+      const XLSX = window.XLSX;
+      const workbook = XLSX.read(arrayBuf);
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(sheet);
+      const materialInfoMap = {};
+      jsonData.forEach(row => {
+        const material = row['Material'];
+        const desc = row['Material Description'];
+        const bin = row['Storage Bin'];
+        if (material && desc && desc.toString().trim() && bin) {
+          const matKey = String(material);
+          if (String(bin).match(/^\d{10}/)) return;
+          if (!materialInfoMap[matKey]) materialInfoMap[matKey] = { description: String(desc), bins: [] };
+          materialInfoMap[matKey].bins.push(String(bin));
+        }
+      });
+      return jsonData
+        .filter(row => row['Material'] && (!row['Material Description'] || !row['Material Description'].toString().trim()))
+        .map(row => {
+          const material = String(row['Material'] || '');
+          const info = materialInfoMap[material] || { description: '', bins: [] };
+          return { material, description: info.description, bin: info.bins[0] || '', allBins: info.bins, stock: parseFloat(row['Available stock']) || 0, unit: String(row['Base Unit of Measure'] || 'EA') };
+        })
+        .filter(item => item.bin);
+    };
+
+    // Excel ArrayBuffer → OpenPO 데이터 파싱 (parseOpenPOFile 로직 동일)
+    const parseOpenPOExcel = (arrayBuf) => {
+      const XLSX = window.XLSX;
+      const workbook = XLSX.read(arrayBuf);
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(sheet);
+      const poByMaterial = {};
+      jsonData.filter(row => parseFloat(row['Still to be delivered (qty)']) > 0).forEach(row => {
+        const material = String(row['Material'] || '').trim();
+        const description = String(row['Short Text'] || '').trim();
+        const qty = parseFloat(row['Still to be delivered (qty)']) || 0;
+        const unit = String(row['Order Unit'] || 'EA').trim();
+        const poNo = row['Purchasing Document'];
+        if (material) {
+          if (!poByMaterial[material]) poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [] };
+          poByMaterial[material].totalQty += qty;
+          if (poNo && !poByMaterial[material].poNumbers.includes(poNo)) poByMaterial[material].poNumbers.push(poNo);
+        }
+      });
+      return Object.values(poByMaterial);
+    };
+
     const fetchGitHubData = async () => {
+      let stockLoaded = false;
+      let poLoaded = false;
+
+      // 1. JSON 먼저 시도 (Stock)
       try {
         const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
         if (stockResp.ok) {
@@ -3604,11 +3669,37 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
             if (stockJson.updated) setLastUpdated(stockJson.updated);
             safeStorage.setItem('pbk_inventory', JSON.stringify(stockJson.data));
             if (stockJson.updated) safeStorage.setItem('pbk_last_updated', stockJson.updated);
-            showToast(`☁️ GitHub Stock 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
+            showToast(`☁️ GitHub Stock JSON 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
+            stockLoaded = true;
           }
         }
-      } catch (e) { console.log('GitHub Stock fetch skip:', e.message); }
+      } catch (e) { console.log('Stock JSON fetch skip:', e.message); }
 
+      // 2. JSON 없으면 Excel 시도 (Stock)
+      if (!stockLoaded) {
+        try {
+          const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
+          if (xlsResp.ok) {
+            await ensureXLSX();
+            const buf = await xlsResp.arrayBuffer();
+            const inventory = parseStockExcel(buf);
+            if (inventory.length > 0) {
+              setInventoryData(inventory);
+              processRackSummary(inventory);
+              const now2 = new Date().toLocaleString('ko-KR');
+              setLastUpdated(now2);
+              safeStorage.setItem('pbk_inventory', JSON.stringify(inventory));
+              safeStorage.setItem('pbk_last_updated', now2);
+              // JSON도 GitHub에 업로드 (다음 로드 시 빠르게)
+              uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: now2, count: inventory.length }, 'Stock 데이터 (자동)');
+              showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개)`, 'success');
+              stockLoaded = true;
+            }
+          }
+        } catch (e) { console.log('Stock Excel fetch skip:', e.message); }
+      }
+
+      // 3. JSON 먼저 시도 (OpenPO)
       try {
         const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
         if (poResp.ok) {
@@ -3618,10 +3709,34 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
             if (poJson.updated) setOpenPOLastUpdated(poJson.updated);
             safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
             if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
-            showToast(`☁️ GitHub Open PO 자동 로드 완료 (${poJson.data.length}개)`, 'success');
+            showToast(`☁️ GitHub Open PO JSON 자동 로드 완료 (${poJson.data.length}개)`, 'success');
+            poLoaded = true;
           }
         }
-      } catch (e) { console.log('GitHub OpenPO fetch skip:', e.message); }
+      } catch (e) { console.log('OpenPO JSON fetch skip:', e.message); }
+
+      // 4. JSON 없으면 Excel 시도 (OpenPO)
+      if (!poLoaded) {
+        try {
+          const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
+          if (xlsResp.ok) {
+            await ensureXLSX();
+            const buf = await xlsResp.arrayBuffer();
+            const openPOList = parseOpenPOExcel(buf);
+            if (openPOList.length > 0) {
+              setOpenPOData(openPOList);
+              const now2 = new Date().toLocaleString('ko-KR');
+              setOpenPOLastUpdated(now2);
+              safeStorage.setItem('pbk_open_po', JSON.stringify(openPOList));
+              safeStorage.setItem('pbk_open_po_updated', now2);
+              // JSON도 GitHub에 업로드
+              uploadDataToGitHub('public/data/openpo_data.json', { data: openPOList, updated: now2, count: openPOList.length }, 'OpenPO 데이터 (자동)');
+              showToast(`📊 GitHub Open PO Excel 자동 파싱 완료 (${openPOList.length}개)`, 'success');
+              poLoaded = true;
+            }
+          }
+        } catch (e) { console.log('OpenPO Excel fetch skip:', e.message); }
+      }
     };
 
     fetchGitHubData();
