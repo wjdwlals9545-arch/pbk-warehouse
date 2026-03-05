@@ -2355,7 +2355,12 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         setLayoutData(null);
       }
       if (e.data.type === 'layoutSave') {
-        try { safeStorage.setItem('pbk_layout_data', e.data.data); setLayoutData(JSON.parse(e.data.data)); uploadLayoutToGitHub(e.data.data); } catch(ex) {}
+        try {
+          console.log('[Layout] 저장 이벤트 수신, 데이터 길이:', e.data.data?.length);
+          safeStorage.setItem('pbk_layout_data', e.data.data);
+          setLayoutData(JSON.parse(e.data.data));
+          uploadLayoutToGitHub(e.data.data);
+        } catch(ex) { console.error('[Layout] 저장 처리 오류:', ex); }
       }
       if (e.data.type === 'layoutReady') {
         try {
@@ -2377,8 +2382,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   // 토큰은 소스에 포함하지 않고 localStorage에서 읽음.
   // 브라우저 콘솔에서 한 번 실행: localStorage.setItem('pbk_gh_token', '토큰값')
   const uploadLayoutToGitHub = async (jsonStr) => {
+    console.log('[GitHub Layout] 업로드 시도, 데이터 길이:', jsonStr?.length);
     const TOKEN = safeStorage.getItem('pbk_gh_token');
-    if (!TOKEN) { showToast('GitHub 토큰 미설정 (localStorage: pbk_gh_token)', 'error'); return; }
+    if (!TOKEN) { console.warn('[GitHub Layout] 토큰 미설정'); showToast('GitHub 토큰 미설정 (localStorage: pbk_gh_token)', 'error'); return; }
     const OWNER = 'wjdwlals9545-arch';
     const REPO = 'pbk-warehouse';
     const PATH = 'public/data/layout.json';
@@ -2388,7 +2394,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       const getResp = await fetch(API, {
         headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
       });
-      if (getResp.ok) { const info = await getResp.json(); sha = info.sha; }
+      if (getResp.ok) { const info = await getResp.json(); sha = info.sha; console.log('[GitHub Layout] 기존 파일 SHA:', sha); }
       const content = btoa(unescape(encodeURIComponent(jsonStr)));
       const body = { message: 'Update layout.json from dashboard', content, ...(sha ? { sha } : {}) };
       const putResp = await fetch(API, {
@@ -2396,9 +2402,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      if (putResp.ok) { showToast('☁️ 배치도 GitHub 업로드 완료', 'success'); }
-      else { const t = await putResp.text(); showToast('GitHub 업로드 실패: ' + t.slice(0,60), 'error'); }
-    } catch (err) { showToast('GitHub 업로드 오류: ' + err.message, 'error'); }
+      if (putResp.ok) { console.log('[GitHub Layout] 성공'); showToast('☁️ 배치도 GitHub 업로드 완료', 'success'); }
+      else { const t = await putResp.text(); console.error('[GitHub Layout] 실패:', putResp.status, t.slice(0,200)); showToast('GitHub 업로드 실패: ' + t.slice(0,60), 'error'); }
+    } catch (err) { console.error('[GitHub Layout] 오류:', err); showToast('GitHub 업로드 오류: ' + err.message, 'error'); }
   };
 
   // GitHub에 Stock/OpenPO 데이터 업로드 (JSON)
