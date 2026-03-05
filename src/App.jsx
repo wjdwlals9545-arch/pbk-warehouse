@@ -2426,105 +2426,6 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     } catch (err) { console.error(`GitHub upload error (${label}):`, err); }
   };
 
-  // GitHub에서 Stock/OpenPO 데이터 자동 로드 (8시, 14시에만)
-  useEffect(() => {
-    const now = new Date();
-    const h = now.getHours();
-    if (h !== 8 && h !== 14) return; // 오전 8시, 오후 2시에만 fetch
-
-    const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
-
-    const fetchGitHubData = async () => {
-      try {
-        // Stock 데이터 fetch
-        const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
-        if (stockResp.ok) {
-          const stockJson = await stockResp.json();
-          if (stockJson && stockJson.data && stockJson.data.length > 0) {
-            setInventoryData(stockJson.data);
-            processRackSummary(stockJson.data);
-            if (stockJson.updated) setLastUpdated(stockJson.updated);
-            safeStorage.setItem('pbk_inventory', JSON.stringify(stockJson.data));
-            if (stockJson.updated) safeStorage.setItem('pbk_last_updated', stockJson.updated);
-            showToast(`☁️ GitHub Stock 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
-          }
-        }
-      } catch (e) { console.log('GitHub Stock fetch skip:', e.message); }
-
-      try {
-        // OpenPO 데이터 fetch
-        const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
-        if (poResp.ok) {
-          const poJson = await poResp.json();
-          if (poJson && poJson.data && poJson.data.length > 0) {
-            setOpenPOData(poJson.data);
-            if (poJson.updated) setOpenPOLastUpdated(poJson.updated);
-            safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
-            if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
-            showToast(`☁️ GitHub Open PO 자동 로드 완료 (${poJson.data.length}개)`, 'success');
-          }
-        }
-      } catch (e) { console.log('GitHub OpenPO fetch skip:', e.message); }
-    };
-
-    fetchGitHubData();
-  }, []);
-
-  // 자동 백업 (12시, 15시 55분에만)
-  useEffect(() => {
-    const checkAutoBackup = () => {
-      const now = new Date();
-      const h = now.getHours();
-      const m = now.getMinutes();
-      const todayKey = now.toISOString().slice(0, 10);
-
-      // 12:00~12:04 또는 15:55~15:59 구간에서만 실행
-      const isBackupTime = (h === 12 && m >= 0 && m <= 4) || (h === 15 && m >= 55 && m <= 59);
-      if (!isBackupTime) return;
-
-      // 오늘 이 시간대에 이미 백업했는지 확인
-      const backupFlag = safeStorage.getItem('pbk_auto_backup_flag');
-      const flagKey = `${todayKey}_${h}`;
-      if (backupFlag === flagKey) return;
-
-      // 백업할 데이터가 있는지 확인
-      if (!inventoryData || inventoryData.length === 0) return;
-
-      const backupPayload = {
-        version: '1.2',
-        exportDate: now.toISOString(),
-        inventory: inventoryData,
-        weightData,
-        pickCycles,
-        receiveCycles,
-        kittingData,
-        todoList,
-        rackConfig,
-        lastUpdated,
-        tempHumidityData,
-        tempHumidityRecorder,
-        openPOData,
-        openPOLastUpdated,
-        customBomData,
-        bomLastUpdated
-      };
-
-      const backupStr = JSON.stringify(backupPayload);
-      const backupPath = `public/data/backup/backup-${todayKey}.json`;
-      uploadDataToGitHub(backupPath, backupPayload, `자동백업 ${todayKey}`);
-
-      const timeStr = now.toLocaleString('ko-KR');
-      safeStorage.setItem('pbk_auto_backup_flag', flagKey);
-      safeStorage.setItem('pbk_last_auto_backup', timeStr);
-      setLastAutoBackup(timeStr);
-      showToast(`📦 자동 백업 완료 (${(backupStr.length / 1024).toFixed(1)} KB)`, 'success');
-    };
-
-    checkAutoBackup();
-    const interval = setInterval(checkAutoBackup, 60000); // 1분마다 체크
-    return () => clearInterval(interval);
-  }, [inventoryData, weightData, pickCycles, receiveCycles, kittingData, todoList, rackConfig, lastUpdated, tempHumidityData, tempHumidityRecorder, openPOData, openPOLastUpdated, customBomData, bomLastUpdated]);
-
   // 3D 뷰 렌더링
   const view3dKeyRef = React.useRef(null);
   useEffect(() => {
@@ -3677,6 +3578,100 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     const interval = setInterval(checkAlerts, 60000);
     return () => clearInterval(interval);
   }, [tempHumidityData, inventoryData, openPOData, dataHistory]);
+
+  // GitHub에서 Stock/OpenPO 데이터 자동 로드 (8시, 14시에만)
+  useEffect(() => {
+    const now = new Date();
+    const h = now.getHours();
+    if (h !== 8 && h !== 14) return;
+
+    const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
+
+    const fetchGitHubData = async () => {
+      try {
+        const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
+        if (stockResp.ok) {
+          const stockJson = await stockResp.json();
+          if (stockJson && stockJson.data && stockJson.data.length > 0) {
+            setInventoryData(stockJson.data);
+            processRackSummary(stockJson.data);
+            if (stockJson.updated) setLastUpdated(stockJson.updated);
+            safeStorage.setItem('pbk_inventory', JSON.stringify(stockJson.data));
+            if (stockJson.updated) safeStorage.setItem('pbk_last_updated', stockJson.updated);
+            showToast(`☁️ GitHub Stock 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
+          }
+        }
+      } catch (e) { console.log('GitHub Stock fetch skip:', e.message); }
+
+      try {
+        const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
+        if (poResp.ok) {
+          const poJson = await poResp.json();
+          if (poJson && poJson.data && poJson.data.length > 0) {
+            setOpenPOData(poJson.data);
+            if (poJson.updated) setOpenPOLastUpdated(poJson.updated);
+            safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
+            if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
+            showToast(`☁️ GitHub Open PO 자동 로드 완료 (${poJson.data.length}개)`, 'success');
+          }
+        }
+      } catch (e) { console.log('GitHub OpenPO fetch skip:', e.message); }
+    };
+
+    fetchGitHubData();
+  }, []);
+
+  // 자동 백업 (12시, 15시 55분에만)
+  useEffect(() => {
+    const checkAutoBackup = () => {
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMinutes();
+      const todayKey = now.toISOString().slice(0, 10);
+
+      const isBackupTime = (h === 12 && m >= 0 && m <= 4) || (h === 15 && m >= 55 && m <= 59);
+      if (!isBackupTime) return;
+
+      const backupFlag = safeStorage.getItem('pbk_auto_backup_flag');
+      const flagKey = `${todayKey}_${h}`;
+      if (backupFlag === flagKey) return;
+
+      if (!inventoryData || inventoryData.length === 0) return;
+
+      const backupPayload = {
+        version: '1.2',
+        exportDate: now.toISOString(),
+        inventory: inventoryData,
+        weightData,
+        pickCycles,
+        receiveCycles,
+        kittingData,
+        todoList,
+        rackConfig,
+        lastUpdated,
+        tempHumidityData,
+        tempHumidityRecorder,
+        openPOData,
+        openPOLastUpdated,
+        customBomData,
+        bomLastUpdated
+      };
+
+      const backupStr = JSON.stringify(backupPayload);
+      const backupPath = `public/data/backup/backup-${todayKey}.json`;
+      uploadDataToGitHub(backupPath, backupPayload, `자동백업 ${todayKey}`);
+
+      const timeStr = now.toLocaleString('ko-KR');
+      safeStorage.setItem('pbk_auto_backup_flag', flagKey);
+      safeStorage.setItem('pbk_last_auto_backup', timeStr);
+      setLastAutoBackup(timeStr);
+      showToast(`📦 자동 백업 완료 (${(backupStr.length / 1024).toFixed(1)} KB)`, 'success');
+    };
+
+    checkAutoBackup();
+    const interval = setInterval(checkAutoBackup, 60000);
+    return () => clearInterval(interval);
+  }, [inventoryData, weightData, pickCycles, receiveCycles, kittingData, todoList, rackConfig, lastUpdated, tempHumidityData, tempHumidityRecorder, openPOData, openPOLastUpdated, customBomData, bomLastUpdated]);
 
   // TO DO 수정 함수
   const updateTodo = (id, field, value) => {
