@@ -2401,6 +2401,130 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     } catch (err) { showToast('GitHub 업로드 오류: ' + err.message, 'error'); }
   };
 
+  // GitHub에 Stock/OpenPO 데이터 업로드 (JSON)
+  const uploadDataToGitHub = async (path, data, label) => {
+    const TOKEN = safeStorage.getItem('pbk_gh_token');
+    if (!TOKEN) return;
+    const OWNER = 'wjdwlals9545-arch';
+    const REPO = 'pbk-warehouse';
+    const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${path}`;
+    try {
+      let sha;
+      const getResp = await fetch(API, {
+        headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
+      });
+      if (getResp.ok) { const info = await getResp.json(); sha = info.sha; }
+      const jsonStr = JSON.stringify(data);
+      const content = btoa(unescape(encodeURIComponent(jsonStr)));
+      const body = { message: `Update ${label} from dashboard`, content, ...(sha ? { sha } : {}) };
+      const putResp = await fetch(API, {
+        method: 'PUT',
+        headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (putResp.ok) showToast(`☁️ ${label} GitHub 업로드 완료`, 'success');
+    } catch (err) { console.error(`GitHub upload error (${label}):`, err); }
+  };
+
+  // GitHub에서 Stock/OpenPO 데이터 자동 로드 (8시, 14시에만)
+  useEffect(() => {
+    const now = new Date();
+    const h = now.getHours();
+    if (h !== 8 && h !== 14) return; // 오전 8시, 오후 2시에만 fetch
+
+    const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
+
+    const fetchGitHubData = async () => {
+      try {
+        // Stock 데이터 fetch
+        const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
+        if (stockResp.ok) {
+          const stockJson = await stockResp.json();
+          if (stockJson && stockJson.data && stockJson.data.length > 0) {
+            setInventoryData(stockJson.data);
+            processRackSummary(stockJson.data);
+            if (stockJson.updated) setLastUpdated(stockJson.updated);
+            safeStorage.setItem('pbk_inventory', JSON.stringify(stockJson.data));
+            if (stockJson.updated) safeStorage.setItem('pbk_last_updated', stockJson.updated);
+            showToast(`☁️ GitHub Stock 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
+          }
+        }
+      } catch (e) { console.log('GitHub Stock fetch skip:', e.message); }
+
+      try {
+        // OpenPO 데이터 fetch
+        const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
+        if (poResp.ok) {
+          const poJson = await poResp.json();
+          if (poJson && poJson.data && poJson.data.length > 0) {
+            setOpenPOData(poJson.data);
+            if (poJson.updated) setOpenPOLastUpdated(poJson.updated);
+            safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
+            if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
+            showToast(`☁️ GitHub Open PO 자동 로드 완료 (${poJson.data.length}개)`, 'success');
+          }
+        }
+      } catch (e) { console.log('GitHub OpenPO fetch skip:', e.message); }
+    };
+
+    fetchGitHubData();
+  }, []);
+
+  // 자동 백업 (12시, 15시 55분에만)
+  useEffect(() => {
+    const checkAutoBackup = () => {
+      const now = new Date();
+      const h = now.getHours();
+      const m = now.getMinutes();
+      const todayKey = now.toISOString().slice(0, 10);
+
+      // 12:00~12:04 또는 15:55~15:59 구간에서만 실행
+      const isBackupTime = (h === 12 && m >= 0 && m <= 4) || (h === 15 && m >= 55 && m <= 59);
+      if (!isBackupTime) return;
+
+      // 오늘 이 시간대에 이미 백업했는지 확인
+      const backupFlag = safeStorage.getItem('pbk_auto_backup_flag');
+      const flagKey = `${todayKey}_${h}`;
+      if (backupFlag === flagKey) return;
+
+      // 백업할 데이터가 있는지 확인
+      if (!inventoryData || inventoryData.length === 0) return;
+
+      const backupPayload = {
+        version: '1.2',
+        exportDate: now.toISOString(),
+        inventory: inventoryData,
+        weightData,
+        pickCycles,
+        receiveCycles,
+        kittingData,
+        todoList,
+        rackConfig,
+        lastUpdated,
+        tempHumidityData,
+        tempHumidityRecorder,
+        openPOData,
+        openPOLastUpdated,
+        customBomData,
+        bomLastUpdated
+      };
+
+      const backupStr = JSON.stringify(backupPayload);
+      const backupPath = `public/data/backup/backup-${todayKey}.json`;
+      uploadDataToGitHub(backupPath, backupPayload, `자동백업 ${todayKey}`);
+
+      const timeStr = now.toLocaleString('ko-KR');
+      safeStorage.setItem('pbk_auto_backup_flag', flagKey);
+      safeStorage.setItem('pbk_last_auto_backup', timeStr);
+      setLastAutoBackup(timeStr);
+      showToast(`📦 자동 백업 완료 (${(backupStr.length / 1024).toFixed(1)} KB)`, 'success');
+    };
+
+    checkAutoBackup();
+    const interval = setInterval(checkAutoBackup, 60000); // 1분마다 체크
+    return () => clearInterval(interval);
+  }, [inventoryData, weightData, pickCycles, receiveCycles, kittingData, todoList, rackConfig, lastUpdated, tempHumidityData, tempHumidityRecorder, openPOData, openPOLastUpdated, customBomData, bomLastUpdated]);
+
   // 3D 뷰 렌더링
   const view3dKeyRef = React.useRef(null);
   useEffect(() => {
@@ -3133,6 +3257,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   // 백업 모달
   const [showBackupModal, setShowBackupModal] = useState(false);
   const [backupData, setBackupData] = useState('');
+  const [lastAutoBackup, setLastAutoBackup] = useState(() => {
+    return safeStorage.getItem('pbk_last_auto_backup') || null;
+  });
   const [layoutExportModal, setLayoutExportModal] = useState(false);
   const [layoutExportStr, setLayoutExportStr] = useState('');
 
@@ -4289,6 +4416,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       safeStorage.setItem('pbk_inventory', JSON.stringify(inventory));
       safeStorage.setItem('pbk_last_updated', now);
 
+      // GitHub에 Stock 데이터 업로드
+      uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: now, count: inventory.length }, 'Stock 데이터');
+
       setShowUploadModal(false);
 
       // v15: 토스트, 알림, 히스토리 추가
@@ -4389,6 +4519,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
       safeStorage.setItem('pbk_open_po', JSON.stringify(openPOList));
       safeStorage.setItem('pbk_open_po_updated', now);
+
+      // GitHub에 OpenPO 데이터 업로드
+      uploadDataToGitHub('public/data/openpo_data.json', { data: openPOList, updated: now, count: openPOList.length }, 'OpenPO 데이터');
 
       setShowOpenPOModal(false);
 
@@ -6865,9 +6998,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
               <div>
                 <h1 className="text-lg sm:text-xl font-bold">Warehouse Management <span className="text-indigo-300 text-sm font-normal">{APP_VERSION}</span></h1>
-                <p className="text-xs sm:text-sm text-indigo-200 hidden sm:block">
-                  {totals.items > 0 ? `${totals.items.toLocaleString()}개 품목 | ${rackSummary.length}개 랙 | ${totals.bins}개 Bin` : 'SAP 엑셀을 업로드해주세요'}
-                </p>
+                <p className="text-xs sm:text-sm text-indigo-200 hidden sm:block">SAP 엑셀을 업로드해주세요</p>
               </div>
             </div>
             {/* PC용 버튼들 */}
@@ -6960,6 +7091,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   {bomLastUpdated && (
                     <p title={getElapsedTimeDetail(bomLastUpdated)}>
                       <span className="text-purple-300 font-bold">BOM:</span> {bomLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
+                    </p>
+                  )}
+                  {lastAutoBackup && (
+                    <p title={`마지막 자동 백업: ${lastAutoBackup}`}>
+                      <span className="text-cyan-300 font-bold">백업:</span> {lastAutoBackup.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                 </div>
@@ -14505,6 +14641,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               <p className="text-sm text-gray-600 mb-3">
                 모든 데이터를 JSON 형식으로 백업합니다.
               </p>
+              {lastAutoBackup && (
+                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs text-blue-700">🕐 마지막 자동 백업: <span className="font-bold">{lastAutoBackup}</span></p>
+                  <p className="text-xs text-blue-500 mt-1">자동 백업 스케줄: 매일 12:00, 15:55</p>
+                </div>
+              )}
               
               {!backupData ? (
                 <button 
