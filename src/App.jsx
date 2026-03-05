@@ -3942,8 +3942,8 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     result.sort((a, b) => {
       let aVal, bVal;
       if (receiveSortBy === 'poNo') {
-        aVal = a.poNo || '';
-        bVal = b.poNo || '';
+        aVal = parseInt(a.poNo) || 0;
+        bVal = parseInt(b.poNo) || 0;
       } else if (receiveSortBy === 'delivery') {
         aVal = a.delivery || '';
         bVal = b.delivery || '';
@@ -6993,7 +6993,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
               <div>
                 <h1 className="text-lg sm:text-xl font-bold">Warehouse Management <span className="text-indigo-300 text-sm font-normal">{APP_VERSION}</span></h1>
-                <p className="text-xs sm:text-sm text-indigo-200 hidden sm:block">SAP 엑셀을 업로드해주세요</p>
               </div>
             </div>
             {/* PC용 버튼들 */}
