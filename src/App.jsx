@@ -11436,11 +11436,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       }}
                     />
                   </label>
-                  {/* GR Cancel SAP 자동 추출 버튼 */}
+                  {/* GR Cancel SAP 자동 추출 버튼 (로컬 서버 방식) */}
                   <button
-                    onClick={() => {
-                      window.open('pbk-sap://gr-cancel', '_self');
-                      showToast('SAP GR Cancel 자동 추출 시작... SAP가 실행됩니다.', 'info');
+                    onClick={async () => {
+                      try {
+                        const statusResp = await fetch('http://127.0.0.1:3847/status', { signal: AbortSignal.timeout(3000) }).catch(() => null);
+                        if (!statusResp || !statusResp.ok) {
+                          showToast('⚠️ 로컬 서버가 실행되지 않았습니다. PBK Local Server를 먼저 실행하세요.', 'error');
+                          return;
+                        }
+                        showToast('SAP GR Cancel 자동 추출 시작... SAP가 실행됩니다.', 'info');
+                        const resp = await fetch('http://127.0.0.1:3847/gr-cancel');
+                        const result = await resp.json();
+                        if (result.status === 'started') {
+                          showToast('✅ SAP 자동 추출이 시작되었습니다. 완료까지 약 1~2분 소요됩니다.', 'success');
+                        }
+                      } catch (err) {
+                        showToast('⚠️ 로컬 서버 연결 실패. PBK Local Server를 실행해주세요.', 'error');
+                      }
                     }}
                     className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 rounded-lg transition text-white text-sm font-medium"
                   >
