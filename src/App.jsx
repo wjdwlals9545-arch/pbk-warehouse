@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 const APP_VERSION = 'v19';
 import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 // safeStorage: localStorage 사용 가능하면 localStorage, 아니면 인메모리 대체
 const safeStorage = (() => {
   try {
@@ -3460,6 +3462,8 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const syncTimerRef = React.useRef(null);
   const syncShaRef = React.useRef(null);
   const lastSyncHashRef = React.useRef(null);
+  const kpiContentRef = React.useRef(null);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   const [showKpiInputModal, setShowKpiInputModal] = useState(false);
   const [kpiInputMonth, setKpiInputMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -6589,6 +6593,60 @@ ${tableRows}
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  // KPI PDF 저장 함수
+  const exportKpiToPdf = async () => {
+    if (!kpiContentRef.current || pdfExporting) return;
+    setPdfExporting(true);
+    try {
+      showToast('PDF 생성 중...', 'info');
+      // 캡처 전에 스크롤 위치 저장
+      const el = kpiContentRef.current;
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+      const imgData = canvas.toDataURL('image/png');
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      // A4 landscape: 297mm x 210mm
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const margin = 5;
+      const contentW = pageW - margin * 2;
+      const ratio = contentW / imgW;
+      const scaledH = imgH * ratio;
+      const contentH = pageH - margin * 2;
+      let yOffset = 0;
+      let page = 0;
+      while (yOffset < scaledH) {
+        if (page > 0) pdf.addPage();
+        // 이미지에서 현재 페이지에 해당하는 부분을 표시
+        pdf.addImage(imgData, 'PNG', margin, margin - yOffset, contentW, scaledH);
+        // 페이지 경계 밖 잘라내기 (흰색 사각형으로 덮기)
+        if (yOffset > 0) {
+          pdf.setFillColor(255, 255, 255);
+          pdf.rect(0, 0, pageW, margin, 'F');
+        }
+        yOffset += contentH;
+        page++;
+        if (page > 20) break; // 안전장치
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      pdf.save(`KPI_Dashboard_${selectedYear}_${today}.pdf`);
+      showToast('PDF 저장 완료!', 'success');
+    } catch (err) {
+      console.error('PDF export error:', err);
+      showToast('PDF 생성 실패: ' + err.message, 'error');
+    } finally {
+      setPdfExporting(false);
+    }
   };
 
   // Inventory Adjust Cost 엑셀 업로드 파싱 함수 (2026 Ratio 탭)
@@ -11723,10 +11781,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       }}
                     />
                   </label>
+                  <button
+                    onClick={exportKpiToPdf}
+                    disabled={pdfExporting}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-400 rounded-lg transition text-white text-sm font-medium"
+                  >
+                    <Download className="w-4 h-4" />
+                    {pdfExporting ? 'PDF 생성 중...' : 'PDF 저장'}
+                  </button>
                 </div>
               </div>
             </div>
 
+            {/* PDF 캡처 영역 */}
+            <div ref={kpiContentRef}>
             {/* 연도 선택 */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -12809,6 +12877,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </>
               );
             })()}
+            </div>{/* /kpiContentRef */}
           </div>
         )}
 
