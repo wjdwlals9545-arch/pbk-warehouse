@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
-const APP_VERSION = 'v18.3';
+const APP_VERSION = 'v19';
 import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
 // safeStorage: localStorage 사용 가능하면 localStorage, 아니면 인메모리 대체
