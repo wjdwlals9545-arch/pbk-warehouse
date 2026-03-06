@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 const APP_VERSION = 'v19';
 import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
 // safeStorage: localStorage 사용 가능하면 localStorage, 아니면 인메모리 대체
 const safeStorage = (() => {
@@ -6630,7 +6630,6 @@ ${tableRows}
     setPdfExporting(true);
     try {
       showToast('PDF 생성 중...', 'info');
-      // 캡처 전에 스크롤 위치 저장
       const el = kpiContentRef.current;
       const canvas = await html2canvas(el, {
         scale: 2,
@@ -6668,7 +6667,7 @@ ${tableRows}
         if (page > 20) break; // 안전장치
       }
       const today = new Date().toISOString().slice(0, 10);
-      pdf.save(`KPI_Dashboard_${selectedYear}_${today}.pdf`);
+      pdf.save(`KPI_Dashboard_${kpiSelectedYear}_${today}.pdf`);
       showToast('PDF 저장 완료!', 'success');
     } catch (err) {
       console.error('PDF export error:', err);
@@ -7777,7 +7776,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       <main className="max-w-7xl mx-auto px-4 py-6 pb-24 md:pb-6">
 
         {/* No Data Message */}
-        {inventoryData.length === 0 && activeTab !== 'pick' && activeTab !== 'receive' && activeTab !== 'todo' && activeTab !== 'kitting' && (
+        {inventoryData.length === 0 && activeTab !== 'pick' && activeTab !== 'receive' && activeTab !== 'todo' && activeTab !== 'kitting' && activeTab !== 'kpi' && (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center">
             <FileSpreadsheet className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-700 mb-2">재고 데이터가 없습니다</h3>
