@@ -3466,7 +3466,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const [pdfExporting, setPdfExporting] = useState(false);
 
   // 간단 로그인 (관리자 모드)
-  const ADMIN_HASH = '-cs3m4l'; // simpleHash of admin password
+  const ADMIN_HASH = 'o04s8c'; // simpleHash of admin password
   const [isAdmin, setIsAdmin] = useState(() => safeStorage.getItem('pbk_admin') === 'true');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginPw, setLoginPw] = useState('');
@@ -7534,11 +7534,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
               {isAdmin ? (
-                <button onClick={handleLogout} className="flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-sm" title="로그아웃">
+                <button onClick={handleLogout} className="flex items-center gap-1 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-xs" title="로그아웃">
                   🔓 Admin
                 </button>
               ) : (
-                <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-1 px-3 py-2 bg-gray-500 hover:bg-gray-600 rounded-lg transition text-sm" title="관리자 로그인">
+                <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-1 px-2 py-1.5 bg-gray-500 hover:bg-gray-600 rounded-lg transition text-xs" title="관리자 로그인">
                   🔒 Login
                 </button>
               )}
@@ -7546,35 +7546,35 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 href="http://172.30.49.122:8503/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition text-sm"
+                className="flex items-center gap-1.5 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition text-xs"
                 title="Operations Dashboard 열기"
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="w-3.5 h-3.5" />
                 Ops Dashboard
               </a>
               {isAdmin && (
                 <>
                   <button
                     onClick={() => setShowBackupModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg transition text-sm"
+                    className="flex items-center gap-1.5 px-2 py-1.5 bg-orange-500 hover:bg-orange-600 rounded-lg transition text-xs"
                     title="데이터 백업 및 복원"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-3.5 h-3.5" />
                     Backup
                   </button>
                   <button
                     onClick={exportLocationHTML}
-                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-sm"
+                    className="flex items-center gap-1.5 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-xs"
                     title="QR코드용 자재위치 페이지 내보내기"
                   >
-                    <Smartphone className="w-4 h-4" />
+                    <Smartphone className="w-3.5 h-3.5" />
                     모바일 QR
                   </button>
                   <button
                     onClick={() => setShowDataUploadModal(true)}
-                    className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 rounded-lg transition text-sm"
+                    className="flex items-center gap-1.5 px-2 py-1.5 bg-indigo-500 hover:bg-indigo-600 rounded-lg transition text-xs"
                   >
-                    <Database className="w-4 h-4" />
+                    <Database className="w-3.5 h-3.5" />
                     데이터 관리
                   </button>
                 </>
@@ -7599,7 +7599,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   )}
                   {lastAutoBackup && (
                     <p title={`마지막 자동 백업: ${lastAutoBackup}`}>
-                      <span className="text-cyan-300 font-bold">백업:</span> {lastAutoBackup.replace(/:\d{2}$/, '').replace(/^20/, '')}
+                      <span className="text-cyan-300 font-bold">Backup:</span> {lastAutoBackup.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                 </div>
