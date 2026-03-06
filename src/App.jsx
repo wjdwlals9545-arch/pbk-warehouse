@@ -11596,9 +11596,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
                   <ScatterChart margin={{ top: 20, right: 60, bottom: 20, left: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="date" 
+                    <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" />
+                    <XAxis
+                      dataKey="date"
                       type="category"
                       allowDuplicatedCategory={false}
                       tick={{ fontSize: 10 }}
@@ -12226,7 +12226,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <ResponsiveContainer width="100%" height={260}>
                             <ComposedChart data={grChartData} margin={{top:30,right:60,left:5,bottom:5}}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" vertical={false} />
                               <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
                               {/* 왼쪽: GR Qty — max*4 → 막대 하단 25% */}
                               <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#3b82f6'}}
@@ -12247,7 +12247,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {/* 목표선 2건 (건수 축 기준) */}
                               <ReferenceLine yAxisId="left" y={2} stroke="#10b981" strokeDasharray="5 3" />
                               {/* GR Qty 막대 */}
-                              <Bar yAxisId="left" dataKey="qty" name="GR Qty" radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
+                              <Bar yAxisId="left" dataKey="qty" name="GR Qty" fill="#60a5fa" radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
                                 label={(props) => {
                                   const {x,y,width,value}=props;
                                   if(!value) return null;
@@ -12420,8 +12420,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <ResponsiveContainer width="100%" height={300}>
                             <ComposedChart data={invChartData} margin={{top:30,right:65,left:10,bottom:5}}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                              <XAxis dataKey="name" tick={{fontSize:10}} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" vertical={false} />
+                              <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
                               {/* 왼쪽: Total stock value (백만원) */}
                               <YAxis yAxisId="left" orientation="left" tick={{fontSize:9, fill:'#1e40af'}}
                                 domain={[0, leftMax]} width={60}
@@ -12592,7 +12592,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           })()}
                           <ResponsiveContainer width="100%" height={260}>
                             <ComposedChart data={ltChartData} margin={{top:30,right:55,left:5,bottom:5}}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" vertical={false} />
                               <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
                               {/* 왼쪽 Y축: 건수 — max를 4배로 늘려 막대가 하단 25%만 차지 */}
                               <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#6366f1'}}
@@ -12612,7 +12612,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <ReferenceLine yAxisId="right" y={3} stroke="#10b981" strokeDasharray="5 3"
                                 label={{value:'목표 3일', position:'insideTopRight', fontSize:10, fill:'#10b981'}} />
                               {/* 막대: 건수 — 불투명도 낮춰 꺾은선이 잘 보이게 */}
-                              <Bar yAxisId="left" dataKey="count" name="Order 건수"
+                              <Bar yAxisId="left" dataKey="count" name="Order 건수" fill="#818cf8"
                                 radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
                                 label={(props) => {
                                   const {x,y,width,value} = props;
@@ -12678,7 +12678,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           })()}
                           <ResponsiveContainer width="100%" height={260}>
                             <ComposedChart data={ctChartData} margin={{top:30,right:60,left:5,bottom:5}}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" vertical={false} />
                               <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
                               <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#3b82f6'}}
                                 domain={[0, ctLeftMax]} allowDecimals={false}
@@ -12690,7 +12690,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 contentStyle={{borderRadius:8, border:'1px solid #e5e7eb', fontSize:12}}
                                 formatter={(v, name) => [v === null ? '-' : name === 'Cycle Time(분)' ? `${v}분` : `${v}건`, name]} />
                               <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:8}} />
-                              <Bar yAxisId="left" dataKey="count" name="Order 건수"
+                              <Bar yAxisId="left" dataKey="count" name="Order 건수" fill="#60a5fa"
                                 radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
                                 label={(props) => {
                                   const {x,y,width,value} = props;
@@ -12755,7 +12755,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           })()}
                           <ResponsiveContainer width="100%" height={260}>
                             <ComposedChart data={rcChartData} margin={{top:30,right:60,left:5,bottom:5}}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                              <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" vertical={false} />
                               <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
                               <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#0ea5e9'}}
                                 domain={[0, rcLeftMax]} allowDecimals={false}
@@ -12767,7 +12767,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 contentStyle={{borderRadius:8, border:'1px solid #e5e7eb', fontSize:12}}
                                 formatter={(v, name) => [v === null ? '-' : name === '평균 입고시간(분)' ? `${v}분` : `${v}건`, name]} />
                               <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:8}} />
-                              <Bar yAxisId="left" dataKey="count" name="입고 건수"
+                              <Bar yAxisId="left" dataKey="count" name="입고 건수" fill="#38bdf8"
                                 radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
                                 label={(props) => {
                                   const {x,y,width,value} = props;
