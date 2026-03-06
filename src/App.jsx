@@ -3658,8 +3658,27 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       let stockLoaded = false;
       let poLoaded = false;
 
+      // GitHub 파일의 마지막 커밋 날짜 확인 (오늘 업데이트된 파일만 로드)
+      const isFileUpdatedToday = async (filePath) => {
+        try {
+          const token = safeStorage.getItem('pbk_gh_token');
+          if (!token) return true; // 토큰 없으면 그냥 로드
+          const resp = await fetch(`https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/commits?path=${filePath}&per_page=1`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
+          });
+          if (!resp.ok) return true;
+          const commits = await resp.json();
+          if (!commits || commits.length === 0) return false;
+          const commitDate = new Date(commits[0].commit.committer.date);
+          const todayKR = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+          return commitDate.toISOString().slice(0, 10) === todayKR.toISOString().slice(0, 10);
+        } catch (e) { return true; } // 에러 시 그냥 로드
+      };
+
       // 1. Excel 우선 시도 (Stock) - Power Automate가 항상 최신 Excel을 올림
-      try {
+      const stockExcelFresh = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
+      if (!stockExcelFresh) console.log('Stock Excel: 오늘 업데이트 안 됨 - 스킵');
+      if (stockExcelFresh) try {
         const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
         if (xlsResp.ok) {
           await ensureXLSX();
@@ -3680,9 +3699,11 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         }
       } catch (e) { console.log('Stock Excel fetch skip:', e.message); }
 
-      // 2. Excel 없으면 JSON fallback (Stock)
+      // 2. Excel 없으면 JSON fallback (Stock) - JSON도 오늘 업데이트된 것만
       if (!stockLoaded) {
-        try {
+        const stockJsonFresh = await isFileUpdatedToday('public/data/stock_data.json');
+        if (!stockJsonFresh) console.log('Stock JSON: 오늘 업데이트 안 됨 - 스킵');
+        if (stockJsonFresh) try {
           const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
           if (stockResp.ok) {
             const stockJson = await stockResp.json();
@@ -3701,7 +3722,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       }
 
       // 3. Excel 우선 시도 (OpenPO)
-      try {
+      const poExcelFresh = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
+      if (!poExcelFresh) console.log('OpenPO Excel: 오늘 업데이트 안 됨 - 스킵');
+      if (poExcelFresh) try {
         const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
         if (xlsResp.ok) {
           await ensureXLSX();
@@ -3721,9 +3744,11 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         }
       } catch (e) { console.log('OpenPO Excel fetch skip:', e.message); }
 
-      // 4. Excel 없으면 JSON fallback (OpenPO)
+      // 4. Excel 없으면 JSON fallback (OpenPO) - JSON도 오늘 업데이트된 것만
       if (!poLoaded) {
-        try {
+        const poJsonFresh = await isFileUpdatedToday('public/data/openpo_data.json');
+        if (!poJsonFresh) console.log('OpenPO JSON: 오늘 업데이트 안 됨 - 스킵');
+        if (poJsonFresh) try {
           const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
           if (poResp.ok) {
             const poJson = await poResp.json();
