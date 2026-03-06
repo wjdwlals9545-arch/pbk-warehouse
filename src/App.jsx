@@ -11436,6 +11436,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       }}
                     />
                   </label>
+                  {/* GR Cancel SAP 자동 추출 버튼 */}
+                  <button
+                    onClick={() => {
+                      window.open('pbk-sap://gr-cancel', '_self');
+                      showToast('SAP GR Cancel 자동 추출 시작... SAP가 실행됩니다.', 'info');
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 rounded-lg transition text-white text-sm font-medium"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    SAP 자동 추출
+                  </button>
                   {/* v17: 재고 손실율 엑셀 업로드 버튼 */}
                   <label className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 rounded-lg transition cursor-pointer text-white text-sm font-medium">
                     <FileSpreadsheet className="w-4 h-4" />
