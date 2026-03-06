@@ -3465,6 +3465,31 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const kpiContentRef = React.useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
 
+  // 간단 로그인 (관리자 모드)
+  const ADMIN_HASH = '-cs3m4l'; // simpleHash of admin password
+  const [isAdmin, setIsAdmin] = useState(() => safeStorage.getItem('pbk_admin') === 'true');
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginPw, setLoginPw] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const handleLogin = () => {
+    const h = simpleHash(loginPw);
+    if (h === ADMIN_HASH) {
+      setIsAdmin(true);
+      safeStorage.setItem('pbk_admin', 'true');
+      setShowLoginModal(false);
+      setLoginPw('');
+      setLoginError('');
+      showToast('관리자 로그인 완료', 'success');
+    } else {
+      setLoginError('비밀번호가 틀렸습니다');
+    }
+  };
+  const handleLogout = () => {
+    setIsAdmin(false);
+    safeStorage.removeItem('pbk_admin');
+    showToast('로그아웃 완료', 'info');
+  };
+
   const [showKpiInputModal, setShowKpiInputModal] = useState(false);
   const [kpiInputMonth, setKpiInputMonth] = useState(new Date().toISOString().slice(0, 7));
   const [kpiInputType, setKpiInputType] = useState('grCancel'); // 'grCancel' or 'inventoryAdjust'
@@ -7508,6 +7533,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               >
                 {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
+              {isAdmin ? (
+                <button onClick={handleLogout} className="flex items-center gap-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-sm" title="로그아웃">
+                  🔓 Admin
+                </button>
+              ) : (
+                <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-1 px-3 py-2 bg-gray-500 hover:bg-gray-600 rounded-lg transition text-sm" title="관리자 로그인">
+                  🔒 Login
+                </button>
+              )}
               <a
                 href="http://172.30.49.122:8503/"
                 target="_blank"
@@ -7518,29 +7552,33 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <ExternalLink className="w-4 h-4" />
                 Ops Dashboard
               </a>
-              <button
-                onClick={() => setShowBackupModal(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg transition text-sm"
-                title="데이터 백업 및 복원"
-              >
-                <Download className="w-4 h-4" />
-                Backup
-              </button>
-              <button
-                onClick={exportLocationHTML}
-                className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-sm"
-                title="QR코드용 자재위치 페이지 내보내기"
-              >
-                <Smartphone className="w-4 h-4" />
-                모바일 QR
-              </button>
-              <button
-                onClick={() => setShowDataUploadModal(true)}
-                className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 rounded-lg transition text-sm"
-              >
-                <Database className="w-4 h-4" />
-                데이터 관리
-              </button>
+              {isAdmin && (
+                <>
+                  <button
+                    onClick={() => setShowBackupModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-orange-500 hover:bg-orange-600 rounded-lg transition text-sm"
+                    title="데이터 백업 및 복원"
+                  >
+                    <Download className="w-4 h-4" />
+                    Backup
+                  </button>
+                  <button
+                    onClick={exportLocationHTML}
+                    className="flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-sm"
+                    title="QR코드용 자재위치 페이지 내보내기"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    모바일 QR
+                  </button>
+                  <button
+                    onClick={() => setShowDataUploadModal(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 rounded-lg transition text-sm"
+                  >
+                    <Database className="w-4 h-4" />
+                    데이터 관리
+                  </button>
+                </>
+              )}
               {(lastUpdated || openPOLastUpdated || bomLastUpdated) && (
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
@@ -7612,7 +7650,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               { id: 'layout', label: '랙 배치도', icon: Warehouse },
               { id: 'view3d', label: '3D 뷰', icon: Box },
               { id: 'temphumidity', label: '온습도 관리', icon: Thermometer },
-              { id: 'todo', label: 'TO DO', icon: Check },
+              ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
             ].map(tab => (
               <button
                 key={tab.id}
@@ -7697,7 +7735,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 { id: 'pick', label: 'Cycle', icon: Clock },
                 { id: 'kpi', label: 'KPI', icon: TrendingUp },
                 { id: 'analysis', label: 'Analysis', icon: BarChart3 },
-                { id: 'todo', label: 'TO DO', icon: Check },
+                ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -7711,6 +7749,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </button>
               ))}
             </div>
+            {isAdmin && (
             <div className="mt-6 pt-4 border-t grid grid-cols-2 gap-3">
               <button
                 onClick={() => { setShowBackupModal(true); setShowMobileMenu(false); }}
@@ -7725,6 +7764,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <Database className="w-5 h-5" /> 데이터 관리
               </button>
             </div>
+            )}
           </div>
         </div>
       )}
@@ -7738,13 +7778,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             <FileSpreadsheet className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-700 mb-2">재고 데이터가 없습니다</h3>
             <p className="text-gray-500 mb-6">SAP에서 추출한 재고 리스트 엑셀을 업로드해주세요.</p>
-            <button
-              onClick={() => setShowUploadModal(true)}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-            >
-              <Upload className="w-5 h-5" />
-              엑셀 업로드
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                <Upload className="w-5 h-5" />
+                엑셀 업로드
+              </button>
+            )}
           </div>
         )}
 
@@ -7760,9 +7802,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p className="text-sm text-amber-600">ZBIN(Stock) 데이터를 업로드해주세요.</p>
                 </div>
               </div>
-              <button onClick={() => setShowDataUploadModal(true)} className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium">
+              {isAdmin && <button onClick={() => setShowDataUploadModal(true)} className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium">
                 업로드하기
-              </button>
+              </button>}
             </div>
             {/* Open PO 미업로드 알림 */}
             {showOpenPOAlert && (
@@ -7774,9 +7816,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <p className="text-sm text-orange-600">ME2N(Open PO) 데이터를 업로드해주세요.</p>
                   </div>
                 </div>
-                <button onClick={() => setShowOpenPOModal(true)} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium">
+                {isAdmin && <button onClick={() => setShowOpenPOModal(true)} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium">
                   업로드하기
-                </button>
+                </button>}
               </div>
             )}
             {/* 온습도 미입력 알림 */}
@@ -9937,16 +9979,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 )}
               </div>
               <div className="flex gap-2">
+                {isAdmin && (
                 <label className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 cursor-pointer">
                   <Upload className="w-4 h-4" /> Order CSV 업로드
                   <input type="file" accept=".csv" onChange={handleOrderCsvUpload} className="hidden" />
                 </label>
+                )}
                 <button onClick={() => downloadCycleExcel('pick')} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
                   <Download className="w-4 h-4" /> 엑셀 다운로드
                 </button>
+                {isAdmin && (
                 <button onClick={() => setShowPickModal(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
                   <Plus className="w-4 h-4" /> 새 기록
                 </button>
+                )}
               </div>
             </div>
 
@@ -10453,16 +10499,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 )}
               </div>
               <div className="flex gap-2">
+                {isAdmin && (
                 <label className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 cursor-pointer">
                   <Upload className="w-4 h-4" /> Order CSV 업로드
                   <input type="file" accept=".csv" onChange={handleOrderCsvUpload} className="hidden" />
                 </label>
+                )}
                 <button onClick={downloadKittingExcel} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
                   <Download className="w-4 h-4" /> 엑셀 다운로드
                 </button>
+                {isAdmin && (
                 <button onClick={() => setShowKittingModal(true)} className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">
                   <Plus className="w-4 h-4" /> 새 기록
                 </button>
+                )}
               </div>
             </div>
 
@@ -10858,9 +10908,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <button onClick={() => downloadCycleExcel('receive')} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
                   <Download className="w-4 h-4" /> 엑셀 다운로드
                 </button>
+                {isAdmin && (
                 <button onClick={() => setShowReceiveModal(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                   <Plus className="w-4 h-4" /> 새 기록
                 </button>
+                )}
               </div>
             </div>
 
@@ -11189,12 +11241,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 >
                   <Download className="w-4 h-4" /> 엑셀 내보내기
                 </button>
-                <button 
+                {isAdmin && (
+                <button
                   onClick={() => setShowWeightModal(true)}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
                 >
                   <Plus className="w-4 h-4" /> 신규 Material 추가
                 </button>
+                )}
               </div>
             </div>
 
@@ -11745,6 +11799,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p className="text-indigo-200 mt-1">월간 성과 지표 관리</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {isAdmin && (<>
                   {/* v17: GR Cancel GitHub에서 자동 로드 버튼 */}
                   <button
                     onClick={async () => {
@@ -11781,6 +11836,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       }}
                     />
                   </label>
+                  </>)}
                   <button
                     onClick={exportKpiToPdf}
                     disabled={pdfExporting}
@@ -12292,7 +12348,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         const stockM = detail && detail.stock ? Math.round(detail.stock / 1000000) : null; // 백만원
                         const ratioCum = detail ? detail.ratioCum : null;
                         return {
-                          name: `${String(selectedYear).slice(2)}/${String(idx + 1).padStart(2, '0')}`,
+                          name: `${idx + 1}월`,
                           stockM,
                           ratioCum
                         };
@@ -13024,7 +13080,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         )}
 
         {/* TO DO 리스트 */}
-        {activeTab === 'todo' && (
+        {activeTab === 'todo' && isAdmin && (
           <div className="space-y-6">
             {/* 마감 임박 알림 배너 */}
             {showDueSoonAlert && dueSoonTodos.length > 0 && (
@@ -15287,6 +15343,30 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             >
               취소
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 로그인 모달 */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLoginModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm m-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-4">🔒 관리자 로그인</h3>
+            <p className="text-sm text-gray-500 mb-4">데이터 수정/업로드 권한이 필요합니다.</p>
+            <input
+              type="password"
+              placeholder="비밀번호 입력"
+              value={loginPw}
+              onChange={e => { setLoginPw(e.target.value); setLoginError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
+              className="w-full px-4 py-2 border rounded-lg mb-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              autoFocus
+            />
+            {loginError && <p className="text-red-500 text-sm mb-2">{loginError}</p>}
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => setShowLoginModal(false)} className="flex-1 px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">취소</button>
+              <button onClick={handleLogin} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">로그인</button>
+            </div>
           </div>
         </div>
       )}
