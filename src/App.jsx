@@ -14560,7 +14560,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         </div>
       )}
 
-      {/* 온습도 Excel 내보내기 모달 */}}
+      {/* 온습도 Excel 내보내기 모달 */}
 
       {/* 부족/저재고 상세 모달 */}
       {showShortageDetailModal && (
