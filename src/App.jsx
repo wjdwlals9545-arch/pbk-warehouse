@@ -11884,10 +11884,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
 
-            {/* PDF 캡처 영역 */}
-            <div ref={kpiContentRef}>
-            {/* 연도 선택 */}
-            <div className="flex items-center justify-between">
+            {/* 연도 선택 (PDF 영역 밖) */}
+            <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600">연도 선택:</span>
                 {[2024, 2025, 2026].map(year => (
@@ -11930,6 +11928,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             </div>
 
+            {/* PDF 캡처 영역 */}
+            <div ref={kpiContentRef}>
             {/* KPI 요약 카드 - 선택된 연도 */}
             {(() => {
               const selectedYear = kpiSelectedYear;
@@ -12340,7 +12340,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     })()}
 
                     {/* Inventory Adjust Cost 연도별 트렌드 */}
-                    <div className="mb-8">
+                    <div className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                       <h4 className="text-base font-bold text-gray-700 mb-3">
                         📊 Inventory Adjust Cost 연도별 추이
                         {Object.keys(kpiData.invAdjustDetail).length > 0 && (
@@ -12552,6 +12552,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     })()}
 
                     {/* Kitting Lead Time - 막대(하단25%)=건수, 꺾은선(상단75%)=L/T */}
+                    <div className="border-t-2 border-gray-200 pt-8 mt-8"></div>
                     {(() => {
                       const ltChartData = yearMonths.map((month, idx) => {
                         const md = kittingLTByMonth[month];
@@ -12638,6 +12639,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       );
                     })()}
 
+                    <div className="border-t-2 border-gray-200 pt-8 mt-8"></div>
                     {/* Kitting Cycle Time - 막대(하단25%)=건수, 꺾은선(상단75%)=CT(분) */}
                     {(() => {
                       const ctChartData = yearMonths.map((month, idx) => {
@@ -12714,6 +12716,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       );
                     })()}
 
+                    <div className="border-t-2 border-gray-200 pt-8 mt-8"></div>
                     {/* 입고 Cycle Time - 막대(하단25%)=입고건수, 꺾은선(상단75%)=평균시간(분) */}
                     {(() => {
                       const rcChartData = yearMonths.map((month, idx) => {
