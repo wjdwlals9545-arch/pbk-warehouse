@@ -11982,62 +11982,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       📈 {selectedYear}년 월별 KPI 추이
                     </h3>
 
-                    {/* v17: GR Cancel 연도별 트렌드 - 엑셀 업로드 데이터 동적 반영 */}
-                    <div className="mb-8">
-                      <h4 className="text-base font-bold text-gray-700 mb-3">
-                        📊 GR Cancel Rate 연도별 추이
-                        {Object.keys(kpiData.grCancelQty).length > 0 && (
-                          <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">📂 엑셀 데이터 반영됨</span>
-                        )}
-                      </h4>
-                      {(() => {
-                        // 연도별 확정 데이터 (SUM 시트 기준 - 정적 사용)
-                        // SUM 시트의 연간 합계 컬럼에서 추출한 값
-                        const annualData = [
-                          { year: 2020, qty: 3294, cancel: 141 },
-                          { year: 2021, qty: 1773, cancel: 31 },
-                          { year: 2022, qty: 1411, cancel: 24 },
-                          { year: 2023, qty: 1220, cancel: 6 },
-                          { year: 2024, qty: 1277, cancel: 2 },
-                          { year: 2025, qty: 1377, cancel: 5 },
-                        ];
-                        const maxRate = Math.max(...annualData.map(d => d.qty > 0 ? (d.cancel/d.qty)*100 : 0));
-                        return (
-                          <>
-                            <div className="grid grid-cols-6 gap-3">
-                              {annualData.map(d => {
-                                const rate = d.qty > 0 ? (d.cancel / d.qty) * 100 : 0;
-                                return (
-                                  <div key={d.year} className="bg-gray-50 rounded-lg p-3 text-center">
-                                    <p className="text-xs text-gray-500 mb-1">{d.year}</p>
-                                    <p className={`text-lg font-bold ${
-                                      rate <= 0.5 ? 'text-emerald-600' : 
-                                      rate <= 2 ? 'text-amber-600' : 'text-red-600'
-                                    }`}>{rate.toFixed(2)}%</p>
-                                    <p className="text-xs text-gray-400 mt-1">{d.cancel}/{d.qty}건</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div className="mt-3 flex items-end gap-1 h-16">
-                              {annualData.map((d, i) => {
-                                const rate = d.qty > 0 ? (d.cancel / d.qty) * 100 : 0;
-                                return (
-                                  <div key={i} className="flex-1 flex flex-col items-center">
-                                    <div 
-                                      className={`w-full rounded-t ${rate <= 0.5 ? 'bg-emerald-500' : rate <= 2 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                      style={{ height: `${maxRate > 0 ? (rate / maxRate) * 100 : 0}%` }}
-                                    />
-                                    <span className="text-xs text-gray-400 mt-1">{String(d.year).slice(2)}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-
                     {/* GR Cancel - 막대(하단25%)=GR Qty, 꺾은선(상단75%)=월별 취소율 */}
                     {(() => {
                       const grChartData = yearMonths.map((month, idx) => {
@@ -12139,142 +12083,101 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       );
                     })()}
 
-                    {/* Inventory Adjust Cost - ComposedChart */}
+                    {/* Inventory Adjust Cost - Excel 스타일 (파란 막대=Stock, 노란 꺾은선=Cum%) */}
                     {(() => {
-                      // 연도별 확정 데이터 (역대 연간 Adjust cost)
-                      const historicalData = [
-                        { year: 2020, ratio: 0.1046 },
-                        { year: 2021, ratio: 0.3257 },
-                        { year: 2022, ratio: 0.2981 },
-                        { year: 2023, ratio: 0.0912 },
-                        { year: 2024, ratio: 0.0224 },
-                        { year: 2025, ratio: 0.0145 },
-                      ];
-
                       // 월별 데이터 구성
                       const invChartData = yearMonths.map((month, idx) => {
                         const detail = kpiData.invAdjustDetail[month];
-                        const ratioQ = detail ? detail.ratioQ : null;
+                        const stockM = detail && detail.stock ? Math.round(detail.stock / 1000000) : null; // 백만원
                         const ratioCum = detail ? detail.ratioCum : null;
-                        const variance = detail ? detail.variance : null;
-                        const stock = detail ? detail.stock : null;
                         return {
-                          name: `${idx + 1}월`,
-                          ratioQ,
-                          ratioCum,
-                          variance,
-                          stock
+                          name: `${String(selectedYear).slice(2)}/${String(idx + 1).padStart(2, '0')}`,
+                          stockM,
+                          ratioCum
                         };
                       });
-                      const hasData = invChartData.some(d => d.ratioQ !== null);
-                      const ratioMax = Math.max(...invChartData.map(d => d.ratioQ || 0), 0.1);
-                      const cumMax = Math.max(...invChartData.map(d => d.ratioCum || 0), 0.1);
-                      const yMax = parseFloat((Math.max(ratioMax, cumMax) * 2).toFixed(3)) || 0.2;
-                      // 연간 요약
+                      const hasData = invChartData.some(d => d.stockM !== null);
+                      const stockMax = Math.max(...invChartData.map(d => d.stockM || 0), 1000);
+                      const cumMax = Math.max(...invChartData.map(d => d.ratioCum || 0), 0.05);
+                      // 왼쪽: stock 막대를 하단 60%로 — max * 1.5
+                      const leftMax = Math.ceil(stockMax * 1.5 / 500) * 500;
+                      // 오른쪽: cum ratio — 충분한 여유
+                      const rightMax = parseFloat((cumMax * 2.5).toFixed(3)) || 0.15;
                       const lastCum = [...invChartData].reverse().find(d => d.ratioCum !== null);
                       const latestCumVal = lastCum ? lastCum.ratioCum : null;
+                      const TARGET = 0.095;
 
                       return (
                         <div className="mb-8">
-                          {/* 역대 연간 추이 */}
-                          <h4 className="text-base font-bold text-gray-700 mb-3">
-                            📊 Inventory Adjust Cost 연도별 추이
-                            {hasData && (
-                              <span className="ml-2 text-xs text-violet-600 bg-violet-50 px-2 py-0.5 rounded">📂 엑셀 데이터 반영됨</span>
-                            )}
-                          </h4>
-                          <div className="grid grid-cols-6 gap-3 mb-4">
-                            {historicalData.map(d => (
-                              <div key={d.year} className="bg-gray-50 rounded-lg p-3 text-center">
-                                <p className="text-xs text-gray-500 mb-1">{d.year}</p>
-                                <p className={`text-lg font-bold ${
-                                  d.ratio <= 0.064 ? 'text-emerald-600' :
-                                  d.ratio <= 0.15 ? 'text-amber-600' : 'text-red-600'
-                                }`}>{d.ratio.toFixed(4)}%</p>
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* 월별 ComposedChart */}
+                          {/* 월별 ComposedChart — Excel 스타일 */}
                           <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-base font-bold text-gray-700">Inventory Adjust Cost - {selectedYear}년 월별</h4>
+                            <h4 className="text-base font-bold text-gray-700">Inventory Adjust Cost Trend</h4>
                             <div className="flex items-center gap-4 text-xs">
                               <span className="flex items-center gap-1 text-gray-400">
-                                <span className="inline-block w-3 h-3 rounded bg-violet-400 opacity-70"></span>막대 = Adjust Cost (Q) %
+                                <span className="inline-block w-3 h-3 rounded bg-blue-500"></span>Total stock value
                               </span>
                               <span className="flex items-center gap-1 text-gray-400">
-                                <span className="inline-block w-4 border-t-2 border-orange-500"></span>꺾은선 = Cumulative %
+                                <span className="inline-block w-4 border-t-2 border-amber-500"></span>Adjust cost (Cum.)
                               </span>
-                              {latestCumVal !== null && (
-                                <span className={`px-2 py-0.5 rounded font-medium ${
-                                  latestCumVal <= 0.064 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                                }`}>
-                                  Cum: {latestCumVal.toFixed(4)}% {latestCumVal <= 0.064 ? '✅' : '⚠️'}
-                                </span>
-                              )}
+                              <span className={`px-2 py-0.5 rounded font-medium ${
+                                latestCumVal !== null && latestCumVal <= TARGET ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-700'
+                              }`}>
+                                {selectedYear} Target: {TARGET}% (80점)
+                              </span>
                             </div>
                           </div>
-                          <div className="flex gap-3 mb-3 text-xs">
-                            <span className="px-2 py-1 bg-violet-50 text-violet-700 rounded">
-                              Target: <b>≤ 0.064%</b> (Cumulative)
-                            </span>
-                            {latestCumVal !== null && (
-                              <span className={`px-2 py-1 rounded ${
-                                latestCumVal <= 0.064 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
-                              }`}>
-                                Current Cum: <b>{latestCumVal.toFixed(4)}%</b>
-                              </span>
-                            )}
-                          </div>
-                          <ResponsiveContainer width="100%" height={260}>
-                            <ComposedChart data={invChartData} margin={{top:30,right:60,left:5,bottom:5}}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-                              <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
-                              <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#7c3aed'}}
-                                domain={[0, yMax]} width={50}
-                                tickFormatter={v => `${v.toFixed(3)}%`} />
-                              <YAxis yAxisId="right" orientation="right" tick={{fontSize:10, fill:'#ea580c'}}
-                                domain={[0, yMax]} width={50}
+                          <ResponsiveContainer width="100%" height={300}>
+                            <ComposedChart data={invChartData} margin={{top:30,right:65,left:10,bottom:5}}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                              <XAxis dataKey="name" tick={{fontSize:10}} />
+                              {/* 왼쪽: Total stock value (백만원) */}
+                              <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#1e40af'}}
+                                domain={[0, leftMax]} width={45}
+                                tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}B` : `${v}M`}
+                                label={{value:'백만원', angle:-90, position:'insideLeft', fill:'#1e40af', fontSize:11, dx:-5}} />
+                              {/* 오른쪽: Adjust cost Cum % */}
+                              <YAxis yAxisId="right" orientation="right" tick={{fontSize:10, fill:'#b45309'}}
+                                domain={[0, rightMax]} width={55}
                                 tickFormatter={v => `${v.toFixed(3)}%`} />
                               <Tooltip
                                 contentStyle={{borderRadius:8, border:'1px solid #e5e7eb', fontSize:12}}
                                 formatter={(v, name) => {
                                   if (v === null || v === undefined) return ['-', name];
-                                  return [`${v.toFixed(4)}%`, name];
+                                  if (name === 'Total stock value') return [`${v.toLocaleString()} M`, name];
+                                  return [`${v.toFixed(3)}%`, name];
                                 }} />
-                              <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:8}} />
-                              {/* 목표선 0.064% */}
-                              <ReferenceLine yAxisId="left" y={0.064} stroke="#10b981" strokeDasharray="5 3"
-                                label={{value:'Target 0.064%', position:'right', fill:'#10b981', fontSize:10}} />
-                              {/* Adjust cost (Q) 막대 */}
-                              <Bar yAxisId="left" dataKey="ratioQ" name="Adjust Cost (Q) %" radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
+                              <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:10}} />
+                              {/* 목표선 */}
+                              <ReferenceLine yAxisId="right" y={TARGET} stroke="#b45309" strokeDasharray="6 3" strokeWidth={1.5}
+                                label={{value:`Target ${TARGET}%`, position:'right', fill:'#b45309', fontSize:10}} />
+                              {/* 파란 막대: Total stock value */}
+                              <Bar yAxisId="left" dataKey="stockM" name="Total stock value" radius={[3,3,0,0]} maxBarSize={50}
+                                fill="#3b82f6" fillOpacity={0.85}
                                 label={(props) => {
                                   const {x,y,width,value}=props;
                                   if(!value) return null;
-                                  return <text x={x+width/2} y={y-5} fill="#6d28d9" textAnchor="middle" fontSize={10} fontWeight={700}>{value.toFixed(4)}%</text>;
-                                }}>
-                                {invChartData.map((d,i) => (
-                                  <Cell key={i} fill={!d.ratioQ ? '#e5e7eb' : d.ratioQ <= 0.064 ? '#a78bfa' : '#f59e0b'} />
-                                ))}
-                              </Bar>
-                              {/* Cumulative 꺾은선 */}
-                              <Line yAxisId="right" type="monotone" dataKey="ratioCum" name="Cumulative %"
-                                stroke="#ea580c" strokeWidth={3}
-                                dot={{r:6, fill:'#fff', stroke:'#ea580c', strokeWidth:2.5}}
-                                activeDot={{r:8}}
+                                  const label = value >= 1000 ? `${(value/1000).toFixed(0)}B` : `${value.toLocaleString()}`;
+                                  return <text x={x+width/2} y={y-6} fill="#1e40af" textAnchor="middle" fontSize={11} fontWeight={700}>{label}</text>;
+                                }}
+                              />
+                              {/* 노란/주황 꺾은선: Adjust cost (Cum.) */}
+                              <Line yAxisId="right" type="monotone" dataKey="ratioCum" name="Adjust cost (Cum.)"
+                                stroke="#eab308" strokeWidth={3}
+                                dot={{r:5, fill:'#eab308', stroke:'#fff', strokeWidth:2}}
+                                activeDot={{r:7}}
                                 label={(props) => {
                                   const {x,y,value}=props;
                                   if(value===null||value===undefined) return null;
-                                  const text = value.toFixed(4)+'%';
-                                  const tw = text.length*5.5+6;
+                                  const text = value.toFixed(3)+'%';
+                                  const tw = text.length*5.5+8;
                                   return (
                                     <g>
-                                      <rect x={x-tw/2} y={y-26} width={tw} height={15} rx={3} fill="rgba(234,88,12,0.12)" />
-                                      <text x={x} y={y-15} fill="#ea580c" textAnchor="middle" fontSize={10} fontWeight={700}>{text}</text>
+                                      <rect x={x-tw/2} y={y+6} width={tw} height={14} rx={3} fill="rgba(234,179,8,0.15)" />
+                                      <text x={x} y={y+16} fill="#a16207" textAnchor="middle" fontSize={9} fontWeight={700}>{text}</text>
                                     </g>
                                   );
                                 }}
-                                connectNulls={false} />
+                                connectNulls={true} />
                             </ComposedChart>
                           </ResponsiveContainer>
                           {!hasData && (
