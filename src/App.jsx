@@ -3464,6 +3464,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const lastSyncHashRef = React.useRef(null);
   const kpiContentRef = React.useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
+  const [showKpiUploadGuide, setShowKpiUploadGuide] = useState(false);
 
   // 간단 로그인 (관리자 모드)
   const ADMIN_HASH = 'o04s8c'; // simpleHash of admin password
@@ -3863,26 +3864,29 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       let poLoaded = false;
 
       // GitHub 파일의 마지막 커밋 날짜 확인 (오늘 업데이트된 파일만 로드)
+      // 반환: { fresh: boolean, commitTime: string|null } - commitTime은 한국 시간 문자열
       const isFileUpdatedToday = async (filePath) => {
         try {
           const token = safeStorage.getItem('pbk_gh_token');
-          if (!token) return true; // 토큰 없으면 그냥 로드
+          if (!token) return { fresh: true, commitTime: null }; // 토큰 없으면 그냥 로드
           const resp = await fetch(`https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/commits?path=${filePath}&per_page=1`, {
             headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
           });
-          if (!resp.ok) return true;
+          if (!resp.ok) return { fresh: true, commitTime: null };
           const commits = await resp.json();
-          if (!commits || commits.length === 0) return false;
+          if (!commits || commits.length === 0) return { fresh: false, commitTime: null };
           const commitDate = new Date(commits[0].commit.committer.date);
+          const commitTimeKR = commitDate.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
           const todayKR = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-          return commitDate.toISOString().slice(0, 10) === todayKR.toISOString().slice(0, 10);
-        } catch (e) { return true; } // 에러 시 그냥 로드
+          const isFresh = commitDate.toISOString().slice(0, 10) === todayKR.toISOString().slice(0, 10);
+          return { fresh: isFresh, commitTime: commitTimeKR };
+        } catch (e) { return { fresh: true, commitTime: null }; } // 에러 시 그냥 로드
       };
 
       // 1. Excel 우선 시도 (Stock) - Power Automate가 항상 최신 Excel을 올림
-      const stockExcelFresh = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
-      if (!stockExcelFresh) showToast('⚠️ Stock Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
-      if (stockExcelFresh) try {
+      const stockExcelCheck = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
+      if (!stockExcelCheck.fresh) showToast('⚠️ Stock Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
+      if (stockExcelCheck.fresh) try {
         const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
         if (xlsResp.ok) {
           await ensureXLSX();
@@ -3891,11 +3895,11 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           if (inventory.length > 0) {
             setInventoryData(inventory);
             processRackSummary(inventory);
-            const now2 = new Date().toLocaleString('ko-KR');
-            setLastUpdated(now2);
+            const ts = stockExcelCheck.commitTime || new Date().toLocaleString('ko-KR');
+            setLastUpdated(ts);
             safeStorage.setItem('pbk_inventory', JSON.stringify(inventory));
-            safeStorage.setItem('pbk_last_updated', now2);
-            uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: now2, count: inventory.length }, 'Stock 데이터 (자동)');
+            safeStorage.setItem('pbk_last_updated', ts);
+            uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: ts, count: inventory.length }, 'Stock 데이터 (자동)');
             showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개)`, 'success');
             addDataHistory('stock', 'GitHub Excel 자동 로드', inventory.length);
             stockLoaded = true;
@@ -3905,9 +3909,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
       // 2. Excel 없으면 JSON fallback (Stock) - JSON도 오늘 업데이트된 것만
       if (!stockLoaded) {
-        const stockJsonFresh = await isFileUpdatedToday('public/data/stock_data.json');
-        if (!stockJsonFresh) showToast('⚠️ Stock JSON: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
-        if (stockJsonFresh) try {
+        const stockJsonCheck = await isFileUpdatedToday('public/data/stock_data.json');
+        if (!stockJsonCheck.fresh) showToast('⚠️ Stock JSON: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
+        if (stockJsonCheck.fresh) try {
           const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
           if (stockResp.ok) {
             const stockJson = await stockResp.json();
@@ -3926,9 +3930,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       }
 
       // 3. Excel 우선 시도 (OpenPO)
-      const poExcelFresh = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
-      if (!poExcelFresh) showToast('⚠️ Open PO Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
-      if (poExcelFresh) try {
+      const poExcelCheck = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
+      if (!poExcelCheck.fresh) showToast('⚠️ Open PO Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
+      if (poExcelCheck.fresh) try {
         const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
         if (xlsResp.ok) {
           await ensureXLSX();
@@ -3936,11 +3940,11 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           const openPOList = parseOpenPOExcel(buf);
           if (openPOList.length > 0) {
             setOpenPOData(openPOList);
-            const now2 = new Date().toLocaleString('ko-KR');
-            setOpenPOLastUpdated(now2);
+            const ts = poExcelCheck.commitTime || new Date().toLocaleString('ko-KR');
+            setOpenPOLastUpdated(ts);
             safeStorage.setItem('pbk_open_po', JSON.stringify(openPOList));
-            safeStorage.setItem('pbk_open_po_updated', now2);
-            uploadDataToGitHub('public/data/openpo_data.json', { data: openPOList, updated: now2, count: openPOList.length }, 'OpenPO 데이터 (자동)');
+            safeStorage.setItem('pbk_open_po_updated', ts);
+            uploadDataToGitHub('public/data/openpo_data.json', { data: openPOList, updated: ts, count: openPOList.length }, 'OpenPO 데이터 (자동)');
             showToast(`📊 GitHub Open PO Excel 자동 파싱 완료 (${openPOList.length}개)`, 'success');
             addDataHistory('openPO', 'GitHub Excel 자동 로드', openPOList.length);
             poLoaded = true;
@@ -3950,9 +3954,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
       // 4. Excel 없으면 JSON fallback (OpenPO) - JSON도 오늘 업데이트된 것만
       if (!poLoaded) {
-        const poJsonFresh = await isFileUpdatedToday('public/data/openpo_data.json');
-        if (!poJsonFresh) showToast('⚠️ Open PO JSON: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
-        if (poJsonFresh) try {
+        const poJsonCheck = await isFileUpdatedToday('public/data/openpo_data.json');
+        if (!poJsonCheck.fresh) showToast('⚠️ Open PO JSON: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
+        if (poJsonCheck.fresh) try {
           const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
           if (poResp.ok) {
             const poJson = await poResp.json();
@@ -11799,44 +11803,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p className="text-indigo-200 mt-1">월간 성과 지표 관리</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {isAdmin && (<>
-                  {/* v17: GR Cancel GitHub에서 자동 로드 버튼 */}
+                  {isAdmin && (
                   <button
-                    onClick={async () => {
-                      try {
-                        showToast('GitHub에서 GR Cancel 데이터 로드 중...', 'info');
-                        const url = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/gr_cancel_latest.xlsx';
-                        const resp = await fetch(url);
-                        if (!resp.ok) throw new Error('GitHub 파일 없음');
-                        const blob = await resp.blob();
-                        const file = new File([blob], 'gr_cancel_latest.xlsx', { type: blob.type });
-                        parseGRCancelExcel(file);
-                        showToast('✅ GR Cancel 데이터 로드 완료!', 'success');
-                      } catch (err) {
-                        showToast('⚠️ GR Cancel 로드 실패: ' + err.message, 'error');
-                      }
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition text-white text-sm font-medium"
+                    onClick={() => setShowKpiUploadGuide(prev => !prev)}
+                    className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition text-white text-sm font-medium"
                   >
                     <FileSpreadsheet className="w-4 h-4" />
-                    GR Cancel 업로드
+                    {showKpiUploadGuide ? '업로드 방법 닫기' : '업로드 방법'}
                   </button>
-                  {/* v17: Inventory Adjust Cost 엑셀 업로드 버튼 */}
-                  <label className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 rounded-lg transition cursor-pointer text-white text-sm font-medium">
-                    <FileSpreadsheet className="w-4 h-4" />
-                    Inv. Adjust Cost 업로드
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) parseInventoryLossExcel(file);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
-                  </>)}
+                  )}
                   <button
                     onClick={exportKpiToPdf}
                     disabled={pdfExporting}
@@ -11848,6 +11823,67 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </div>
               </div>
             </div>
+
+            {/* 업로드 방법 가이드 */}
+            {showKpiUploadGuide && isAdmin && (
+              <div className="bg-white rounded-xl shadow-sm border p-5 space-y-4">
+                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                  <FileSpreadsheet className="w-5 h-5 text-indigo-500" /> KPI 데이터 업로드 방법
+                </h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {/* GR Cancel */}
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                    <h4 className="font-semibold text-blue-800 mb-2">GR Cancel</h4>
+                    <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+                      <li>매월 초 Power Automate 실행</li>
+                      <li>GitHub에 엑셀 파일 자동 업로드</li>
+                      <li>대시보드에서 자동 로드</li>
+                    </ol>
+                    <button
+                      onClick={async () => {
+                        try {
+                          showToast('GitHub에서 GR Cancel 데이터 로드 중...', 'info');
+                          const url = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/gr_cancel_latest.xlsx';
+                          const resp = await fetch(url);
+                          if (!resp.ok) throw new Error('GitHub 파일 없음');
+                          const blob = await resp.blob();
+                          const file = new File([blob], 'gr_cancel_latest.xlsx', { type: blob.type });
+                          parseGRCancelExcel(file);
+                          showToast('GR Cancel 데이터 로드 완료!', 'success');
+                        } catch (err) {
+                          showToast('GR Cancel 로드 실패: ' + err.message, 'error');
+                        }
+                      }}
+                      className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 rounded-lg transition text-white text-xs font-medium"
+                    >
+                      <Upload className="w-3.5 h-3.5" /> GitHub에서 로드
+                    </button>
+                  </div>
+                  {/* Inv. Adjust Cost */}
+                  <div className="bg-violet-50 rounded-lg p-4 border border-violet-200">
+                    <h4 className="font-semibold text-violet-800 mb-2">Inventory Adjust Cost</h4>
+                    <ol className="text-sm text-violet-700 space-y-1 list-decimal list-inside">
+                      <li>SAP MB5B → 월말 Total Stock Value</li>
+                      <li>SAP MB51 → Movement Type 711, 712</li>
+                      <li>엑셀 파일로 정리 후 수동 업로드</li>
+                    </ol>
+                    <label className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-violet-500 hover:bg-violet-600 rounded-lg transition cursor-pointer text-white text-xs font-medium">
+                      <Upload className="w-3.5 h-3.5" /> 엑셀 업로드
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) parseInventoryLossExcel(file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* PDF 캡처 영역 */}
             <div ref={kpiContentRef}>
