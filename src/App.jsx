@@ -4263,6 +4263,14 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const filteredSortedReceives = React.useMemo(() => {
     let result = [...receiveCycles];
 
+    // 월별 필터
+    if (receiveFilterMonth) {
+      result = result.filter(r => {
+        const dt = r.delivery || r.migoTime || '';
+        return dt.startsWith(receiveFilterMonth);
+      });
+    }
+
     // 검색 필터
     if (receiveSearchTerm) {
       const term = receiveSearchTerm.toLowerCase();
@@ -4299,7 +4307,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     });
 
     return result;
-  }, [receiveCycles, receiveSearchTerm, receiveFilterStatus, receiveSortBy, receiveSortOrder]);
+  }, [receiveCycles, receiveFilterMonth, receiveSearchTerm, receiveFilterStatus, receiveSortBy, receiveSortOrder]);
 
   // 무게 데이터 수정
   const updateWeight = (material, field, value) => {
@@ -7396,7 +7404,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 title="데이터 백업 및 복원"
               >
                 <Download className="w-4 h-4" />
-                백업/복원
+                Backup
               </button>
               <button
                 onClick={exportLocationHTML}
@@ -7588,7 +7596,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 onClick={() => { setShowBackupModal(true); setShowMobileMenu(false); }}
                 className="flex items-center justify-center gap-2 p-3 bg-orange-100 text-orange-600 rounded-xl"
               >
-                <Download className="w-5 h-5" /> 백업/복원
+                <Download className="w-5 h-5" /> Backup
               </button>
               <button
                 onClick={() => { setShowDataUploadModal(true); setShowMobileMenu(false); }}
