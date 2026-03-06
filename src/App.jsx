@@ -3677,7 +3677,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
       // 1. Excel 우선 시도 (Stock) - Power Automate가 항상 최신 Excel을 올림
       const stockExcelFresh = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
-      if (!stockExcelFresh) console.log('Stock Excel: 오늘 업데이트 안 됨 - 스킵');
+      if (!stockExcelFresh) showToast('⚠️ Stock Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
       if (stockExcelFresh) try {
         const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
         if (xlsResp.ok) {
@@ -3702,7 +3702,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       // 2. Excel 없으면 JSON fallback (Stock) - JSON도 오늘 업데이트된 것만
       if (!stockLoaded) {
         const stockJsonFresh = await isFileUpdatedToday('public/data/stock_data.json');
-        if (!stockJsonFresh) console.log('Stock JSON: 오늘 업데이트 안 됨 - 스킵');
+        if (!stockJsonFresh) showToast('⚠️ Stock JSON: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
         if (stockJsonFresh) try {
           const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
           if (stockResp.ok) {
@@ -3723,7 +3723,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
       // 3. Excel 우선 시도 (OpenPO)
       const poExcelFresh = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
-      if (!poExcelFresh) console.log('OpenPO Excel: 오늘 업데이트 안 됨 - 스킵');
+      if (!poExcelFresh) showToast('⚠️ Open PO Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
       if (poExcelFresh) try {
         const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
         if (xlsResp.ok) {
@@ -3747,7 +3747,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       // 4. Excel 없으면 JSON fallback (OpenPO) - JSON도 오늘 업데이트된 것만
       if (!poLoaded) {
         const poJsonFresh = await isFileUpdatedToday('public/data/openpo_data.json');
-        if (!poJsonFresh) console.log('OpenPO JSON: 오늘 업데이트 안 됨 - 스킵');
+        if (!poJsonFresh) showToast('⚠️ Open PO JSON: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
         if (poJsonFresh) try {
           const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
           if (poResp.ok) {
