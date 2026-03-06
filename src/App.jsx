@@ -11982,6 +11982,59 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       📈 {selectedYear}년 월별 KPI 추이
                     </h3>
 
+                    {/* GR Cancel 연도별 트렌드 */}
+                    <div className="mb-8">
+                      <h4 className="text-base font-bold text-gray-700 mb-3">
+                        📊 GR Cancel Rate 연도별 추이
+                        {Object.keys(kpiData.grCancelQty).length > 0 && (
+                          <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">📂 엑셀 데이터 반영됨</span>
+                        )}
+                      </h4>
+                      {(() => {
+                        const annualData = [
+                          { year: 2020, qty: 3294, cancel: 141 },
+                          { year: 2021, qty: 1773, cancel: 31 },
+                          { year: 2022, qty: 1411, cancel: 24 },
+                          { year: 2023, qty: 1220, cancel: 6 },
+                          { year: 2024, qty: 1277, cancel: 2 },
+                          { year: 2025, qty: 1377, cancel: 5 },
+                        ];
+                        const maxRate = Math.max(...annualData.map(d => d.qty > 0 ? (d.cancel/d.qty)*100 : 0));
+                        return (
+                          <>
+                            <div className="grid grid-cols-6 gap-3">
+                              {annualData.map(d => {
+                                const rate = d.qty > 0 ? (d.cancel / d.qty) * 100 : 0;
+                                return (
+                                  <div key={d.year} className="bg-gray-50 rounded-lg p-3 text-center">
+                                    <p className="text-xs text-gray-500 mb-1">{d.year}</p>
+                                    <p className={`text-lg font-bold ${
+                                      rate <= 0.5 ? 'text-emerald-600' : rate <= 2 ? 'text-amber-600' : 'text-red-600'
+                                    }`}>{rate.toFixed(2)}%</p>
+                                    <p className="text-xs text-gray-400 mt-1">{d.cancel}/{d.qty}건</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="mt-3 flex items-end gap-1 h-16">
+                              {annualData.map((d, i) => {
+                                const rate = d.qty > 0 ? (d.cancel / d.qty) * 100 : 0;
+                                return (
+                                  <div key={i} className="flex-1 flex flex-col items-center">
+                                    <div
+                                      className={`w-full rounded-t ${rate <= 0.5 ? 'bg-emerald-500' : rate <= 2 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                      style={{ height: `${maxRate > 0 ? (rate / maxRate) * 100 : 0}%` }}
+                                    />
+                                    <span className="text-xs text-gray-400 mt-1">{String(d.year).slice(2)}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+
                     {/* GR Cancel - 막대(하단25%)=GR Qty, 꺾은선(상단75%)=월별 취소율 */}
                     {(() => {
                       const grChartData = yearMonths.map((month, idx) => {
@@ -12082,6 +12135,53 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         </div>
                       );
                     })()}
+
+                    {/* Inventory Adjust Cost 연도별 트렌드 */}
+                    <div className="mb-8">
+                      <h4 className="text-base font-bold text-gray-700 mb-3">
+                        📊 Inventory Adjust Cost 연도별 추이
+                        {Object.keys(kpiData.invAdjustDetail).length > 0 && (
+                          <span className="ml-2 text-xs text-violet-600 bg-violet-50 px-2 py-0.5 rounded">📂 엑셀 데이터 반영됨</span>
+                        )}
+                      </h4>
+                      {(() => {
+                        const historicalData = [
+                          { year: 2020, ratio: 0.1046 },
+                          { year: 2021, ratio: 0.3257 },
+                          { year: 2022, ratio: 0.2981 },
+                          { year: 2023, ratio: 0.0912 },
+                          { year: 2024, ratio: 0.0224 },
+                          { year: 2025, ratio: 0.0145 },
+                        ];
+                        const maxRatio = Math.max(...historicalData.map(d => d.ratio));
+                        return (
+                          <>
+                            <div className="grid grid-cols-6 gap-3">
+                              {historicalData.map(d => (
+                                <div key={d.year} className="bg-gray-50 rounded-lg p-3 text-center">
+                                  <p className="text-xs text-gray-500 mb-1">{d.year}</p>
+                                  <p className={`text-lg font-bold ${
+                                    d.ratio <= 0.064 ? 'text-emerald-600' :
+                                    d.ratio <= 0.15 ? 'text-amber-600' : 'text-red-600'
+                                  }`}>{d.ratio.toFixed(4)}%</p>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-3 flex items-end gap-1 h-16">
+                              {historicalData.map((d, i) => (
+                                <div key={i} className="flex-1 flex flex-col items-center">
+                                  <div
+                                    className={`w-full rounded-t ${d.ratio <= 0.064 ? 'bg-emerald-500' : d.ratio <= 0.15 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                    style={{ height: `${maxRatio > 0 ? (d.ratio / maxRatio) * 100 : 0}%` }}
+                                  />
+                                  <span className="text-xs text-gray-400 mt-1">{String(d.year).slice(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
 
                     {/* Inventory Adjust Cost - Excel 스타일 (파란 막대=Stock, 노란 꺾은선=Cum%) */}
                     {(() => {
