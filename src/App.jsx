@@ -6336,7 +6336,10 @@ ${tableRows}
         const ws = workbook.Sheets[workbook.SheetNames[0]];
         const rows = window.XLSX.utils.sheet_to_json(ws);
 
+        const VALID_USERS = ['JJUNG', 'JZHWANG'];
         for (const row of rows) {
+          const userName = String(row['User Name'] || '').trim().toUpperCase();
+          if (!VALID_USERS.includes(userName)) continue;
           const mvt = String(row['Movement Type'] || '').trim();
           if (mvt !== '101' && mvt !== '102') continue;
 
