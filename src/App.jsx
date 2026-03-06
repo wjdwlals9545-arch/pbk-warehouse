@@ -3674,6 +3674,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
             safeStorage.setItem('pbk_last_updated', now2);
             uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: now2, count: inventory.length }, 'Stock 데이터 (자동)');
             showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개)`, 'success');
+            addDataHistory('stock', 'GitHub Excel 자동 로드', inventory.length);
             stockLoaded = true;
           }
         }
@@ -3692,6 +3693,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
               safeStorage.setItem('pbk_inventory', JSON.stringify(stockJson.data));
               if (stockJson.updated) safeStorage.setItem('pbk_last_updated', stockJson.updated);
               showToast(`☁️ GitHub Stock JSON 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
+              addDataHistory('stock', 'GitHub JSON 자동 로드', stockJson.data.length);
               stockLoaded = true;
             }
           }
@@ -3713,6 +3715,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
             safeStorage.setItem('pbk_open_po_updated', now2);
             uploadDataToGitHub('public/data/openpo_data.json', { data: openPOList, updated: now2, count: openPOList.length }, 'OpenPO 데이터 (자동)');
             showToast(`📊 GitHub Open PO Excel 자동 파싱 완료 (${openPOList.length}개)`, 'success');
+            addDataHistory('openPO', 'GitHub Excel 자동 로드', openPOList.length);
             poLoaded = true;
           }
         }
@@ -3730,6 +3733,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
               safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
               if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
               showToast(`☁️ GitHub OpenPO JSON 자동 로드 완료 (${poJson.data.length}개)`, 'success');
+              addDataHistory('openPO', 'GitHub JSON 자동 로드', poJson.data.length);
               poLoaded = true;
             }
           }
