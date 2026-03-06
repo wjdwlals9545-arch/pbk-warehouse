@@ -6329,43 +6329,45 @@ ${tableRows}
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = window.XLSX.read(data, { type: 'array' });
-        const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         const newQty = {};
         const newCancel = {};
 
-        // ── STEP 1: SUM 시트 파싱 ──
-        const sumSheetName = workbook.SheetNames.find(n => n.toUpperCase() === 'SUM');
-        if (sumSheetName) {
-          const ws = workbook.Sheets[sumSheetName];
-          const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-          if (rows.length >= 5) {
-            const headerRow = rows[0];
-            const qtyRow    = rows[1];
-            const cancelRow = rows[3];
-            let currentYear = null;
-            for (let col = 1; col < headerRow.length; col++) {
-              const cell = headerRow[col];
-              if (cell === null || cell === undefined) continue;
-              if (typeof cell === 'number' && cell >= 2020 && cell <= 2030) {
-                currentYear = Math.round(cell);
-                continue;
-              }
-              if (typeof cell === 'string' && MONTH_NAMES.includes(cell)) {
-                if (!currentYear) continue;
-                const mNum = MONTH_NAMES.indexOf(cell) + 1;
-                const key = `${currentYear}-${String(mNum).padStart(2, '0')}`;
-                const qty = qtyRow[col];
-                const cancel = cancelRow[col];
-                if (typeof qty === 'number' && qty > 0) newQty[key] = Math.round(qty);
-                if (typeof cancel === 'number' && cancel >= 0) newCancel[key] = Math.round(cancel);
-              }
-            }
+        // ── MB51 raw 데이터 파싱 (Movement Type 101=GR, 102=Cancel) ──
+        const ws = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = window.XLSX.utils.sheet_to_json(ws);
+
+        for (const row of rows) {
+          const mvt = String(row['Movement Type'] || '').trim();
+          if (mvt !== '101' && mvt !== '102') continue;
+
+          // Posting Date: Excel serial number → date
+          let postDate = row['Posting Date'];
+          if (typeof postDate === 'number') {
+            const d = new Date((postDate - 25569) * 86400000);
+            const y = d.getUTCFullYear();
+            const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const key = `${y}-${m}`;
+            if (mvt === '101') newQty[key] = (newQty[key] || 0) + 1;
+            if (mvt === '102') newCancel[key] = (newCancel[key] || 0) + 1;
+          } else if (typeof postDate === 'string') {
+            // MM/DD/YYYY or YYYY-MM-DD format
+            const parts = postDate.includes('/') ? postDate.split('/') : postDate.split('-');
+            let y, m;
+            if (parts[0].length === 4) { y = parts[0]; m = parts[1]; }
+            else { y = parts[2]; m = parts[0]; }
+            const key = `${y}-${String(parseInt(m)).padStart(2, '0')}`;
+            if (mvt === '101') newQty[key] = (newQty[key] || 0) + 1;
+            if (mvt === '102') newCancel[key] = (newCancel[key] || 0) + 1;
           }
         }
 
+        // Cancel이 없는 월에 0 채우기
+        for (const key of Object.keys(newQty)) {
+          if (!newCancel[key]) newCancel[key] = 0;
+        }
+
         const qtyCount = Object.keys(newQty).length;
-        const cancelCount = Object.keys(newCancel).length;
-        if (qtyCount === 0) throw new Error('SUM 시트에서 데이터를 파싱할 수 없습니다. SUM 시트를 확인하세요.');
+        if (qtyCount === 0) throw new Error('MB51 데이터를 파싱할 수 없습니다. Movement Type/Posting Date 컬럼을 확인하세요.');
 
         setKpiData(prev => ({
           ...prev,
@@ -6373,7 +6375,7 @@ ${tableRows}
           grCancelQty: { ...prev.grCancelQty, ...newQty }
         }));
         setGrCancelUploadStatus('success');
-        setGrCancelUploadMsg(`✅ 파싱 완료: ${qtyCount}개월 (SUM + 개별 시트 보완)`);
+        setGrCancelUploadMsg(`✅ 파싱 완료: GR ${Object.values(newQty).reduce((a,b)=>a+b,0)}건 / Cancel ${Object.values(newCancel).reduce((a,b)=>a+b,0)}건 (${qtyCount}개월)`);
         showToast(`GR Cancel 데이터 ${qtyCount}개월 로드 완료!`, 'success');
       } catch (err) {
         setGrCancelUploadStatus('error');
