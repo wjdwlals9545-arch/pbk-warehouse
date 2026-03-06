@@ -12264,10 +12264,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                               <XAxis dataKey="name" tick={{fontSize:10}} />
                               {/* 왼쪽: Total stock value (백만원) */}
-                              <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#1e40af'}}
-                                domain={[0, leftMax]} width={45}
-                                tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}B` : `${v}M`}
-                                label={{value:'백만원', angle:-90, position:'insideLeft', fill:'#1e40af', fontSize:11, dx:-5}} />
+                              <YAxis yAxisId="left" orientation="left" tick={{fontSize:9, fill:'#1e40af'}}
+                                domain={[0, leftMax]} width={60}
+                                tickFormatter={v => v.toLocaleString()}
+                                label={{value:'백만원', angle:-90, position:'insideLeft', fill:'#1e40af', fontSize:11, dx:-10}} />
                               {/* 오른쪽: Adjust cost Cum % */}
                               <YAxis yAxisId="right" orientation="right" tick={{fontSize:10, fill:'#b45309'}}
                                 domain={[0, rightMax]} width={55}
@@ -12289,8 +12289,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 label={(props) => {
                                   const {x,y,width,value}=props;
                                   if(!value) return null;
-                                  const label = value >= 1000 ? `${(value/1000).toFixed(0)}B` : `${value.toLocaleString()}`;
-                                  return <text x={x+width/2} y={y-6} fill="#1e40af" textAnchor="middle" fontSize={11} fontWeight={700}>{label}</text>;
+                                  const label = value.toLocaleString();
+                                  return <text x={x+width/2} y={y-6} fill="#1e40af" textAnchor="middle" fontSize={10} fontWeight={700}>{label}</text>;
                                 }}
                               />
                               {/* 노란/주황 꺾은선: Adjust cost (Cum.) */}
@@ -12305,8 +12305,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   const tw = text.length*5.5+8;
                                   return (
                                     <g>
-                                      <rect x={x-tw/2} y={y+6} width={tw} height={14} rx={3} fill="rgba(234,179,8,0.15)" />
-                                      <text x={x} y={y+16} fill="#a16207" textAnchor="middle" fontSize={9} fontWeight={700}>{text}</text>
+                                      <rect x={x-tw/2} y={y-22} width={tw} height={14} rx={3} fill="rgba(234,179,8,0.15)" />
+                                      <text x={x} y={y-12} fill="#a16207" textAnchor="middle" fontSize={9} fontWeight={700}>{text}</text>
                                     </g>
                                   );
                                 }}
