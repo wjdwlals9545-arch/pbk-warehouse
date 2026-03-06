@@ -12016,20 +12016,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 );
                               })}
                             </div>
-                            <div className="mt-3 flex items-end gap-1 h-16">
-                              {annualData.map((d, i) => {
-                                const rate = d.qty > 0 ? (d.cancel / d.qty) * 100 : 0;
-                                return (
-                                  <div key={i} className="flex-1 flex flex-col items-center">
-                                    <div
-                                      className={`w-full rounded-t ${rate <= 0.5 ? 'bg-emerald-500' : rate <= 2 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                      style={{ height: `${maxRate > 0 ? (rate / maxRate) * 100 : 0}%` }}
-                                    />
-                                    <span className="text-xs text-gray-400 mt-1">{String(d.year).slice(2)}</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
                           </>
                         );
                       })()}
@@ -12132,6 +12118,64 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 connectNulls={false} />
                             </ComposedChart>
                           </ResponsiveContainer>
+
+                          {/* 월별 데이터 테이블 */}
+                          {hasData && (
+                            <div className="mt-4 overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-gray-50">
+                                    <th className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-600">항목</th>
+                                    {yearMonths.map((m, i) => (
+                                      <th key={m} className="border border-gray-200 px-2 py-1.5 text-center font-semibold text-gray-600 min-w-[55px]">
+                                        {i + 1}월
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr>
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-blue-700 bg-blue-50 whitespace-nowrap">GR Qty</td>
+                                    {grChartData.map((d, i) => (
+                                      <td key={i} className="border border-gray-200 px-2 py-1.5 text-right text-gray-700">
+                                        {d.qty !== null ? d.qty.toLocaleString() : '-'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                  <tr className="bg-gray-50/50">
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-orange-700 bg-orange-50 whitespace-nowrap">Cancel</td>
+                                    {grChartData.map((d, i) => (
+                                      <td key={i} className={`border border-gray-200 px-2 py-1.5 text-right ${
+                                        d.cancel !== null && d.cancel > 0 ? 'text-red-600 font-semibold' : 'text-gray-700'
+                                      }`}>
+                                        {d.cancel !== null ? d.cancel : '-'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                  <tr>
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-violet-700 bg-violet-50 whitespace-nowrap">Cancel Rate (%)</td>
+                                    {grChartData.map((d, i) => (
+                                      <td key={i} className={`border border-gray-200 px-2 py-1.5 text-right ${
+                                        d.rate !== null ? (d.rate <= 0.5 ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
+                                      }`}>
+                                        {d.rate !== null ? `${d.rate.toFixed(3)}%` : '-'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                  <tr className="bg-purple-50/30">
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-purple-700 bg-purple-50 whitespace-nowrap">Cum. Rate (%)</td>
+                                    {grChartData.map((d, i) => (
+                                      <td key={i} className={`border border-gray-200 px-2 py-1.5 text-right font-semibold ${
+                                        d.cumRate !== null ? (d.cumRate <= 0.5 ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
+                                      }`}>
+                                        {d.cumRate !== null ? `${d.cumRate.toFixed(3)}%` : '-'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -12164,17 +12208,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                     d.ratio <= 0.064 ? 'text-emerald-600' :
                                     d.ratio <= 0.15 ? 'text-amber-600' : 'text-red-600'
                                   }`}>{d.ratio.toFixed(4)}%</p>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-3 flex items-end gap-1 h-16">
-                              {historicalData.map((d, i) => (
-                                <div key={i} className="flex-1 flex flex-col items-center">
-                                  <div
-                                    className={`w-full rounded-t ${d.ratio <= 0.064 ? 'bg-emerald-500' : d.ratio <= 0.15 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                    style={{ height: `${maxRatio > 0 ? (d.ratio / maxRatio) * 100 : 0}%` }}
-                                  />
-                                  <span className="text-xs text-gray-400 mt-1">{String(d.year).slice(2)}</span>
                                 </div>
                               ))}
                             </div>
