@@ -20,7 +20,26 @@ const safeStorage = (() => {
   }
 })();
 
+// 간단한 해시 (변경 감지용)
+const simpleHash = (str) => {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h.toString(36);
+};
 
+// Dashboard state 동기화 경로
+const DASHBOARD_STATE_PATH = 'public/data/dashboard_state.json';
+
+// 동기화 대상 localStorage 키 목록
+const SYNC_KEYS = [
+  'pbk_receive_cycles', 'pbk_pick_cycles', 'pbk_kitting_data',
+  'pbk_todo_list', 'pbk_kpi_data', 'pbk_temp_humidity_data',
+  'pbk_temp_humidity_recorder', 'pbk_weight_data',
+  'pbk_custom_bom', 'pbk_subcom_bom', 'pbk_bom_updated',
+  'pbk_notifications', 'pbk_previous_stats'
+];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
 const HISTORICAL_TEMP_HUMIDITY_DATA = {"2024-01-02":{"temp":"21.2","humidity":"36.0"},"2024-01-03":{"temp":"21.4","humidity":"32.0"},"2024-01-04":{"temp":"21.5","humidity":"33.2"},"2024-01-05":{"temp":"20.7","humidity":"34.5"},"2024-01-08":{"temp":"21.2","humidity":"27.0"},"2024-01-09":{"temp":"21.1","humidity":"29.0"},"2024-01-10":{"temp":"21.0","humidity":"29.0"},"2024-01-11":{"temp":"21.4","humidity":"28.1"},"2024-01-12":{"temp":"21.2","humidity":"27.4"},"2024-01-15":{"temp":"21.2","humidity":"27.3"},"2024-01-16":{"temp":"21.4","humidity":"28.2"},"2024-01-17":{"temp":"22.1","humidity":"27.4"},"2024-01-18":{"temp":"22.4","humidity":"24.1"},"2024-01-19":{"temp":"21.7","humidity":"27.2"},"2024-01-22":{"temp":"22.8","humidity":"25.4"},"2024-01-23":{"temp":"21.4","humidity":"21.4"},"2024-01-24":{"temp":"22.1","humidity":"22.3"},"2024-01-25":{"temp":"22.1","humidity":"21.2"},"2024-01-26":{"temp":"22.3","humidity":"20.4"},"2024-01-29":{"temp":"21.4","humidity":"20.2"},"2024-01-30":{"temp":"23.1","humidity":"29.7"},"2024-01-31":{"temp":"23.4","humidity":"30.2"},"2024-02-01":{"temp":"22.0","humidity":"25.8"},"2024-02-02":{"temp":"21.6","humidity":"26.3"},"2024-02-05":{"temp":"21.2","humidity":"28.6"},"2024-02-06":{"temp":"21.2","humidity":"32.6"},"2024-02-07":{"temp":"21.7","humidity":"29.6"},"2024-02-08":{"temp":"21.2","humidity":"29.9"},"2024-02-13":{"temp":"21.3","humidity":"30.4"},"2024-02-14":{"temp":"20.7","humidity":"35.2"},"2024-02-15":{"temp":"21.1","humidity":"43.6"},"2024-02-16":{"temp":"21.4","humidity":"31.9"},"2024-02-19":{"temp":"20.2","humidity":"39.2"},"2024-02-20":{"temp":"21.2","humidity":"38.7"},"2024-02-21":{"temp":"21.6","humidity":"36.6"},"2024-02-22":{"temp":"19.9","humidity":"36.6"},"2024-02-23":{"temp":"20.6","humidity":"34.8"},"2024-02-26":{"temp":"20.0","humidity":"31.3"},"2024-02-27":{"temp":"21.1","humidity":"31.6"},"2024-02-28":{"temp":"21.4","humidity":"28.3"},"2024-02-29":{"temp":"22.0","humidity":"30.0"},"2024-03-04":{"temp":"21.5","humidity":"26.2"},"2024-03-05":{"temp":"21.8","humidity":"23.0"},"2024-03-06":{"temp":"19.8","humidity":"28.0"},"2024-03-07":{"temp":"22.2","humidity":"26.5"},"2024-03-08":{"temp":"22.3","humidity":"24.6"},"2024-03-11":{"temp":"19.2","humidity":"26.2"},"2024-03-12":{"temp":"22.2","humidity":"31.4"},"2024-03-13":{"temp":"22.1","humidity":"30.3"},"2024-03-14":{"temp":"23.1","humidity":"28.4"},"2024-03-15":{"temp":"23.0","humidity":"30.0"},"2024-03-18":{"temp":"21.7","humidity":"22.6"},"2024-03-19":{"temp":"22.2","humidity":"22.8"},"2024-03-20":{"temp":"22.7","humidity":"25.1"},"2024-03-21":{"temp":"22.8","humidity":"21.8"},"2024-03-22":{"temp":"21.9","humidity":"24.1"},"2024-03-25":{"temp":"22.5","humidity":"31.8"},"2024-03-26":{"temp":"23.3","humidity":"33.0"},"2024-03-27":{"temp":"22.4","humidity":"35.7"},"2024-03-28":{"temp":"21.9","humidity":"29.4"},"2024-03-29":{"temp":"20.0","humidity":"30.5"},"2024-04-01":{"temp":"23.1","humidity":"30.0"},"2024-04-02":{"temp":"23.4","humidity":"26.0"},"2024-04-03":{"temp":"23.1","humidity":"40.0"},"2024-04-04":{"temp":"23.0","humidity":"39.0"},"2024-04-05":{"temp":"23.4","humidity":"30.0"},"2024-04-08":{"temp":"23.2","humidity":"31.0"},"2024-04-09":{"temp":"23.9","humidity":"32.3"},"2024-04-11":{"temp":"23.5","humidity":"38.4"},"2024-04-12":{"temp":"24.0","humidity":"39.4"},"2024-04-15":{"temp":"23.6","humidity":"41.1"},"2024-04-16":{"temp":"23.7","humidity":"43.1"},"2024-04-17":{"temp":"24.5","humidity":"39.7"},"2024-04-18":{"temp":"24.9","humidity":"39.8"},"2024-04-19":{"temp":"24.8","humidity":"34.4"},"2024-04-22":{"temp":"24.1","humidity":"38.1"},"2024-04-23":{"temp":"24.4","humidity":"37.4"},"2024-04-24":{"temp":"23.7","humidity":"38.2"},"2024-04-25":{"temp":"24.0","humidity":"39.1"},"2024-04-26":{"temp":"23.4","humidity":"37.2"},"2024-04-29":{"temp":"24.7","humidity":"38.4"},"2024-04-30":{"temp":"24.1","humidity":"39.9"},"2024-05-02":{"temp":"25.3","humidity":"37.4"},"2024-05-03":{"temp":"25.0","humidity":"39.3"},"2024-05-07":{"temp":"24.4","humidity":"45.2"},"2024-05-08":{"temp":"24.7","humidity":"37.7"},"2024-05-09":{"temp":"24.6","humidity":"39.5"},"2024-05-10":{"temp":"24.8","humidity":"41.4"},"2024-05-13":{"temp":"24.1","humidity":"45.0"},"2024-05-14":{"temp":"25.0","humidity":"38.5"},"2024-05-16":{"temp":"24.0","humidity":"36.2"},"2024-05-17":{"temp":"24.0","humidity":"38.6"},"2024-05-20":{"temp":"25.2","humidity":"44.0"},"2024-05-21":{"temp":"25.2","humidity":"47.0"},"2024-05-22":{"temp":"25.4","humidity":"47.8"},"2024-05-23":{"temp":"24.9","humidity":"44.3"},"2024-05-24":{"temp":"25.2","humidity":"47.5"},"2024-05-27":{"temp":"26.6","humidity":"50.1"},"2024-05-28":{"temp":"26.0","humidity":"42.4"},"2024-05-29":{"temp":"25.6","humidity":"42.4"},"2024-05-30":{"temp":"24.6","humidity":"42.7"},"2024-05-31":{"temp":"25.5","humidity":"41.7"},"2024-06-03":{"temp":"26.2","humidity":"39.2"},"2024-06-04":{"temp":"26.1","humidity":"34.0"},"2024-06-05":{"temp":"26.1","humidity":"36.1"},"2024-06-10":{"temp":"27.3","humidity":"44.0"},"2024-06-11":{"temp":"26.6","humidity":"44.1"},"2024-06-12":{"temp":"25.9","humidity":"39.2"},"2024-06-14":{"temp":"26.8","humidity":"43.0"},"2024-06-17":{"temp":"27.7","humidity":"38.9"},"2024-06-18":{"temp":"27.0","humidity":"38.5"},"2024-06-19":{"temp":"26.1","humidity":"39.2"},"2024-06-20":{"temp":"26.1","humidity":"40.9"},"2024-06-21":{"temp":"26.4","humidity":"39.0"},"2024-06-24":{"temp":"26.9","humidity":"49.7"},"2024-06-25":{"temp":"26.1","humidity":"40.7"},"2024-06-26":{"temp":"26.2","humidity":"42.9"},"2024-06-27":{"temp":"26.7","humidity":"41.9"},"2024-06-28":{"temp":"25.4","humidity":"40.8"},"2024-07-01":{"temp":"25.7","humidity":"45.1"},"2024-07-02":{"temp":"25.1","humidity":"43.9"},"2024-07-03":{"temp":"25.8","humidity":"50.8"},"2024-07-04":{"temp":"24.8","humidity":"46.5"},"2024-07-05":{"temp":"25.4","humidity":"49.4"},"2024-07-08":{"temp":"25.3","humidity":"48.0"},"2024-07-09":{"temp":"25.1","humidity":"50.1"},"2024-07-10":{"temp":"26.2","humidity":"53.1"},"2024-07-11":{"temp":"25.2","humidity":"49.0"},"2024-07-12":{"temp":"24.8","humidity":"48.3"},"2024-07-15":{"temp":"26.9","humidity":"46.2"},"2024-07-16":{"temp":"27.2","humidity":"47.7"},"2024-07-17":{"temp":"24.8","humidity":"49.9"},"2024-07-18":{"temp":"25.4","humidity":"52.3"},"2024-07-19":{"temp":"25.0","humidity":"53.4"},"2024-07-22":{"temp":"26.3","humidity":"53.3"},"2024-07-23":{"temp":"25.3","humidity":"49.9"},"2024-07-24":{"temp":"26.2","humidity":"55.7"},"2024-07-25":{"temp":"25.9","humidity":"50.9"},"2024-07-26":{"temp":"26.9","humidity":"54.5"},"2024-07-29":{"temp":"26.6","humidity":"49.7"},"2024-07-30":{"temp":"26.7","humidity":"48.1"},"2024-07-31":{"temp":"26.4","humidity":"48.7"},"2024-08-01":{"temp":"26.7","humidity":"49.1"},"2024-08-02":{"temp":"26.0","humidity":"47.4"},"2024-08-05":{"temp":"27.8","humidity":"48.7"},"2024-08-06":{"temp":"26.1","humidity":"45.5"},"2024-08-07":{"temp":"26.9","humidity":"48.9"},"2024-08-08":{"temp":"26.4","humidity":"49.6"},"2024-08-09":{"temp":"26.6","humidity":"50.8"},"2024-08-12":{"temp":"27.1","humidity":"50.9"},"2024-08-13":{"temp":"26.9","humidity":"47.5"},"2024-08-14":{"temp":"27.0","humidity":"47.0"},"2024-08-19":{"temp":"27.1","humidity":"47.0"},"2024-08-20":{"temp":"27.0","humidity":"43.3"},"2024-08-21":{"temp":"27.1","humidity":"48.2"},"2024-08-22":{"temp":"27.2","humidity":"48.1"},"2024-08-23":{"temp":"27.0","humidity":"47.9"},"2024-08-26":{"temp":"27.7","humidity":"49.7"},"2024-08-27":{"temp":"27.3","humidity":"53.7"},"2024-08-28":{"temp":"27.2","humidity":"47.7"},"2024-08-29":{"temp":"26.6","humidity":"42.9"},"2024-08-30":{"temp":"26.4","humidity":"42.8"},"2024-09-02":{"temp":"27.1","humidity":"43.1"},"2024-09-03":{"temp":"27.2","humidity":"44.0"},"2024-09-04":{"temp":"27.4","humidity":"45.1"},"2024-09-05":{"temp":"27.1","humidity":"47.1"},"2024-09-06":{"temp":"26.2","humidity":"53.9"},"2024-09-09":{"temp":"27.4","humidity":"48.0"},"2024-09-10":{"temp":"27.2","humidity":"48.3"},"2024-09-11":{"temp":"27.2","humidity":"51.3"},"2024-09-12":{"temp":"26.5","humidity":"52.5"},"2024-09-13":{"temp":"27.0","humidity":"64.7"},"2024-09-23":{"temp":"28.3","humidity":"39.0"},"2024-09-24":{"temp":"27.3","humidity":"39.3"},"2024-09-25":{"temp":"27.5","humidity":"42.7"},"2024-09-26":{"temp":"25.7","humidity":"44.9"},"2024-09-27":{"temp":"24.9","humidity":"42.5"},"2024-09-30":{"temp":"27.4","humidity":"41.3"},"2024-10-01":{"temp":"24.0","humidity":"40.0"},"2024-10-07":{"temp":"25.0","humidity":"41.8"},"2024-10-08":{"temp":"24.9","humidity":"43.5"},"2024-10-10":{"temp":"25.5","humidity":"43.4"},"2024-10-11":{"temp":"25.3","humidity":"43.1"},"2024-10-14":{"temp":"25.0","humidity":"42.8"},"2024-10-15":{"temp":"24.5","humidity":"46.8"},"2024-10-16":{"temp":"24.4","humidity":"49.8"},"2024-10-17":{"temp":"24.4","humidity":"46.9"},"2024-10-18":{"temp":"23.0","humidity":"47.3"},"2024-10-21":{"temp":"24.7","humidity":"35.5"},"2024-10-22":{"temp":"24.9","humidity":"46.8"},"2024-10-23":{"temp":"24.5","humidity":"50.3"},"2024-10-24":{"temp":"24.6","humidity":"39.6"},"2024-10-25":{"temp":"24.8","humidity":"40.6"},"2024-10-28":{"temp":"24.7","humidity":"48.2"},"2024-10-29":{"temp":"24.6","humidity":"44.0"},"2024-10-30":{"temp":"24.4","humidity":"46.2"},"2024-10-31":{"temp":"24.0","humidity":"43.5"},"2024-11-01":{"temp":"24.0","humidity":"45.2"},"2024-11-04":{"temp":"25.0","humidity":"48.6"},"2024-11-05":{"temp":"24.6","humidity":"29.6"},"2024-11-06":{"temp":"24.2","humidity":"26.5"},"2024-11-07":{"temp":"24.0","humidity":"24.7"},"2024-11-08":{"temp":"23.8","humidity":"25.8"},"2024-11-11":{"temp":"23.5","humidity":"38.5"},"2024-11-12":{"temp":"23.8","humidity":"39.8"},"2024-11-13":{"temp":"23.3","humidity":"38.0"},"2024-11-14":{"temp":"23.8","humidity":"39.5"},"2024-11-15":{"temp":"23.3","humidity":"42.6"},"2024-11-18":{"temp":"22.6","humidity":"20.6"},"2024-11-19":{"temp":"22.5","humidity":"23.2"},"2024-11-20":{"temp":"22.2","humidity":"28.1"},"2024-11-21":{"temp":"22.3","humidity":"35.5"},"2024-11-22":{"temp":"22.1","humidity":"34.5"},"2024-11-25":{"temp":"21.9","humidity":"31.4"},"2024-11-26":{"temp":"22.2","humidity":"38.3"},"2024-11-27":{"temp":"21.3","humidity":"34.7"},"2024-11-28":{"temp":"20.8","humidity":"36.9"},"2024-11-29":{"temp":"20.5","humidity":"31.5"},"2024-12-02":{"temp":"21.1","humidity":"41.8"},"2024-12-03":{"temp":"20.1","humidity":"34.1"},"2024-12-04":{"temp":"20.2","humidity":"30.1"},"2024-12-05":{"temp":"20.0","humidity":"30.0"},"2024-12-06":{"temp":"20.1","humidity":"29.9"},"2024-12-09":{"temp":"20.8","humidity":"34.2"},"2024-12-10":{"temp":"26.2","humidity":"30.1"},"2024-12-11":{"temp":"20.3","humidity":"28.2"},"2024-12-12":{"temp":"20.1","humidity":"28.1"},"2024-12-13":{"temp":"20.1","humidity":"28.4"},"2024-12-16":{"temp":"20.2","humidity":"27.0"},"2024-12-17":{"temp":"20.5","humidity":"24.4"},"2024-12-18":{"temp":"20.1","humidity":"27.3"},"2024-12-19":{"temp":"21.0","humidity":"24.3"},"2024-12-20":{"temp":"21.1","humidity":"25.4"},"2024-12-23":{"temp":"20.1","humidity":"24.6"},"2024-12-24":{"temp":"20.0","humidity":"27.2"},"2025-01-02":{"temp":"19.3","humidity":"25.9"},"2025-01-03":{"temp":"21.9","humidity":"19.6"},"2025-01-06":{"temp":"19.8","humidity":"34.2"},"2025-01-07":{"temp":"19.0","humidity":"25.6"},"2025-01-08":{"temp":"19.7","humidity":"21.5"},"2025-01-09":{"temp":"19.7","humidity":"19.3"},"2025-01-10":{"temp":"19.9","humidity":"19.1"},"2025-01-13":{"temp":"18.5","humidity":"22.6"},"2025-01-14":{"temp":"21.1","humidity":"29.2"},"2025-01-15":{"temp":"20.4","humidity":"23.4"},"2025-01-16":{"temp":"19.5","humidity":"20.4"},"2025-01-17":{"temp":"18.6","humidity":"24.3"},"2025-01-20":{"temp":"19.7","humidity":"30.0"},"2025-01-21":{"temp":"20.6","humidity":"31.4"},"2025-01-22":{"temp":"20.2","humidity":"33.2"},"2025-01-23":{"temp":"20.6","humidity":"29.7"},"2025-01-24":{"temp":"19.5","humidity":"26.7"},"2025-02-03":{"temp":"17.7","humidity":"31.5"},"2025-02-04":{"temp":"20.2","humidity":"21.6"},"2025-02-05":{"temp":"21.5","humidity":"18.3"},"2025-02-06":{"temp":"18.6","humidity":"23.2"},"2025-02-07":{"temp":"19.6","humidity":"27.2"},"2025-02-10":{"temp":"18.1","humidity":"27.3"},"2025-02-11":{"temp":"20.1","humidity":"27.1"},"2025-02-12":{"temp":"20.8","humidity":"30.4"},"2025-02-13":{"temp":"19.9","humidity":"29.5"},"2025-02-14":{"temp":"23.3","humidity":"30.3"},"2025-02-18":{"temp":"19.3","humidity":"30.7"},"2025-02-19":{"temp":"20.4","humidity":"24.5"},"2025-02-20":{"temp":"19.4","humidity":"19.9"},"2025-02-21":{"temp":"19.6","humidity":"20.8"},"2025-02-24":{"temp":"19.3","humidity":"19.9"},"2025-02-25":{"temp":"18.4","humidity":"26.5"},"2025-02-26":{"temp":"20.1","humidity":"34.1"},"2025-02-27":{"temp":"19.2","humidity":"25.2"},"2025-02-28":{"temp":"20.3","humidity":"25.3"},"2025-03-04":{"temp":"19.6","humidity":"35.9"},"2025-03-05":{"temp":"20.2","humidity":"37.5"},"2025-03-06":{"temp":"21.2","humidity":"34.2"},"2025-03-07":{"temp":"21.7","humidity":"31.5"},"2025-03-10":{"temp":"21.9","humidity":"35.2"},"2025-03-11":{"temp":"21.6","humidity":"34.3"},"2025-03-12":{"temp":"21.5","humidity":"36.0"},"2025-03-13":{"temp":"21.2","humidity":"38.2"},"2025-03-14":{"temp":"21.5","humidity":"32.1"},"2025-03-17":{"temp":"22.0","humidity":"24.1"},"2025-03-18":{"temp":"21.4","humidity":"31.5"},"2025-03-26":{"temp":"23.3","humidity":"38.2"},"2025-03-27":{"temp":"23.2","humidity":"39.6"},"2025-03-28":{"temp":"22.9","humidity":"33.1"},"2025-03-31":{"temp":"22.5","humidity":"26.5"},"2025-04-01":{"temp":"21.7","humidity":"33.1"},"2025-04-02":{"temp":"22.0","humidity":"30.2"},"2025-04-04":{"temp":"23.0","humidity":"45.2"},"2025-04-07":{"temp":"22.7","humidity":"45.1"},"2025-04-08":{"temp":"21.8","humidity":"46.1"},"2025-04-09":{"temp":"22.6","humidity":"44.2"},"2025-04-10":{"temp":"22.9","humidity":"46.2"},"2025-04-11":{"temp":"22.8","humidity":"46.0"},"2025-04-14":{"temp":"21.8","humidity":"40.6"},"2025-04-15":{"temp":"21.7","humidity":"43.7"},"2025-04-16":{"temp":"21.8","humidity":"45.2"},"2025-04-17":{"temp":"22.9","humidity":"47.4"},"2025-04-18":{"temp":"23.5","humidity":"49.9"},"2025-04-21":{"temp":"22.8","humidity":"47.6"},"2025-04-22":{"temp":"23.8","humidity":"50.6"},"2025-04-23":{"temp":"24.2","humidity":"51.4"},"2025-04-24":{"temp":"23.2","humidity":"45.4"},"2025-04-25":{"temp":"23.6","humidity":"43.2"},"2025-04-28":{"temp":"23.6","humidity":"45.6"},"2025-04-29":{"temp":"23.6","humidity":"44.1"},"2025-04-30":{"temp":"23.1","humidity":"41.0"},"2025-05-07":{"temp":"22.5","humidity":"47.2"},"2025-05-08":{"temp":"23.0","humidity":"48.0"},"2025-05-09":{"temp":"23.5","humidity":"48.9"},"2025-05-12":{"temp":"23.2","humidity":"44.8"},"2025-05-13":{"temp":"24.0","humidity":"47.3"},"2025-05-14":{"temp":"23.9","humidity":"46.4"},"2025-05-15":{"temp":"24.0","humidity":"48.3"},"2025-05-16":{"temp":"23.8","humidity":"49.2"},"2025-05-19":{"temp":"23.8","humidity":"39.4"},"2025-05-20":{"temp":"24.0","humidity":"49.8"},"2025-05-21":{"temp":"24.2","humidity":"52.5"},"2025-05-22":{"temp":"24.7","humidity":"56.6"},"2025-05-23":{"temp":"24.1","humidity":"46.5"},"2025-05-26":{"temp":"24.8","humidity":"44.9"},"2025-05-27":{"temp":"24.7","humidity":"43.7"},"2025-05-28":{"temp":"24.3","humidity":"48.5"},"2025-05-29":{"temp":"24.8","humidity":"46.4"},"2025-05-30":{"temp":"24.7","humidity":"44.5"},"2025-06-02":{"temp":"24.9","humidity":"45.5"},"2025-06-04":{"temp":"25.1","humidity":"45.5"},"2025-06-05":{"temp":"24.3","humidity":"42.2"},"2025-06-09":{"temp":"25.9","humidity":"44.9"},"2025-06-10":{"temp":"25.6","humidity":"48.0"},"2025-06-11":{"temp":"21.4","humidity":"47.5"},"2025-06-12":{"temp":"22.5","humidity":"49.0"},"2025-06-16":{"temp":"21.4","humidity":"52.3"},"2025-06-17":{"temp":"22.2","humidity":"54.0"},"2025-06-18":{"temp":"22.0","humidity":"51.4"},"2025-06-20":{"temp":"22.1","humidity":"56.9"},"2025-06-23":{"temp":"22.6","humidity":"49.4"},"2025-06-24":{"temp":"24.1","humidity":"56.2"},"2025-06-25":{"temp":"21.9","humidity":"56.5"},"2025-06-26":{"temp":"22.8","humidity":"57.7"},"2025-06-27":{"temp":"21.0","humidity":"52.9"},"2025-06-30":{"temp":"22.8","humidity":"52.5"},"2025-07-01":{"temp":"22.4","humidity":"56.1"},"2025-07-02":{"temp":"21.4","humidity":"55.3"},"2025-07-03":{"temp":"21.3","humidity":"55.4"},"2025-07-04":{"temp":"21.6","humidity":"56.8"},"2025-07-07":{"temp":"22.8","humidity":"56.9"},"2025-07-08":{"temp":"24.0","humidity":"56.4"},"2025-07-09":{"temp":"23.2","humidity":"55.4"},"2025-07-10":{"temp":"23.4","humidity":"52.6"},"2025-07-11":{"temp":"22.4","humidity":"47.5"},"2025-07-14":{"temp":"24.8","humidity":"46.4"},"2025-07-15":{"temp":"22.8","humidity":"54.3"},"2025-07-16":{"temp":"22.9","humidity":"55.3"},"2025-07-17":{"temp":"21.3","humidity":"55.8"},"2025-07-18":{"temp":"21.7","humidity":"58.9"},"2025-07-21":{"temp":"24.0","humidity":"65.5"},"2025-07-22":{"temp":"23.0","humidity":"54.5"},"2025-07-23":{"temp":"22.7","humidity":"55.9"},"2025-07-24":{"temp":"22.7","humidity":"59.1"},"2025-07-25":{"temp":"23.7","humidity":"54.4"},"2025-07-28":{"temp":"25.3","humidity":"58.2"},"2025-07-29":{"temp":"24.2","humidity":"57.5"},"2025-07-30":{"temp":"24.9","humidity":"59.7"},"2025-07-31":{"temp":"23.1","humidity":"54.8"},"2025-08-01":{"temp":"22.8","humidity":"52.8"},"2025-08-04":{"temp":"22.7","humidity":"53.6"},"2025-08-05":{"temp":"22.6","humidity":"54.5"},"2025-08-06":{"temp":"22.4","humidity":"55.9"},"2025-08-07":{"temp":"23.0","humidity":"57.3"},"2025-08-08":{"temp":"23.0","humidity":"52.8"},"2025-08-11":{"temp":"23.5","humidity":"55.8"},"2025-08-12":{"temp":"23.9","humidity":"54.6"},"2025-08-13":{"temp":"24.4","humidity":"56.6"},"2025-08-14":{"temp":"24.0","humidity":"58.0"},"2025-08-18":{"temp":"24.6","humidity":"58.4"},"2025-08-19":{"temp":"24.3","humidity":"53.0"},"2025-08-20":{"temp":"24.0","humidity":"51.7"},"2025-08-21":{"temp":"24.3","humidity":"56.1"},"2025-08-22":{"temp":"23.8","humidity":"54.9"},"2025-08-25":{"temp":"24.0","humidity":"56.2"},"2025-08-26":{"temp":"24.8","humidity":"53.3"},"2025-08-27":{"temp":"25.0","humidity":"53.8"},"2025-08-28":{"temp":"24.3","humidity":"53.2"},"2025-08-29":{"temp":"23.3","humidity":"55.6"},"2025-09-01":{"temp":"23.9","humidity":"54.3"},"2025-09-02":{"temp":"23.5","humidity":"54.0"},"2025-09-03":{"temp":"23.6","humidity":"50.0"},"2025-09-04":{"temp":"23.4","humidity":"51.9"},"2025-09-05":{"temp":"23.2","humidity":"53.8"},"2025-09-08":{"temp":"24.8","humidity":"50.0"},"2025-09-09":{"temp":"24.3","humidity":"49.1"},"2025-09-10":{"temp":"23.2","humidity":"51.5"},"2025-09-11":{"temp":"23.5","humidity":"50.0"},"2025-09-12":{"temp":"23.7","humidity":"50.8"},"2025-09-15":{"temp":"24.2","humidity":"51.4"},"2025-09-16":{"temp":"23.1","humidity":"51.3"},"2025-09-17":{"temp":"22.5","humidity":"54.2"},"2025-09-18":{"temp":"22.1","humidity":"50.0"},"2025-09-19":{"temp":"22.8","humidity":"49.5"},"2025-09-20":{"temp":"23.7","humidity":"51.5"},"2025-09-21":{"temp":"23.0","humidity":"50.8"},"2025-09-23":{"temp":"22.7","humidity":"45.8"},"2025-09-24":{"temp":"21.9","humidity":"47.4"},"2025-09-25":{"temp":"23.2","humidity":"49.2"},"2025-09-26":{"temp":"22.5","humidity":"48.3"},"2025-09-29":{"temp":"21.9","humidity":"48.3"},"2025-09-30":{"temp":"22.8","humidity":"49.5"},"2025-10-01":{"temp":"23.4","humidity":"47.6"},"2025-10-02":{"temp":"21.7","humidity":"48.5"},"2025-10-10":{"temp":"23.5","humidity":"49.9"},"2025-10-13":{"temp":"21.9","humidity":"50.4"},"2025-10-14":{"temp":"22.6","humidity":"49.6"},"2025-10-15":{"temp":"23.5","humidity":"51.9"},"2025-10-16":{"temp":"22.9","humidity":"55.4"},"2025-10-17":{"temp":"23.6","humidity":"51.8"},"2025-10-20":{"temp":"23.4","humidity":"36.0"},"2025-10-21":{"temp":"22.0","humidity":"31.7"},"2025-10-22":{"temp":"22.0","humidity":"34.2"},"2025-10-23":{"temp":"23.8","humidity":"36.0"},"2025-10-24":{"temp":"23.0","humidity":"35.5"},"2025-10-27":{"temp":"21.0","humidity":"31.5"},"2025-10-28":{"temp":"23.3","humidity":"28.1"},"2025-10-29":{"temp":"23.0","humidity":"35.1"},"2025-10-30":{"temp":"22.5","humidity":"38.1"},"2025-10-31":{"temp":"22.8","humidity":"43.7"},"2025-11-03":{"temp":"22.9","humidity":"23.5"},"2025-11-04":{"temp":"23.9","humidity":"26.0"},"2025-11-05":{"temp":"23.5","humidity":"28.4"},"2025-11-06":{"temp":"23.6","humidity":"26.0"},"2025-11-07":{"temp":"23.4","humidity":"28.0"},"2025-11-10":{"temp":"23.7","humidity":"30.0"},"2025-11-11":{"temp":"25.2","humidity":"26.8"},"2025-11-12":{"temp":"23.2","humidity":"37.1"},"2025-11-13":{"temp":"23.8","humidity":"38.0"},"2025-11-14":{"temp":"22.7","humidity":"29.4"},"2025-11-17":{"temp":"24.2","humidity":"26.0"},"2025-11-18":{"temp":"23.9","humidity":"23.5"},"2025-11-19":{"temp":"23.7","humidity":"20.1"},"2025-11-20":{"temp":"23.3","humidity":"27.3"},"2025-11-21":{"temp":"22.3","humidity":"28.1"},"2025-11-24":{"temp":"20.9","humidity":"42.2"},"2025-11-25":{"temp":"19.8","humidity":"32.0"},"2025-11-26":{"temp":"23.0","humidity":"28.9"},"2025-11-27":{"temp":"22.9","humidity":"34.2"},"2025-11-28":{"temp":"25.0","humidity":"27.2"},"2025-12-01":{"temp":"23.0","humidity":"37.9"},"2025-12-02":{"temp":"23.7","humidity":"38.7"},"2025-12-03":{"temp":"25.4","humidity":"34.6"},"2025-12-04":{"temp":"23.0","humidity":"36.7"},"2025-12-05":{"temp":"24.0","humidity":"35.4"},"2025-12-08":{"temp":"24.7","humidity":"29.4"},"2025-12-09":{"temp":"26.5","humidity":"25.3"},"2025-12-10":{"temp":"23.0","humidity":"34.6"},"2025-12-11":{"temp":"24.3","humidity":"38.1"},"2025-12-12":{"temp":"26.2","humidity":"35.0"},"2025-12-15":{"temp":"22.3","humidity":"31.4"},"2025-12-16":{"temp":"21.8","humidity":"37.5"},"2025-12-17":{"temp":"22.4","humidity":"34.4"},"2025-12-18":{"temp":"23.2","humidity":"27.7"},"2025-12-19":{"temp":"21.3","humidity":"39.2"},"2025-12-22":{"temp":"23.5","humidity":"24.2"},"2025-12-23":{"temp":"24.2","humidity":"24.8"},"2025-12-24":{"temp":"22.8","humidity":"38.0"},"2025-12-26":{"temp":"21.5","humidity":"30.2"},"2025-12-29":{"temp":"20.2","humidity":"40.8"},"2025-12-30":{"temp":"22.6","humidity":"32.6"},"2025-12-31":{"temp":"27.2","humidity":"20.8"},"2026-01-05":{"temp":"21.6","humidity":"30.0"},"2026-01-06":{"temp":"22.7","humidity":"24.2"},"2026-01-07":{"temp":"20.8","humidity":"27.5"},"2026-01-08":{"temp":"20.3","humidity":"25.0"},"2026-01-09":{"temp":"20.5","humidity":"24.8"},"2026-01-12":{"temp":"23.0","humidity":"22.7"},"2026-01-13":{"temp":"21.6","humidity":"32.3"},"2026-01-14":{"temp":"22.9","humidity":"21.1"},"2026-01-15":{"temp":"23.4","humidity":"20.0"},"2026-01-16":{"temp":"21.8","humidity":"22.1"},"2026-01-19":{"temp":"22.6","humidity":"21.8"},"2026-01-20":{"temp":"22.4","humidity":"21.1"},"2026-01-21":{"temp":"22.9","humidity":"18.9"},"2026-01-22":{"temp":"21.2","humidity":"20.5"},"2026-01-23":{"temp":"23.7","humidity":"19.6"},"2026-01-26":{"temp":"22.9","humidity":"20.5"},"2026-01-27":{"temp":"24.6","humidity":"19.7"},"2026-01-28":{"temp":"21.4","humidity":"22.3"},"2026-01-29":{"temp":"22.0","humidity":"20.8"},"2026-01-30":{"temp":"22.9","humidity":"18.9"},"2026-02-02":{"temp":"25.7","humidity":"21.2"},"2026-02-03":{"temp":"22.3","humidity":"22.9"},"2026-02-04":{"temp":"23.2","humidity":"24.9"},"2026-02-05":{"temp":"26.4","humidity":"27.5"}};
@@ -2432,6 +2451,153 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     } catch (err) { console.error(`GitHub upload error (${label}):`, err); }
   };
 
+  // ──── Dashboard State GitHub 동기화 ────
+
+  // GitHub에서 dashboard_state.json 로드 → localStorage + React state 업데이트
+  const loadDashboardState = async () => {
+    const TOKEN = safeStorage.getItem('pbk_gh_token');
+    const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main';
+    try {
+      const url = TOKEN
+        ? `https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/contents/${DASHBOARD_STATE_PATH}`
+        : `${BASE}/${DASHBOARD_STATE_PATH}?t=${Date.now()}`;
+      const headers = TOKEN
+        ? { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
+        : {};
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) { console.log('[DashSync] No dashboard_state.json yet'); return; }
+
+      let stateObj;
+      if (TOKEN) {
+        const info = await resp.json();
+        syncShaRef.current = info.sha;
+        const decoded = decodeURIComponent(escape(atob(info.content.replace(/\n/g, ''))));
+        stateObj = JSON.parse(decoded);
+      } else {
+        stateObj = await resp.json();
+      }
+
+      console.log('[DashSync] Loaded from GitHub, keys:', Object.keys(stateObj).length);
+
+      // setState 매핑
+      const setterMap = {
+        pbk_receive_cycles: setReceiveCycles,
+        pbk_pick_cycles: setPickCycles,
+        pbk_kitting_data: setKittingData,
+        pbk_todo_list: setTodoList,
+        pbk_kpi_data: (val) => setKpiData({
+          grCancel: { ...DEFAULT_GR_CANCEL_DATA, ...(val.grCancel || {}) },
+          grCancelQty: { ...DEFAULT_GR_CANCEL_QTY, ...(val.grCancelQty || {}) },
+          inventoryAdjust: val.inventoryAdjust || {}
+        }),
+        pbk_temp_humidity_data: setTempHumidityData,
+        pbk_temp_humidity_recorder: setTempHumidityRecorder,
+        pbk_weight_data: setWeightData,
+        pbk_custom_bom: setCustomBomData,
+        pbk_subcom_bom: setSubComponentBomData,
+        pbk_bom_updated: setBomLastUpdated,
+        pbk_notifications: setNotifications,
+        pbk_previous_stats: setPreviousStats
+      };
+
+      for (const key of SYNC_KEYS) {
+        if (stateObj[key] !== undefined && stateObj[key] !== null) {
+          // localStorage 업데이트
+          const val = stateObj[key];
+          safeStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
+          // React state 업데이트
+          if (setterMap[key]) {
+            setterMap[key](val);
+          }
+        }
+      }
+
+      // 로드 후 현재 해시 저장 (불필요한 업로드 방지)
+      lastSyncHashRef.current = simpleHash(JSON.stringify(stateObj));
+      showToast('☁️ 대시보드 데이터 동기화 완료', 'success');
+    } catch (err) {
+      console.log('[DashSync] Load error:', err.message);
+    }
+  };
+
+  // 현재 상태를 dashboard_state.json으로 GitHub에 업로드
+  const uploadDashboardState = async () => {
+    const TOKEN = safeStorage.getItem('pbk_gh_token');
+    if (!TOKEN) return;
+
+    // 현재 상태 수집
+    const stateObj = {};
+    for (const key of SYNC_KEYS) {
+      const raw = safeStorage.getItem(key);
+      if (raw !== null) {
+        try { stateObj[key] = JSON.parse(raw); } catch { stateObj[key] = raw; }
+      }
+    }
+
+    // 변경 감지
+    const currentHash = simpleHash(JSON.stringify(stateObj));
+    if (currentHash === lastSyncHashRef.current) {
+      console.log('[DashSync] No changes, skip upload');
+      return;
+    }
+
+    const OWNER = 'wjdwlals9545-arch';
+    const REPO = 'pbk-warehouse';
+    const API = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${DASHBOARD_STATE_PATH}`;
+    const jsonStr = JSON.stringify(stateObj, null, 0);
+    const content = btoa(unescape(encodeURIComponent(jsonStr)));
+
+    const doUpload = async (sha) => {
+      const body = { message: 'Sync dashboard state', content, ...(sha ? { sha } : {}) };
+      return fetch(API, {
+        method: 'PUT',
+        headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+    };
+
+    try {
+      // SHA 없으면 가져오기
+      if (!syncShaRef.current) {
+        try {
+          const getResp = await fetch(API, {
+            headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
+          });
+          if (getResp.ok) {
+            const info = await getResp.json();
+            syncShaRef.current = info.sha;
+          }
+        } catch { /* 새 파일 */ }
+      }
+
+      let resp = await doUpload(syncShaRef.current);
+
+      // 409 충돌 → SHA 재조회 후 재시도
+      if (resp.status === 409) {
+        console.log('[DashSync] SHA conflict, retrying...');
+        const getResp = await fetch(API, {
+          headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
+        });
+        if (getResp.ok) {
+          const info = await getResp.json();
+          syncShaRef.current = info.sha;
+        }
+        resp = await doUpload(syncShaRef.current);
+      }
+
+      if (resp.ok) {
+        const result = await resp.json();
+        syncShaRef.current = result.content.sha;
+        lastSyncHashRef.current = currentHash;
+        console.log('[DashSync] Upload OK');
+      } else {
+        console.error('[DashSync] Upload failed:', resp.status);
+      }
+    } catch (err) {
+      console.error('[DashSync] Upload error:', err.message);
+    }
+  };
+
   // 3D 뷰 렌더링
   const view3dKeyRef = React.useRef(null);
   useEffect(() => {
@@ -3286,6 +3452,12 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const [inventoryLossUploadStatus, setInventoryLossUploadStatus] = useState(null);
   const [inventoryLossUploadMsg, setInventoryLossUploadMsg] = useState('');
 
+  // GitHub 동기화 상태
+  const [syncReady, setSyncReady] = useState(false);
+  const syncTimerRef = React.useRef(null);
+  const syncShaRef = React.useRef(null);
+  const lastSyncHashRef = React.useRef(null);
+
   const [showKpiInputModal, setShowKpiInputModal] = useState(false);
   const [kpiInputMonth, setKpiInputMonth] = useState(new Date().toISOString().slice(0, 7));
   const [kpiInputType, setKpiInputType] = useState('grCancel'); // 'grCancel' or 'inventoryAdjust'
@@ -3766,8 +3938,27 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       }
     };
 
-    fetchGitHubData();
+    // 먼저 대시보드 상태 로드 → 그 다음 Stock/OpenPO 로드
+    const initLoad = async () => {
+      await loadDashboardState();
+      await fetchGitHubData();
+      setSyncReady(true); // 초기 로드 완료 후 동기화 활성화
+    };
+    initLoad();
   }, []);
+
+  // ──── Debounced 자동 동기화 (30초 디바운스) ────
+  useEffect(() => {
+    if (!syncReady) return; // 초기 로드 중에는 업로드 방지
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      uploadDashboardState();
+    }, 30000);
+    return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
+  }, [syncReady, receiveCycles, pickCycles, kittingData, todoList, kpiData,
+      tempHumidityData, tempHumidityRecorder, weightData,
+      customBomData, subComponentBomData, bomLastUpdated,
+      notifications, previousStats]);
 
   // 자동 백업 (12시, 15시 55분에만)
   useEffect(() => {
