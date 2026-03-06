@@ -2488,7 +2488,8 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         pbk_kpi_data: (val) => setKpiData({
           grCancel: { ...DEFAULT_GR_CANCEL_DATA, ...(val.grCancel || {}) },
           grCancelQty: { ...DEFAULT_GR_CANCEL_QTY, ...(val.grCancelQty || {}) },
-          inventoryAdjust: val.inventoryAdjust || {}
+          inventoryAdjust: val.inventoryAdjust || {},
+          invAdjustDetail: val.invAdjustDetail || {}
         }),
         pbk_temp_humidity_data: setTempHumidityData,
         pbk_temp_humidity_recorder: setTempHumidityRecorder,
@@ -3436,13 +3437,15 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       return {
         grCancel: { ...DEFAULT_GR_CANCEL_DATA, ...parsed.grCancel },
         grCancelQty: { ...DEFAULT_GR_CANCEL_QTY, ...parsed.grCancelQty },
-        inventoryAdjust: parsed.inventoryAdjust || {}
+        inventoryAdjust: parsed.inventoryAdjust || {},
+        invAdjustDetail: parsed.invAdjustDetail || {}
       };
     }
     return {
       grCancel: DEFAULT_GR_CANCEL_DATA,
       grCancelQty: DEFAULT_GR_CANCEL_QTY,
-      inventoryAdjust: {}
+      inventoryAdjust: {},
+      invAdjustDetail: {}
     };
   });
 
@@ -6588,7 +6591,7 @@ ${tableRows}
     reader.readAsArrayBuffer(file);
   };
 
-  // v17: 재고 손실율 엑셀 업로드 파싱 함수
+  // Inventory Adjust Cost 엑셀 업로드 파싱 함수 (2026 Ratio 탭)
   const parseInventoryLossExcel = async (file) => {
     setInventoryLossUploadStatus('loading');
     setInventoryLossUploadMsg('파일 읽는 중...');
@@ -6604,33 +6607,92 @@ ${tableRows}
       try {
         const data = new Uint8Array(e.target.result);
         const workbook = window.XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames.find(n => n === 'Ratio') || workbook.SheetNames[0];
+        // "2026 Ratio" 탭 우선, 없으면 "Ratio", 없으면 첫 번째 시트
+        const sheetName = workbook.SheetNames.find(n => n === '2026 Ratio')
+          || workbook.SheetNames.find(n => n === 'Ratio')
+          || workbook.SheetNames[0];
         const ws = workbook.Sheets[sheetName];
         const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+        // Row 1 = 헤더, Row 2 = Total stock value, Row 3 = Absolute variance
+        // Row 4 = Adjust cost (Q), Row 5 = Adjust cost (Cum.)
+        const headerRow = rows[1] || [];
+        const stockRow = rows[2] || [];
+        const varianceRow = rows[3] || [];
+        const ratioQRow = rows[4] || [];
+        const ratioCumRow = rows[5] || [];
+
         const newInvAdj = {};
-        const headerRow = rows[0] || [];
-        const adjustRow = rows[3] || [];
+        const newDetail = {};
+
+        // Excel serial date → YYYY-MM 변환
+        const serialToYM = (serial) => {
+          if (typeof serial !== 'number' || serial < 40000) return null;
+          const d = new Date((serial - 25569) * 86400000);
+          const y = d.getUTCFullYear();
+          const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+          return `${y}-${m}`;
+        };
+
         for (let col = 1; col < headerRow.length; col++) {
           const h = headerRow[col];
           if (!h) continue;
-          const qMatch = typeof h === 'string' && h.match(/(\d{4})\s*\/\s*Q(\d)/);
-          if (qMatch) {
-            const year = parseInt(qMatch[1]);
-            const quarter = parseInt(qMatch[2]);
-            const month = quarter * 3;
-            const key = `${year}-${String(month).padStart(2, '0')}`;
-            const val = adjustRow[col];
-            if (typeof val === 'number') newInvAdj[key] = parseFloat((val * 100).toFixed(4));
+
+          let key = null;
+
+          // 2026 월별: Excel serial date (46000+)
+          if (typeof h === 'number' && h > 45000) {
+            key = serialToYM(h);
           }
+          // 분기별: "2024 Q1" or "2024 / Q1"
+          else if (typeof h === 'string') {
+            const qMatch = h.match(/(\d{4})\s*\/??\s*Q(\d)/);
+            if (qMatch) {
+              const year = parseInt(qMatch[1]);
+              const quarter = parseInt(qMatch[2]);
+              const month = quarter * 3;
+              key = `${year}-${String(month).padStart(2, '0')}`;
+            }
+          }
+          // 연도 숫자: 2020, 2021, etc.
+          else if (typeof h === 'number' && h >= 2018 && h <= 2030) {
+            key = `${h}-12`; // 연도 데이터는 12월 기준
+          }
+
+          if (!key) continue;
+
+          const ratioQ = ratioQRow[col];
+          const ratioCum = ratioCumRow[col];
+          const stock = stockRow[col];
+          const variance = varianceRow[col];
+
+          // inventoryAdjust: Adjust cost (Q) 비율 → 퍼센트
+          if (typeof ratioQ === 'number') {
+            newInvAdj[key] = parseFloat((ratioQ * 100).toFixed(4));
+          }
+
+          // invAdjustDetail: 상세 데이터
+          newDetail[key] = {
+            stock: typeof stock === 'number' ? stock : 0,
+            variance: typeof variance === 'number' ? variance : 0,
+            ratioQ: typeof ratioQ === 'number' ? parseFloat((ratioQ * 100).toFixed(4)) : 0,
+            ratioCum: typeof ratioCum === 'number' ? parseFloat((ratioCum * 100).toFixed(4)) : 0
+          };
         }
-        if (Object.keys(newInvAdj).length > 0) {
-          setKpiData(prev => ({ ...prev, inventoryAdjust: { ...prev.inventoryAdjust, ...newInvAdj } }));
+
+        const totalKeys = Object.keys(newDetail).length;
+        if (totalKeys > 0) {
+          setKpiData(prev => ({
+            ...prev,
+            inventoryAdjust: { ...prev.inventoryAdjust, ...newInvAdj },
+            invAdjustDetail: { ...prev.invAdjustDetail, ...newDetail }
+          }));
           setInventoryLossUploadStatus('success');
-          setInventoryLossUploadMsg(`✅ ${Object.keys(newInvAdj).length}개 기간 데이터 로드 (분기별). 월별 형식 확정 후 업데이트 예정.`);
-          showToast('재고 손실율 데이터 업로드 완료', 'success');
+          setInventoryLossUploadMsg(`✅ ${totalKeys}개 기간 데이터 로드 완료`);
+          showToast('Inventory Adjust Cost 데이터 업로드 완료', 'success');
         } else {
           setInventoryLossUploadStatus('error');
-          setInventoryLossUploadMsg('❌ 파싱된 데이터 없음. 형식을 확인하세요.');
+          setInventoryLossUploadMsg('❌ 파싱된 데이터 없음. 시트 형식을 확인하세요.');
         }
       } catch (err) {
         setInventoryLossUploadStatus('error');
@@ -11646,10 +11708,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <FileSpreadsheet className="w-4 h-4" />
                     GR Cancel 업로드
                   </button>
-                  {/* v17: 재고 손실율 엑셀 업로드 버튼 */}
+                  {/* v17: Inventory Adjust Cost 엑셀 업로드 버튼 */}
                   <label className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 rounded-lg transition cursor-pointer text-white text-sm font-medium">
                     <FileSpreadsheet className="w-4 h-4" />
-                    재고손실율 업로드
+                    Inv. Adjust Cost 업로드
                     <input
                       type="file"
                       accept=".xlsx,.xls"
@@ -11661,32 +11723,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       }}
                     />
                   </label>
-                  {/* 데이터 리셋 버튼 */}
-                  <button
-                    onClick={() => {
-                      setKpiData({
-                        grCancel: DEFAULT_GR_CANCEL_DATA,
-                        grCancelQty: {},
-                        inventoryAdjust: {}
-                      });
-                      setGrCancelUploadStatus(null);
-                      setGrCancelUploadMsg('');
-                      setInventoryLossUploadStatus(null);
-                      setInventoryLossUploadMsg('');
-                      showToast('KPI 데이터가 초기화되었습니다.', 'success');
-                    }}
-                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 rounded-lg transition"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    리셋
-                  </button>
-                  <button
-                    onClick={() => setShowKpiInputModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg transition"
-                  >
-                    <Plus className="w-5 h-5" />
-                    수동 입력
-                  </button>
                 </div>
               </div>
             </div>
@@ -11872,7 +11908,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     {/* Inventory Adjust Cost */}
                     <div className={`rounded-xl p-5 border-2 ${getScoreColor(invAdjustScore)}`}>
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">재고 손실율</span>
+                        <span className="text-sm font-medium">Inventory Adjust Cost</span>
                         {invAdjustScore !== null && (
                           <span className={`px-2 py-0.5 rounded text-xs font-bold ${
                             invAdjustScore >= 80 ? 'bg-emerald-500 text-white' : 
@@ -12103,48 +12139,152 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       );
                     })()}
 
-                    {/* Inventory Adjust 그래프 */}
-                    <div className="mb-8">
-                      <h4 className="text-base font-bold text-gray-700 mb-3">재고 손실율 (%)</h4>
-                      <div className="relative h-48 border-b border-l border-gray-300">
-                        {/* 목표선 (0.064%) */}
-                        <div 
-                          className="absolute left-0 right-0 border-t-2 border-dashed border-emerald-500"
-                          style={{ bottom: `${(0.064 / 0.25) * 100}%` }}
-                        >
-                          <span className="absolute -top-3 right-0 text-xs text-emerald-600 bg-white px-1">목표 0.064%</span>
-                        </div>
-                        <div className="absolute -left-10 top-0 text-xs text-gray-400">0.25</div>
-                        <div className="absolute -left-6 bottom-0 text-xs text-gray-400">0</div>
-                        <div className="absolute inset-0 flex items-end justify-around px-2">
-                          {yearMonths.map((month, idx) => {
-                            const value = kpiData.inventoryAdjust[month];
-                            const height = value !== undefined ? (value / 0.25) * 100 : 0;
-                            const isPast = selectedYear < new Date().getFullYear() || (isCurrentYear && idx + 1 <= currentMonth);
-                            return (
-                              <div key={month} className="flex flex-col items-center gap-1 flex-1">
-                                <div className="w-full flex flex-col items-center">
-                                  {value !== undefined && (
-                                    <span className="text-xs font-medium mb-1">{value.toFixed(3)}</span>
-                                  )}
-                                  <div 
-                                    className={`w-6 rounded-t transition-all ${
-                                      value === undefined 
-                                        ? isPast ? 'bg-gray-200' : 'bg-gray-100'
-                                        : value <= 0.064 ? 'bg-emerald-500' 
-                                        : value <= 0.12 ? 'bg-amber-500' 
-                                        : 'bg-red-500'
-                                    }`}
-                                    style={{ height: `${Math.max(height, value !== undefined ? 5 : 0)}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs text-gray-400">{idx + 1}월</span>
+                    {/* Inventory Adjust Cost - ComposedChart */}
+                    {(() => {
+                      // 연도별 확정 데이터 (역대 연간 Adjust cost)
+                      const historicalData = [
+                        { year: 2020, ratio: 0.1046 },
+                        { year: 2021, ratio: 0.3257 },
+                        { year: 2022, ratio: 0.2981 },
+                        { year: 2023, ratio: 0.0912 },
+                        { year: 2024, ratio: 0.0224 },
+                        { year: 2025, ratio: 0.0145 },
+                      ];
+
+                      // 월별 데이터 구성
+                      const invChartData = yearMonths.map((month, idx) => {
+                        const detail = kpiData.invAdjustDetail[month];
+                        const ratioQ = detail ? detail.ratioQ : null;
+                        const ratioCum = detail ? detail.ratioCum : null;
+                        const variance = detail ? detail.variance : null;
+                        const stock = detail ? detail.stock : null;
+                        return {
+                          name: `${idx + 1}월`,
+                          ratioQ,
+                          ratioCum,
+                          variance,
+                          stock
+                        };
+                      });
+                      const hasData = invChartData.some(d => d.ratioQ !== null);
+                      const ratioMax = Math.max(...invChartData.map(d => d.ratioQ || 0), 0.1);
+                      const cumMax = Math.max(...invChartData.map(d => d.ratioCum || 0), 0.1);
+                      const yMax = parseFloat((Math.max(ratioMax, cumMax) * 2).toFixed(3)) || 0.2;
+                      // 연간 요약
+                      const lastCum = [...invChartData].reverse().find(d => d.ratioCum !== null);
+                      const latestCumVal = lastCum ? lastCum.ratioCum : null;
+
+                      return (
+                        <div className="mb-8">
+                          {/* 역대 연간 추이 */}
+                          <h4 className="text-base font-bold text-gray-700 mb-3">
+                            📊 Inventory Adjust Cost 연도별 추이
+                            {hasData && (
+                              <span className="ml-2 text-xs text-violet-600 bg-violet-50 px-2 py-0.5 rounded">📂 엑셀 데이터 반영됨</span>
+                            )}
+                          </h4>
+                          <div className="grid grid-cols-6 gap-3 mb-4">
+                            {historicalData.map(d => (
+                              <div key={d.year} className="bg-gray-50 rounded-lg p-3 text-center">
+                                <p className="text-xs text-gray-500 mb-1">{d.year}</p>
+                                <p className={`text-lg font-bold ${
+                                  d.ratio <= 0.064 ? 'text-emerald-600' :
+                                  d.ratio <= 0.15 ? 'text-amber-600' : 'text-red-600'
+                                }`}>{d.ratio.toFixed(4)}%</p>
                               </div>
-                            );
-                          })}
+                            ))}
+                          </div>
+
+                          {/* 월별 ComposedChart */}
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-base font-bold text-gray-700">Inventory Adjust Cost - {selectedYear}년 월별</h4>
+                            <div className="flex items-center gap-4 text-xs">
+                              <span className="flex items-center gap-1 text-gray-400">
+                                <span className="inline-block w-3 h-3 rounded bg-violet-400 opacity-70"></span>막대 = Adjust Cost (Q) %
+                              </span>
+                              <span className="flex items-center gap-1 text-gray-400">
+                                <span className="inline-block w-4 border-t-2 border-orange-500"></span>꺾은선 = Cumulative %
+                              </span>
+                              {latestCumVal !== null && (
+                                <span className={`px-2 py-0.5 rounded font-medium ${
+                                  latestCumVal <= 0.064 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                                }`}>
+                                  Cum: {latestCumVal.toFixed(4)}% {latestCumVal <= 0.064 ? '✅' : '⚠️'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex gap-3 mb-3 text-xs">
+                            <span className="px-2 py-1 bg-violet-50 text-violet-700 rounded">
+                              Target: <b>≤ 0.064%</b> (Cumulative)
+                            </span>
+                            {latestCumVal !== null && (
+                              <span className={`px-2 py-1 rounded ${
+                                latestCumVal <= 0.064 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                              }`}>
+                                Current Cum: <b>{latestCumVal.toFixed(4)}%</b>
+                              </span>
+                            )}
+                          </div>
+                          <ResponsiveContainer width="100%" height={260}>
+                            <ComposedChart data={invChartData} margin={{top:30,right:60,left:5,bottom:5}}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+                              <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
+                              <YAxis yAxisId="left" orientation="left" tick={{fontSize:10, fill:'#7c3aed'}}
+                                domain={[0, yMax]} width={50}
+                                tickFormatter={v => `${v.toFixed(3)}%`} />
+                              <YAxis yAxisId="right" orientation="right" tick={{fontSize:10, fill:'#ea580c'}}
+                                domain={[0, yMax]} width={50}
+                                tickFormatter={v => `${v.toFixed(3)}%`} />
+                              <Tooltip
+                                contentStyle={{borderRadius:8, border:'1px solid #e5e7eb', fontSize:12}}
+                                formatter={(v, name) => {
+                                  if (v === null || v === undefined) return ['-', name];
+                                  return [`${v.toFixed(4)}%`, name];
+                                }} />
+                              <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:8}} />
+                              {/* 목표선 0.064% */}
+                              <ReferenceLine yAxisId="left" y={0.064} stroke="#10b981" strokeDasharray="5 3"
+                                label={{value:'Target 0.064%', position:'right', fill:'#10b981', fontSize:10}} />
+                              {/* Adjust cost (Q) 막대 */}
+                              <Bar yAxisId="left" dataKey="ratioQ" name="Adjust Cost (Q) %" radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
+                                label={(props) => {
+                                  const {x,y,width,value}=props;
+                                  if(!value) return null;
+                                  return <text x={x+width/2} y={y-5} fill="#6d28d9" textAnchor="middle" fontSize={10} fontWeight={700}>{value.toFixed(4)}%</text>;
+                                }}>
+                                {invChartData.map((d,i) => (
+                                  <Cell key={i} fill={!d.ratioQ ? '#e5e7eb' : d.ratioQ <= 0.064 ? '#a78bfa' : '#f59e0b'} />
+                                ))}
+                              </Bar>
+                              {/* Cumulative 꺾은선 */}
+                              <Line yAxisId="right" type="monotone" dataKey="ratioCum" name="Cumulative %"
+                                stroke="#ea580c" strokeWidth={3}
+                                dot={{r:6, fill:'#fff', stroke:'#ea580c', strokeWidth:2.5}}
+                                activeDot={{r:8}}
+                                label={(props) => {
+                                  const {x,y,value}=props;
+                                  if(value===null||value===undefined) return null;
+                                  const text = value.toFixed(4)+'%';
+                                  const tw = text.length*5.5+6;
+                                  return (
+                                    <g>
+                                      <rect x={x-tw/2} y={y-26} width={tw} height={15} rx={3} fill="rgba(234,88,12,0.12)" />
+                                      <text x={x} y={y-15} fill="#ea580c" textAnchor="middle" fontSize={10} fontWeight={700}>{text}</text>
+                                    </g>
+                                  );
+                                }}
+                                connectNulls={false} />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                          {!hasData && (
+                            <p className="text-center text-sm text-gray-400 mt-2">
+                              📂 "Inv. Adjust Cost 업로드" 버튼으로 엑셀 파일을 업로드하세요
+                            </p>
+                          )}
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* Kitting Lead Time - 막대(하단25%)=건수, 꺾은선(상단75%)=L/T */}
                     {(() => {
@@ -12399,7 +12539,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             <th className="px-3 py-2 text-center font-medium">GR Qty<br/><span className="text-xs font-normal text-gray-500">(건)</span></th>
                             <th className="px-3 py-2 text-center font-medium">GR Cancel<br/><span className="text-xs font-normal text-gray-500">(건)</span></th>
                             <th className="px-3 py-2 text-center font-medium">취소율<br/><span className="text-xs font-normal text-gray-500">(%)</span></th>
-                            <th className="px-3 py-2 text-center font-medium">재고 손실율<br/><span className="text-xs font-normal text-gray-500">(%)</span></th>
+                            <th className="px-3 py-2 text-center font-medium">Inventory Adjust Cost<br/><span className="text-xs font-normal text-gray-500">(%)</span></th>
                             <th className="px-3 py-2 text-center font-medium">Kitting L/T<br/><span className="text-xs font-normal text-gray-500">(일)</span></th>
                             <th className="px-3 py-2 text-center font-medium">Kitting CT<br/><span className="text-xs font-normal text-gray-500">(분/건)</span></th>
                             <th className="px-3 py-2 text-center font-medium">입고 CT<br/><span className="text-xs font-normal text-gray-500">(분/건)</span></th>
@@ -12536,7 +12676,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 <td className="px-3 py-2 text-center">
                                   {totalCancelRate !== null ? <span className={totalCancelRate === 0 ? 'text-emerald-700' : totalCancelRate <= 0.5 ? 'text-amber-600' : 'text-red-600'}>{totalCancelRate.toFixed(3)}%</span> : '-'}
                                 </td>
-                                {/* 재고 손실율 - 평균 */}
+                                {/* Inventory Adjust Cost - 평균 */}
                                 <td className="px-3 py-2 text-center">
                                   {avgInv !== null ? <span className={avgInv <= 0.064 ? 'text-emerald-700' : 'text-amber-600'}>{avgInv.toFixed(3)}%</span> : '-'}
                                 </td>
@@ -12639,7 +12779,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 {/* Inventory Adjust Cost */}
                 <div>
                   <label className="block text-sm font-medium mb-1">
-                    재고 손실율 (%)
+                    Inventory Adjust Cost (%)
                     <span className="text-xs text-gray-500 ml-2">목표: 0.064% 이하</span>
                   </label>
                   <input
@@ -12674,7 +12814,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500">재고 손실율:</span>
+                      <span className="text-gray-500">Inventory Adjust Cost:</span>
                       <span className={`ml-2 font-bold ${
                         calculateKpiScore('inventoryAdjust', kpiData.inventoryAdjust[kpiInputMonth]) >= 80 ? 'text-emerald-600' :
                         calculateKpiScore('inventoryAdjust', kpiData.inventoryAdjust[kpiInputMonth]) >= 60 ? 'text-amber-600' :
