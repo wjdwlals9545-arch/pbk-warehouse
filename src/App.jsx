@@ -12285,6 +12285,76 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               📂 "Inv. Adjust Cost 업로드" 버튼으로 엑셀 파일을 업로드하세요
                             </p>
                           )}
+
+                          {/* 월별 데이터 테이블 */}
+                          {hasData && (
+                            <div className="mt-4 overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-gray-50">
+                                    <th className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-600">항목</th>
+                                    {yearMonths.map((m, i) => (
+                                      <th key={m} className="border border-gray-200 px-2 py-1.5 text-center font-semibold text-gray-600 min-w-[70px]">
+                                        {i + 1}월
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  <tr>
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-blue-700 bg-blue-50 whitespace-nowrap">Total Stock Value</td>
+                                    {yearMonths.map(m => {
+                                      const d = kpiData.invAdjustDetail[m];
+                                      return (
+                                        <td key={m} className="border border-gray-200 px-2 py-1.5 text-right text-gray-700">
+                                          {d && d.stock ? d.stock.toLocaleString() : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                  <tr className="bg-gray-50/50">
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-orange-700 bg-orange-50 whitespace-nowrap">Abs. Variance</td>
+                                    {yearMonths.map(m => {
+                                      const d = kpiData.invAdjustDetail[m];
+                                      return (
+                                        <td key={m} className="border border-gray-200 px-2 py-1.5 text-right text-gray-700">
+                                          {d && d.variance !== undefined && d.variance !== null ? d.variance.toLocaleString() : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                  <tr>
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-violet-700 bg-violet-50 whitespace-nowrap">Adjust Cost (Q) %</td>
+                                    {yearMonths.map(m => {
+                                      const d = kpiData.invAdjustDetail[m];
+                                      const v = d ? d.ratioQ : null;
+                                      return (
+                                        <td key={m} className={`border border-gray-200 px-2 py-1.5 text-right ${
+                                          v !== null && v !== undefined ? (v <= 0.095 ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
+                                        }`}>
+                                          {v !== null && v !== undefined ? `${v.toFixed(3)}%` : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                  <tr className="bg-amber-50/30">
+                                    <td className="border border-gray-200 px-2 py-1.5 font-medium text-amber-700 bg-amber-50 whitespace-nowrap">Adjust Cost (Cum.) %</td>
+                                    {yearMonths.map(m => {
+                                      const d = kpiData.invAdjustDetail[m];
+                                      const v = d ? d.ratioCum : null;
+                                      return (
+                                        <td key={m} className={`border border-gray-200 px-2 py-1.5 text-right font-semibold ${
+                                          v !== null && v !== undefined ? (v <= 0.095 ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
+                                        }`}>
+                                          {v !== null && v !== undefined ? `${v.toFixed(3)}%` : '-'}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
