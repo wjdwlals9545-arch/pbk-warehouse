@@ -11421,21 +11421,27 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p className="text-indigo-200 mt-1">월간 성과 지표 관리</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {/* v17: GR Cancel 엑셀 업로드 버튼 */}
-                  <label className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition cursor-pointer text-white text-sm font-medium">
+                  {/* v17: GR Cancel GitHub에서 자동 로드 버튼 */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        showToast('GitHub에서 GR Cancel 데이터 로드 중...', 'info');
+                        const url = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/gr_cancel_latest.xlsx';
+                        const resp = await fetch(url);
+                        if (!resp.ok) throw new Error('GitHub 파일 없음');
+                        const blob = await resp.blob();
+                        const file = new File([blob], 'gr_cancel_latest.xlsx', { type: blob.type });
+                        parseGRCancelExcel(file);
+                        showToast('✅ GR Cancel 데이터 로드 완료!', 'success');
+                      } catch (err) {
+                        showToast('⚠️ GR Cancel 로드 실패: ' + err.message, 'error');
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition text-white text-sm font-medium"
+                  >
                     <FileSpreadsheet className="w-4 h-4" />
                     GR Cancel 업로드
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) parseGRCancelExcel(file);
-                        e.target.value = '';
-                      }}
-                    />
-                  </label>
+                  </button>
                   {/* v17: 재고 손실율 엑셀 업로드 버튼 */}
                   <label className="flex items-center gap-2 px-4 py-2 bg-violet-500 hover:bg-violet-600 rounded-lg transition cursor-pointer text-white text-sm font-medium">
                     <FileSpreadsheet className="w-4 h-4" />
