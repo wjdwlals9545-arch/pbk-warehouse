@@ -6632,14 +6632,14 @@ ${tableRows}
       showToast('PDF 생성 중...', 'info');
       const el = kpiContentRef.current;
       const canvas = await html2canvas(el, {
-        scale: 2,
+        scale: 1.5,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
         windowWidth: el.scrollWidth,
         windowHeight: el.scrollHeight,
       });
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
       const imgW = canvas.width;
       const imgH = canvas.height;
       // A4 landscape: 297mm x 210mm
@@ -6656,7 +6656,7 @@ ${tableRows}
       while (yOffset < scaledH) {
         if (page > 0) pdf.addPage();
         // 이미지에서 현재 페이지에 해당하는 부분을 표시
-        pdf.addImage(imgData, 'PNG', margin, margin - yOffset, contentW, scaledH);
+        pdf.addImage(imgData, 'JPEG', margin, margin - yOffset, contentW, scaledH);
         // 페이지 경계 밖 잘라내기 (흰색 사각형으로 덮기)
         if (yOffset > 0) {
           pdf.setFillColor(255, 255, 255);
@@ -11928,8 +11928,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             </div>
 
-            {/* PDF 캡처 영역 */}
-            <div ref={kpiContentRef}>
             {/* KPI 요약 카드 - 선택된 연도 */}
             {(() => {
               const selectedYear = kpiSelectedYear;
@@ -12135,8 +12133,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                   </div>
 
-                  {/* 월별 추이 그래프 */}
-                  <div className="bg-white rounded-xl shadow-sm p-6">
+                  {/* PDF 캡처 영역 (그래프만) */}
+                  <div ref={kpiContentRef} className="bg-white rounded-xl shadow-sm p-6">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                       📈 {selectedYear}년 월별 KPI 추이
                     </h3>
@@ -12971,7 +12969,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </>
               );
             })()}
-            </div>{/* /kpiContentRef */}
           </div>
         )}
 
