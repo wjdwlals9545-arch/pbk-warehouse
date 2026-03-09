@@ -8168,7 +8168,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 {/* Maxwell 16 시리즈 */}
                 <div>
                   <h4 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-purple-100 rounded text-xs">16</span> Maxwell 16 시리즈
+                    <span className="px-2 py-0.5 bg-purple-100 rounded text-xs">Maxwell 16 시리즈</span>
                   </h4>
                   <div className="grid grid-cols-3 gap-4">
                     {Object.entries(MODEL_WEIGHTS).filter(([_, info]) => info.series === '16').map(([model, info]) => {
@@ -8249,7 +8249,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 {/* Maxwell 48 시리즈 */}
                 <div>
                   <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-blue-100 rounded text-xs">48</span> Maxwell 48 시리즈
+                    <span className="px-2 py-0.5 bg-blue-100 rounded text-xs">Maxwell 48 시리즈</span>
                   </h4>
                   <div className="grid grid-cols-3 gap-4">
                     {Object.entries(MODEL_WEIGHTS).filter(([_, info]) => info.series === '48').map(([model, info]) => {
@@ -8334,7 +8334,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 {/* HSM 시리즈 */}
                 <div>
                   <h4 className="text-sm font-semibold text-orange-600 mb-3 flex items-center gap-2">
-                    <span className="px-2 py-0.5 bg-orange-100 rounded text-xs">HSM</span> HSM 시리즈
+                    <span className="px-2 py-0.5 bg-orange-100 rounded text-xs">HSM 시리즈</span>
                   </h4>
                   <div className="grid grid-cols-3 gap-4">
                     {Object.entries(MODEL_WEIGHTS).filter(([_, info]) => info.series === 'HSM').map(([model, info]) => {
@@ -8520,7 +8520,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   return (
                     <div className="mb-6">
                       <h4 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-purple-100 rounded text-xs">16</span> Maxwell 16 시리즈
+                        <span className="px-2 py-0.5 bg-purple-100 rounded text-xs">Maxwell 16 시리즈</span>
                       </h4>
                       <div className="grid grid-cols-3 gap-4">
                         {filtered16.map(([subComName, info]) => {
@@ -8613,7 +8613,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   return (
                     <div className="mb-2">
                       <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
-                        <span className="px-2 py-0.5 bg-blue-100 rounded text-xs">48</span> Maxwell 48 시리즈
+                        <span className="px-2 py-0.5 bg-blue-100 rounded text-xs">Maxwell 48 시리즈</span>
                       </h4>
                       <div className="grid grid-cols-3 gap-4">
                         {filtered48.map(([subComName, info]) => {
