@@ -68,7 +68,7 @@ tr:hover td{background:#f8f9ff}
       <div class="acd" id="ACD"></div>
     </div>
     <button class="sbtn" id="SBTN">&#128269; 검색</button>
-    <button class="sbtn" id="FLIPBTN" style="background:#334155;padding:8px 12px;font-size:13px" title="배치도 상하반전">&#8597;&#65039;</button>
+    <button class="sbtn" id="FLIPBTN" style="background:#334155;padding:8px 12px;font-size:13px" title="배치도 180° 반전">&#128260;</button>
   </div>
 </div>
 <div class="ct" id="CT"></div>
@@ -222,7 +222,9 @@ tr:hover td{background:#f8f9ff}
     var BX=50,BY=50,WHW=564,WHH=1890,RX=982,JY=774;
     var sc=Math.min((W-16)/WHW,(H-16)/WHH);
     var ox=8,oy=8;
-    var mx=function(x){return ox+(x-BX)*sc;};
+    var mx=isFlipped
+      ? function(x){return ox+(RX-x)*sc;}
+      : function(x){return ox+(x-BX)*sc;};
     var my=isFlipped
       ? function(y){return oy+(BY+WHH-y)*sc;}
       : function(y){return oy+(y-BY)*sc;};
@@ -236,7 +238,8 @@ tr:hover td{background:#f8f9ff}
     LD.R.forEach(function(r){
       var nm=(r.a||"").toUpperCase();
       if(nm.indexOf("DOOR")>=0||nm.indexOf("PILLAR")>=0||nm.indexOf("TBL")>=0||nm.indexOf("PLT")>=0) return;
-      var d=rpx2(r),rx=mx(r.x),ry0=my(r.y),rw=Math.max(d.w*sc,1),rh=Math.max(d.h*sc,1);
+      var d=rpx2(r),rx0=mx(r.x),ry0=my(r.y),rw=Math.max(d.w*sc,1),rh=Math.max(d.h*sc,1);
+      var rx=isFlipped?rx0-rw:rx0;
       var ry=isFlipped?ry0-rh:ry0;
       var isT=(r.a===area);
       ctx.globalAlpha=isT?1:0.6;
@@ -249,7 +252,8 @@ tr:hover td{background:#f8f9ff}
       }
     });
     if(LD.zones) LD.zones.forEach(function(z){
-      var zx=mx(z.x),zy0=my(z.y),zw=z.w*sc,zh=z.h*sc;
+      var zx0=mx(z.x),zy0=my(z.y),zw=z.w*sc,zh=z.h*sc;
+      var zx=isFlipped?zx0-zw:zx0;
       var zy=isFlipped?zy0-zh:zy0;
       ctx.fillStyle="#22c55e";ctx.globalAlpha=0.25;
       ctx.fillRect(zx,zy,Math.max(zw,1),Math.max(zh,1));
