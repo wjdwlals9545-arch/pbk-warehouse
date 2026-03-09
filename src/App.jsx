@@ -6631,8 +6631,9 @@ ${tableRows}
     try {
       showToast('PDF 생성 중...', 'info');
       const el = kpiContentRef.current;
+      const scale = 1.5;
       const canvas = await html2canvas(el, {
-        scale: 1.5,
+        scale,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
@@ -6651,20 +6652,54 @@ ${tableRows}
       const ratio = contentW / imgW;
       const scaledH = imgH * ratio;
       const contentH = pageH - margin * 2;
-      let yOffset = 0;
+      const contentHPx = contentH / ratio; // 페이지 높이(캔버스 픽셀)
+
+      // 섹션 경계 위치 수집 (캔버스 픽셀 단위)
+      const sections = el.querySelectorAll('[data-kpi-section]');
+      const sectionTops = [];
+      sections.forEach(sec => {
+        sectionTops.push((sec.offsetTop - el.offsetTop) * scale);
+      });
+      sectionTops.sort((a, b) => a - b);
+
+      let currentY = 0;
       let page = 0;
-      while (yOffset < scaledH) {
+      while (currentY < imgH) {
         if (page > 0) pdf.addPage();
-        // 이미지에서 현재 페이지에 해당하는 부분을 표시
-        pdf.addImage(imgData, 'JPEG', margin, margin - yOffset, contentW, scaledH);
-        // 페이지 경계 밖 잘라내기 (흰색 사각형으로 덮기)
-        if (yOffset > 0) {
-          pdf.setFillColor(255, 255, 255);
-          pdf.rect(0, 0, pageW, margin, 'F');
+        const pageEndTarget = currentY + contentHPx;
+        let nextY;
+
+        if (pageEndTarget >= imgH) {
+          nextY = imgH;
+        } else {
+          // 페이지 경계에서 잘리는 섹션이 있는지 확인
+          nextY = pageEndTarget;
+          for (let i = 0; i < sectionTops.length; i++) {
+            const secTop = sectionTops[i];
+            const secEnd = sectionTops[i + 1] || imgH;
+            // 이 섹션이 페이지 경계를 넘으면 → 이 섹션 시작 전에서 자름
+            if (secTop > currentY && secTop < pageEndTarget && secEnd > pageEndTarget) {
+              nextY = secTop;
+              break;
+            }
+          }
+          if (nextY <= currentY) nextY = pageEndTarget;
         }
-        yOffset += contentH;
+
+        const yMM = currentY * ratio;
+        pdf.addImage(imgData, 'JPEG', margin, margin - yMM, contentW, scaledH);
+        // 상단 마진 덮기
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, 0, pageW, margin, 'F');
+        // 하단 빈 영역 덮기
+        const usedH = (nextY - currentY) * ratio;
+        if (usedH < contentH) {
+          pdf.rect(0, margin + usedH, pageW, pageH - margin - usedH, 'F');
+        }
+
+        currentY = nextY;
         page++;
-        if (page > 20) break; // 안전장치
+        if (page > 20) break;
       }
       const today = new Date().toISOString().slice(0, 10);
       pdf.save(`KPI_Dashboard_${kpiSelectedYear}_${today}.pdf`);
@@ -12140,7 +12175,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </h3>
 
                     {/* GR Cancel 연도별 트렌드 */}
-                    <div className="mb-8">
+                    <div data-kpi-section className="mb-8">
                       <h4 className="text-base font-bold text-gray-700 mb-3">
                         📊 GR Cancel Rate 연도별 추이
                         {Object.keys(kpiData.grCancelQty).length > 0 && (
@@ -12202,7 +12237,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       const totalCancel = yearMonths.reduce((s,m)=>{const v=kpiData.grCancel[m]; return s+(v!==undefined?v:0);},0);
                       const finalRate   = totalQty > 0 ? (totalCancel/totalQty*100) : 0;
                       return (
-                        <div className="mb-8">
+                        <div data-kpi-section className="mb-8">
                           {/* 헤더 */}
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="text-base font-bold text-gray-700">GR Cancel - 자동 집계</h4>
@@ -12338,7 +12373,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     })()}
 
                     {/* Inventory Adjust Cost 연도별 트렌드 */}
-                    <div className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
+                    <div data-kpi-section className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                       <h4 className="text-base font-bold text-gray-700 mb-3">
                         📊 Inventory Adjust Cost 연도별 추이
                         {Object.keys(kpiData.invAdjustDetail).length > 0 && (
@@ -12550,7 +12585,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     })()}
 
                     {/* Kitting Lead Time - 막대(하단25%)=건수, 꺾은선(상단75%)=L/T */}
-                    <div className="border-t-2 border-gray-200 pt-8 mt-8"></div>
                     {(() => {
                       const ltChartData = yearMonths.map((month, idx) => {
                         const md = kittingLTByMonth[month];
@@ -12566,7 +12600,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       // 꺾은선을 상단 75%에 → 오른쪽 Y축 max에 충분한 여백
                       const rightDomainMax = Math.ceil(ltMax * 1.4 / 1) + 1;
                       return (
-                        <div className="mb-8">
+                        <div data-kpi-section className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="text-base font-bold text-gray-700">Kitting Lead Time - 자동 집계</h4>
                             <div className="flex items-center gap-4 text-xs text-gray-400">
@@ -12637,7 +12671,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       );
                     })()}
 
-                    <div className="border-t-2 border-gray-200 pt-8 mt-8"></div>
                     {/* Kitting Cycle Time - 막대(하단25%)=건수, 꺾은선(상단75%)=CT(분) */}
                     {(() => {
                       const ctChartData = yearMonths.map((month, idx) => {
@@ -12652,7 +12685,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       const ctLeftMax  = ctCountMax * 4;
                       const ctRightMax = Math.ceil(ctMax * 1.4 / 10) * 10 + 20;
                       return (
-                        <div className="mb-8">
+                        <div data-kpi-section className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="text-base font-bold text-gray-700">Kitting Cycle Time - 자동 집계</h4>
                             <div className="flex items-center gap-4 text-xs text-gray-400">
@@ -12714,7 +12747,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       );
                     })()}
 
-                    <div className="border-t-2 border-gray-200 pt-8 mt-8"></div>
                     {/* 입고 Cycle Time - 막대(하단25%)=입고건수, 꺾은선(상단75%)=평균시간(분) */}
                     {(() => {
                       const rcChartData = yearMonths.map((month, idx) => {
@@ -12729,7 +12761,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       const rcLeftMax  = rcCountMax * 4;
                       const rcRightMax = Math.ceil(rcMax * 1.4 / 10) * 10 + 20;
                       return (
-                        <div className="mb-8">
+                        <div data-kpi-section className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="text-base font-bold text-gray-700">입고 Cycle Time - 자동 집계</h4>
                             <div className="flex items-center gap-4 text-xs text-gray-400">
