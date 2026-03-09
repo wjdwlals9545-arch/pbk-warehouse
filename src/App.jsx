@@ -3790,13 +3790,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     return () => clearInterval(interval);
   }, [tempHumidityData, inventoryData, openPOData, dataHistory]);
 
-  // GitHub에서 Stock/OpenPO 데이터 자동 로드 (8시, 14시에만)
+  // GitHub에서 대시보드 상태 + Stock/OpenPO 데이터 자동 로드
   // Excel 우선 시도 → 없으면 JSON fallback
   useEffect(() => {
-    const now = new Date();
-    const h = now.getHours();
-    if (h !== 8 && h !== 14) return;
-
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
 
     // XLSX 라이브러리 로드 헬퍼
