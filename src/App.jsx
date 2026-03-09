@@ -8192,8 +8192,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         <div key={model} className={`rounded-xl p-4 border-2 ${bgColor}`}>
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <p className="font-bold text-gray-800">{model}</p>
-                              <p className="text-xs text-gray-500">{info.code}</p>
+                              <p className="font-bold text-gray-800">{info.code}</p>
                               <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
                             </div>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -8274,8 +8273,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         <div key={model} className={`rounded-xl p-4 border-2 ${bgColor}`}>
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <p className="font-bold text-gray-800">{model}</p>
-                              <p className="text-xs text-gray-500">{info.code}</p>
+                              <p className="font-bold text-gray-800">{info.code}</p>
                               <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
                             </div>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -8359,8 +8357,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         <div key={model} className={`rounded-xl p-4 border-2 ${bgColor}`}>
                           <div className="flex justify-between items-start mb-2">
                             <div>
-                              <p className="font-bold text-gray-800">{model}</p>
-                              <p className="text-xs text-gray-500">{info.code}</p>
+                              <p className="font-bold text-gray-800">{info.code}</p>
                               <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
                             </div>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -14709,8 +14706,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       MODEL_WEIGHTS[model].series === '48' ? 'bg-blue-50 border-blue-500' :
                       'bg-orange-50 border-orange-500'
                     }`}>
-                      <p className="font-bold text-gray-800">{model}</p>
-                      <p className="text-xs text-gray-500">{MODEL_WEIGHTS[model].code}</p>
+                      <p className="font-bold text-gray-800">{MODEL_WEIGHTS[model].code}</p>
                       <p className={`text-2xl font-bold mt-2 ${
                         avgLT === '-' ? 'text-gray-400' :
                         parseFloat(avgLT) <= 1 ? 'text-green-600' :
