@@ -8194,6 +8194,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             <div>
                               <p className="font-bold text-gray-800">{model}</p>
                               <p className="text-xs text-gray-500">{info.code}</p>
+                              <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
                             </div>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                               status === 'over' ? 'bg-purple-200 text-purple-800' :
@@ -8214,7 +8215,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           <div className="mt-2">
                             <div className="w-full bg-gray-200 rounded-full h-2 relative">
                               <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
-                              <div 
+                              <div
                                 className={`h-2 rounded-full ${
                                   status === 'over' ? 'bg-purple-500' :
                                   status === 'ok' ? 'bg-emerald-500' :
@@ -8275,6 +8276,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             <div>
                               <p className="font-bold text-gray-800">{model}</p>
                               <p className="text-xs text-gray-500">{info.code}</p>
+                              <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
                             </div>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                               status === 'over' ? 'bg-purple-200 text-purple-800' :
@@ -8359,6 +8361,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             <div>
                               <p className="font-bold text-gray-800">{model}</p>
                               <p className="text-xs text-gray-500">{info.code}</p>
+                              <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
                             </div>
                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                               status === 'over' ? 'bg-purple-200 text-purple-800' :
@@ -8541,7 +8544,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           return (
                             <div key={subComName} className={`rounded-xl p-4 border-2 ${bgColor}`}>
                               <div className="flex justify-between items-start mb-2">
-                                <p className="font-bold text-gray-800">{subComName}</p>
+                                <div>
+                                  <p className="font-bold text-gray-800">{subComName}</p>
+                                  <p className="text-xs text-gray-400 truncate" style={{maxWidth:'140px'}}>{inventoryData.find(i => i.material === subComName)?.description || ''}</p>
+                                </div>
                                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                                   status === 'over' ? 'bg-purple-200 text-purple-800' :
                                   status === 'ok' ? 'bg-emerald-200 text-emerald-800' :
@@ -8633,7 +8639,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <div className="flex justify-between items-start mb-2">
                                 <div>
                                   <p className="font-bold text-gray-800">{subComName}</p>
-                                  {subComName === 'KB0770' && <p className="text-xs text-gray-400">1대당 2EA</p>}
+                                  <p className="text-xs text-gray-400 truncate" style={{maxWidth:'140px'}}>{inventoryData.find(i => i.material === subComName)?.description || ''}</p>
+                                  {subComName === 'KB0770' && <p className="text-xs text-orange-400">1대당 2EA</p>}
                                 </div>
                                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                                   status === 'over' ? 'bg-purple-200 text-purple-800' :
