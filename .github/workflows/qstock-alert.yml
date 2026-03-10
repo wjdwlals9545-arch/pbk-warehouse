@@ -209,7 +209,7 @@ jobs:
         with:
           server_address: smtp.office365.com
           server_port: 587
-          secure: true
+          secure: false
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
           subject: "${{ steps.check.outputs.is_test == 'true' && '[테스트] ' || '' }}[수입검사 알림] 🚨 ${{ steps.check.outputs.urgent_count }}건 긴급, ${{ steps.check.outputs.warning_count }}건 주의 (${{ steps.check.outputs.date_str }})"
