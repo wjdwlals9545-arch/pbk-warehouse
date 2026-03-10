@@ -12233,8 +12233,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                     <h4 className="font-semibold text-blue-800 mb-2">GR Cancel</h4>
                     <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                      <li>매월 초 Power Automate 실행</li>
-                      <li>GitHub에 엑셀 파일 자동 업로드</li>
+                      <li>매월 첫번째 월요일 오전 8시 자동 실행 (Windows 스케줄러)</li>
+                      <li>Python → SAP MB51 자동 추출 → GitHub 업로드</li>
                       <li>대시보드에서 자동 로드</li>
                     </ol>
                     <button
