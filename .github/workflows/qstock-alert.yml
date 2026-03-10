@@ -8,6 +8,13 @@ on:
     branches: [main]
     paths:
       - 'public/data/qstock_data.json'
+  workflow_dispatch:
+    inputs:
+      test_mode:
+        description: '테스트 모드 (jimin.jung에게만 발송, 경과일 제한 없이 전체 리스트)'
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   check-qstock:
@@ -22,6 +29,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const isTest = '${{ github.event.inputs.test_mode }}' === 'true';
 
             let data;
             try {
@@ -38,7 +46,7 @@ jobs:
             }
 
             const now = new Date();
-            const warnings = [];  // 7-10 days
+            const warnings = [];  // 7-10 days (or all items in test mode)
             const urgents = [];   // > 10 days
 
             items.forEach(item => {
@@ -49,12 +57,20 @@ jobs:
               const grDate = new Date(item.grDate);
               if (isNaN(grDate.getTime())) return;
               const days = Math.floor((now - grDate) / (1000 * 60 * 60 * 24));
-              if (days > 10) urgents.push({ ...item, days });
-              else if (days >= 7) warnings.push({ ...item, days });
+
+              if (isTest) {
+                // 테스트 모드: 모든 항목 포함
+                if (days > 10) urgents.push({ ...item, days });
+                else if (days >= 7) warnings.push({ ...item, days });
+                else warnings.push({ ...item, days }); // 테스트에서는 7일 미만도 포함
+              } else {
+                if (days > 10) urgents.push({ ...item, days });
+                else if (days >= 7) warnings.push({ ...item, days });
+              }
             });
 
             if (urgents.length === 0 && warnings.length === 0) {
-              console.log('No overdue Q-stock items. All items within 7-day threshold.');
+              console.log('No Q-stock items to alert.');
               core.setOutput('should_send', 'false');
               return;
             }
@@ -63,11 +79,13 @@ jobs:
             const allAlerts = [...urgents, ...warnings].sort((a, b) => b.days - a.days);
 
             // Build HTML email body
+            const testLabel = isTest ? ' [테스트]' : '';
             let htmlBody = `<div style="font-family: 'Malgun Gothic', Arial, sans-serif; max-width: 800px; margin: 0 auto;">`;
             htmlBody += `<p>안녕하세요, 정지민입니다.</p>`;
             htmlBody += `<p>수입검사 대기 리스트 공유드립니다.</p>`;
             htmlBody += `<p>리스트 참고하여 수입검사 부탁드립니다.</p>`;
             htmlBody += `<br/>`;
+            if (isTest) htmlBody += `<p style="color: #e53e3e; font-weight: bold;">⚠️ 이 메일은 테스트 발송입니다.</p>`;
             htmlBody += `<p style="color: #666; font-size: 13px;">검사일: ${now.toISOString().split('T')[0]} | 총 알림: ${allAlerts.length}건 (긴급 ${urgents.length}건, 주의 ${warnings.length}건)</p>`;
             htmlBody += `<table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;">`;
             htmlBody += `<thead><tr style="background: #f3f4f6;">`;
@@ -82,9 +100,10 @@ jobs:
 
             allAlerts.forEach(item => {
               const isUrgent = item.days > 10;
-              const bgColor = isUrgent ? '#fef2f2' : '#fffbeb';
-              const statusEmoji = isUrgent ? '🚨 긴급' : '⚠️ 주의';
-              const daysColor = isUrgent ? '#dc2626' : '#d97706';
+              const isWarning = item.days >= 7 && item.days <= 10;
+              const bgColor = isUrgent ? '#fef2f2' : isWarning ? '#fffbeb' : '#f0fdf4';
+              const statusEmoji = isUrgent ? '🚨 긴급' : isWarning ? '⚠️ 주의' : '✅ 정상';
+              const daysColor = isUrgent ? '#dc2626' : isWarning ? '#d97706' : '#16a34a';
               htmlBody += `<tr style="background: ${bgColor};">`;
               htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center;">${statusEmoji}</td>`;
               htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; font-weight: bold;">${item.material}</td>`;
@@ -105,6 +124,13 @@ jobs:
             core.setOutput('urgent_count', urgents.length.toString());
             core.setOutput('warning_count', warnings.length.toString());
             core.setOutput('date_str', now.toISOString().split('T')[0]);
+            core.setOutput('is_test', isTest ? 'true' : 'false');
+
+            // GitHub Issue는 테스트 모드에서는 생성하지 않음
+            if (isTest) {
+              console.log('Test mode - skipping GitHub Issue creation');
+              return;
+            }
 
             // Also create/update GitHub Issue for history
             let issueBody = `## 🔍 Q-Stock 수입검사 지연 알림\n\n`;
@@ -186,8 +212,8 @@ jobs:
           secure: true
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "[수입검사 알림] 🚨 ${{ steps.check.outputs.urgent_count }}건 긴급, ${{ steps.check.outputs.warning_count }}건 주의 (${{ steps.check.outputs.date_str }})"
+          subject: "${{ steps.check.outputs.is_test == 'true' && '[테스트] ' || '' }}[수입검사 알림] 🚨 ${{ steps.check.outputs.urgent_count }}건 긴급, ${{ steps.check.outputs.warning_count }}건 주의 (${{ steps.check.outputs.date_str }})"
           html_body: ${{ steps.check.outputs.email_body }}
           from: jimin.jung@promega.com
-          to: heejae.kim@promega.com, changyeol.yoo@promega.com
-          cc: jimin.jung@promega.com, kwangsub.ahn@promega.com
+          to: ${{ steps.check.outputs.is_test == 'true' && 'jimin.jung@promega.com' || 'heejae.kim@promega.com, changyeol.yoo@promega.com' }}
+          cc: ${{ steps.check.outputs.is_test == 'true' && '' || 'jimin.jung@promega.com, kwangsub.ahn@promega.com' }}
