@@ -1874,6 +1874,10 @@ export default function PBKWarehouseSystem() {
   
   // 재고 데이터 (SAP 엑셀에서 로드)
   const [inventoryData, setInventoryData] = useState([]);
+  const [qStockData, setQStockData] = useState(() => {
+    const saved = safeStorage.getItem('pbk_qstock');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [rackSummary, setRackSummary] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -3815,18 +3819,38 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(sheet);
       const materialInfoMap = {};
+      const qStockItems = [];
       jsonData.forEach(row => {
         const material = row['Material'];
         const desc = row['Material Description'];
         const bin = row['Storage Bin'];
+        const stockCategory = row['Stock Category'];
         if (material && desc && desc.toString().trim() && bin) {
           const matKey = String(material);
           if (String(bin).match(/^\d{10}/)) return;
           if (!materialInfoMap[matKey]) materialInfoMap[matKey] = { description: String(desc), bins: [] };
           materialInfoMap[matKey].bins.push(String(bin));
+          // Q Stock 항목 추출
+          if (stockCategory && String(stockCategory).trim().toUpperCase() === 'Q') {
+            let grDateVal = row['GR Date'] || null;
+            if (grDateVal && typeof grDateVal === 'number') {
+              grDateVal = new Date((grDateVal - 25569) * 86400000).toISOString().split('T')[0];
+            } else if (grDateVal) {
+              const d = new Date(grDateVal);
+              grDateVal = isNaN(d.getTime()) ? String(grDateVal) : d.toISOString().split('T')[0];
+            }
+            qStockItems.push({
+              material: matKey,
+              description: String(desc),
+              bin: String(bin),
+              stock: parseFloat(row['Available stock']) || 0,
+              unit: String(row['Base Unit of Measure'] || 'EA'),
+              grDate: grDateVal
+            });
+          }
         }
       });
-      return jsonData
+      const inventory = jsonData
         .filter(row => row['Material'] && (!row['Material Description'] || !row['Material Description'].toString().trim()))
         .map(row => {
           const material = String(row['Material'] || '');
@@ -3834,6 +3858,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           return { material, description: info.description, bin: info.bins[0] || '', allBins: info.bins, stock: parseFloat(row['Available stock']) || 0, unit: String(row['Base Unit of Measure'] || 'EA') };
         })
         .filter(item => item.bin);
+      return { inventory, qStockItems };
     };
 
     // Excel ArrayBuffer → OpenPO 데이터 파싱 (parseOpenPOFile 로직 동일)
@@ -3891,7 +3916,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           if (xlsResp.ok) {
             await ensureXLSX();
             const buf = await xlsResp.arrayBuffer();
-            const inventory = parseStockExcel(buf);
+            const { inventory, qStockItems } = parseStockExcel(buf);
             if (inventory.length > 0) {
               setInventoryData(inventory);
               processRackSummary(inventory);
@@ -3900,7 +3925,16 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
               safeStorage.setItem('pbk_inventory', JSON.stringify(inventory));
               safeStorage.setItem('pbk_last_updated', ts);
               uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: ts, count: inventory.length }, 'Stock 데이터 (자동)');
-              showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개)`, 'success');
+              // Q Stock 데이터 저장
+              if (qStockItems && qStockItems.length > 0) {
+                setQStockData(qStockItems);
+                safeStorage.setItem('pbk_qstock', JSON.stringify(qStockItems));
+                uploadDataToGitHub('public/data/qstock_data.json', { data: qStockItems, updated: ts, count: qStockItems.length }, 'Q-Stock 데이터 (자동)');
+              } else {
+                setQStockData([]);
+                safeStorage.removeItem('pbk_qstock');
+              }
+              showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개${qStockItems.length > 0 ? `, Q:${qStockItems.length}건` : ''})`, 'success');
               addDataHistory('stock', 'GitHub Excel 자동 로드', inventory.length);
               stockLoaded = true;
             }
@@ -3952,6 +3986,18 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           }
         } catch (e) { console.log('Stock JSON fetch skip:', e.message); }
       }
+
+      // Q Stock JSON fallback
+      try {
+        const qResp = await fetch(`${BASE}/qstock_data.json?t=${Date.now()}`);
+        if (qResp.ok) {
+          const qJson = await qResp.json();
+          if (qJson && qJson.data && qJson.data.length > 0) {
+            setQStockData(qJson.data);
+            safeStorage.setItem('pbk_qstock', JSON.stringify(qJson.data));
+          }
+        }
+      } catch (e) { console.log('Q-Stock JSON fetch skip:', e.message); }
 
       if (!poLoaded) {
         try {
@@ -4732,12 +4778,14 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       // Description 없는 행 (노란색) = Material별 총 재고 → 여기서 재고 추출
       // Description 있는 행 = Bin 정보 + 품명 → 매핑용
 
-      // 1. Description 있는 행에서 Material별 정보 매핑 (Bin, Description)
+      // 1. Description 있는 행에서 Material별 정보 매핑 (Bin, Description) + Q Stock 추출
       const materialInfoMap = {};
+      const qStockItems = [];
       jsonData.forEach(row => {
         const material = row['Material'];
         const desc = row['Material Description'];
         const bin = row['Storage Bin'];
+        const stockCategory = row['Stock Category'];
 
         if (material && desc && desc.toString().trim() && bin) {
           const matKey = String(material);
@@ -4751,6 +4799,25 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
             };
           }
           materialInfoMap[matKey].bins.push(String(bin));
+
+          // Q Stock 항목 추출
+          if (stockCategory && String(stockCategory).trim().toUpperCase() === 'Q') {
+            let grDateVal = row['GR Date'] || null;
+            if (grDateVal && typeof grDateVal === 'number') {
+              grDateVal = new Date((grDateVal - 25569) * 86400000).toISOString().split('T')[0];
+            } else if (grDateVal) {
+              const d = new Date(grDateVal);
+              grDateVal = isNaN(d.getTime()) ? String(grDateVal) : d.toISOString().split('T')[0];
+            }
+            qStockItems.push({
+              material: matKey,
+              description: String(desc),
+              bin: String(bin),
+              stock: parseFloat(row['Available stock']) || 0,
+              unit: String(row['Base Unit of Measure'] || 'EA'),
+              grDate: grDateVal
+            });
+          }
         }
       });
 
@@ -4795,11 +4862,21 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       // GitHub에 Stock 데이터 업로드
       uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: now, count: inventory.length }, 'Stock 데이터');
 
+      // Q Stock 데이터 저장
+      if (qStockItems && qStockItems.length > 0) {
+        setQStockData(qStockItems);
+        safeStorage.setItem('pbk_qstock', JSON.stringify(qStockItems));
+        uploadDataToGitHub('public/data/qstock_data.json', { data: qStockItems, updated: now, count: qStockItems.length }, 'Q-Stock 데이터');
+      } else {
+        setQStockData([]);
+        safeStorage.removeItem('pbk_qstock');
+      }
+
       setShowUploadModal(false);
 
       // v15: 토스트, 알림, 히스토리 추가
-      showToast(`✅ SAP 재고 업로드 완료! ${inventory.length}개 품목`, 'success');
-      addNotification('재고 데이터 업로드', `${inventory.length}개 품목이 업로드되었습니다.`, 'success');
+      showToast(`✅ SAP 재고 업로드 완료! ${inventory.length}개 품목${qStockItems.length > 0 ? ` (Q: ${qStockItems.length}건)` : ''}`, 'success');
+      addNotification('재고 데이터 업로드', `${inventory.length}개 품목이 업로드되었습니다.${qStockItems.length > 0 ? ` Q-Stock: ${qStockItems.length}건` : ''}`, 'success');
       addDataHistory('stock', `SAP 재고 데이터 업로드 (${inventory.length}개 품목)`, inventory.length);
 
     } catch (error) {
@@ -5202,6 +5279,47 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   }, [inventoryData, customBomData]);
 
   const producibleUnits = calculateProducibleUnits();
+
+  // Q Stock 제외 생산 가능 대수 계산
+  const qStockByMaterial = useMemo(() => {
+    const map = {};
+    qStockData.forEach(item => {
+      if (!map[item.material]) map[item.material] = 0;
+      map[item.material] += item.stock || 0;
+    });
+    return map;
+  }, [qStockData]);
+
+  const producibleUnitsExQ = useMemo(() => {
+    if (inventoryData.length === 0 || qStockData.length === 0) return {};
+    const stockByMaterial = {};
+    inventoryData.forEach(item => {
+      const mat = item.material;
+      if (!stockByMaterial[mat]) stockByMaterial[mat] = 0;
+      stockByMaterial[mat] += item.stock || 0;
+    });
+    // Q stock 차감
+    Object.entries(qStockByMaterial).forEach(([mat, qQty]) => {
+      if (stockByMaterial[mat]) stockByMaterial[mat] = Math.max(0, stockByMaterial[mat] - qQty);
+    });
+    const results = {};
+    const bomToUse = customBomData || MODEL_BOM_DATA;
+    Object.keys(bomToUse).forEach(model => {
+      const bom = bomToUse[model];
+      let minUnits = Infinity;
+      Object.entries(bom).forEach(([material, requiredQty]) => {
+        const currentStock = stockByMaterial[material] || 0;
+        if (currentStock > 0) {
+          const possibleUnits = Math.floor(currentStock / requiredQty);
+          if (possibleUnits < minUnits) minUnits = possibleUnits;
+        } else {
+          minUnits = 0;
+        }
+      });
+      results[model] = { units: minUnits === Infinity ? 0 : minUnits };
+    });
+    return results;
+  }, [inventoryData, qStockData, qStockByMaterial, customBomData]);
 
   const avgPickTime = pickCycles.filter(p => p.cycleMin).reduce((s, p, _, a) => s + p.cycleMin / a.length, 0) || 0;
   const avgReceiveTime = receiveCycles.filter(r => r.cycleMin).reduce((s, r, _, a) => s + r.cycleMin / a.length, 0) || 0;
@@ -7988,6 +8106,34 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               return null;
             })()}
 
+            {/* Q Stock 검사 지연 경고 배너 */}
+            {(() => {
+              const now = new Date();
+              const overdueQ = qStockData.filter(item => {
+                if (!item.grDate) return false;
+                const grDate = new Date(item.grDate);
+                return !isNaN(grDate.getTime()) && Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) > 10;
+              });
+              if (overdueQ.length > 0) {
+                return (
+                  <div className="bg-orange-50 border border-orange-300 rounded-xl p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">🔍</span>
+                        <div>
+                          <p className="font-medium text-orange-800">수입검사 지연 {overdueQ.length}건!</p>
+                          <p className="text-sm text-orange-600">
+                            10일 초과: {overdueQ.slice(0, 3).map(q => q.material).join(', ')}{overdueQ.length > 3 ? ` 외 ${overdueQ.length - 3}건` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+
             {/* KPI - 전월 대비 증감 표시 */}
             <div className="grid grid-cols-3 gap-4">
               {(() => {
@@ -8206,6 +8352,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <div className="flex items-end gap-2">
                             <p className={`text-3xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-lg">대</span></p>
+                            {qStockData.length > 0 && producibleUnitsExQ[model] && prodInfo.units !== producibleUnitsExQ[model].units && (
+                              <p className="text-xs text-orange-500 mt-0.5">Q제외 {producibleUnitsExQ[model].units}대</p>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                           <p className="text-xs text-blue-600 mt-0.5">
@@ -8287,6 +8436,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <div className="flex items-end gap-2">
                             <p className={`text-3xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-lg">대</span></p>
+                            {qStockData.length > 0 && producibleUnitsExQ[model] && prodInfo.units !== producibleUnitsExQ[model].units && (
+                              <p className="text-xs text-orange-500 mt-0.5">Q제외 {producibleUnitsExQ[model].units}대</p>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                           <p className="text-xs text-blue-600 mt-0.5">
@@ -8371,6 +8523,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <div className="flex items-end gap-2">
                             <p className={`text-3xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-lg">대</span></p>
+                            {qStockData.length > 0 && producibleUnitsExQ[model] && prodInfo.units !== producibleUnitsExQ[model].units && (
+                              <p className="text-xs text-orange-500 mt-0.5">Q제외 {producibleUnitsExQ[model].units}대</p>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                           <p className="text-xs text-blue-600 mt-0.5">
@@ -8423,6 +8578,85 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 💡 병목 자재 = 가장 먼저 소진되는 자재. 해당 자재 재고 부족 시 생산 불가.
               </p>
             </div>
+
+            {/* 🔍 수입검사 대기 리스트 (Q Stock) */}
+            {qStockData.length > 0 && (() => {
+              const now = new Date();
+              const qItems = qStockData.map(item => {
+                const grDate = item.grDate ? new Date(item.grDate) : null;
+                const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) : null;
+                return { ...item, daysElapsed };
+              }).sort((a, b) => (b.daysElapsed || 0) - (a.daysElapsed || 0));
+              const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
+              const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
+              const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
+              const totalQty = qStockData.reduce((s, i) => s + (i.stock || 0), 0);
+              return (
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      🔍 수입검사 대기 리스트
+                    </h3>
+                    <span className="text-xs text-gray-500 mt-1 sm:mt-0">
+                      총 {qStockData.length}건 | {totalQty.toLocaleString()} EA
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
+                      <p className="text-xs text-emerald-600">정상 (&lt;7일)</p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-amber-600">{amberCount}</p>
+                      <p className="text-xs text-amber-600">주의 (7~10일)</p>
+                    </div>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-red-600">{redCount}</p>
+                      <p className="text-xs text-red-600">초과 (&gt;10일)</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto max-h-80 border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">상태</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">수량</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">입고일</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">경과일</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {qItems.map((item, idx) => {
+                          const isRed = item.daysElapsed !== null && item.daysElapsed > 10;
+                          const isAmber = item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10;
+                          const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
+                          const textCol = isRed ? 'text-red-600 font-bold' : isAmber ? 'text-amber-600 font-bold' : item.daysElapsed !== null ? 'text-emerald-600' : 'text-gray-400';
+                          return (
+                            <tr key={idx} className={isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                              <td className="px-3 py-2"><span className={`w-2.5 h-2.5 rounded-full inline-block ${dotColor}`} /></td>
+                              <td className="px-3 py-2 font-mono text-xs font-semibold">{item.material}</td>
+                              <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
+                              <td className="px-3 py-2 text-xs">{item.bin}</td>
+                              <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
+                              <td className="px-3 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
+                              <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
+                                {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-3">
+                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. 10일 초과 시 검사 지연으로 분류됩니다.
+                  </p>
+                </div>
+              );
+            })()}
 
             {/* 🔧 Sub-component 생산 가능 대수 */}
             {subComponentBomData && Object.keys(subComponentBomData).length > 0 && (
