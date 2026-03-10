@@ -1880,6 +1880,8 @@ export default function PBKWarehouseSystem() {
   });
   const [qStockSearch, setQStockSearch] = useState('');
   const [qStockStatusFilter, setQStockStatusFilter] = useState('all');
+  const [qStockSortKey, setQStockSortKey] = useState('daysElapsed'); // 'grDate' | 'daysElapsed'
+  const [qStockSortDir, setQStockSortDir] = useState('desc'); // 'asc' | 'desc'
   const [rackSummary, setRackSummary] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -6059,15 +6061,20 @@ ${tableRows}
   const addReceive = () => {
     if (!newReceive.vendor) return;
 
-    // 자동 번호 계산: 현재 최대값 + 1
-    const maxNo = receiveCycles.reduce((max, r) => {
+    // 자동 번호 계산: 해당 월 기준 최대값 + 1 (월별 No.1부터 시작)
+    const now = new Date();
+    const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const thisMonthCycles = receiveCycles.filter(r => {
+      const d = r.delivery || r.startTime || '';
+      return d.startsWith(currentMonth);
+    });
+    const maxNo = thisMonthCycles.reduce((max, r) => {
       const num = parseInt(r.poNo) || 0;
       return num > max ? num : max;
     }, 0);
     const newPoNo = String(maxNo + 1);
 
-    // 현재 시간을 납품 시각으로 사용
-    const now = new Date();
+    // 현재 시간을 납품 시각으로 사용 (위에서 선언한 now 재사용)
     const deliveryStr = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
 
     setReceiveCycles(prev => [...prev, { 
@@ -6396,6 +6403,37 @@ ${tableRows}
     });
   };
 
+  // Kitting 전체 미완료 일괄 완료
+  const completeAllIncompleteKittings = (targetIds) => {
+    const now = new Date();
+    const idsToComplete = targetIds || [];
+    const productionOrders = kittingData
+      .filter(k => idsToComplete.includes(k.id) && k.status !== 'completed')
+      .map(k => k.productionOrder);
+    setKittingData(prev => prev.map(k => {
+      if (idsToComplete.includes(k.id) && k.status !== 'completed') {
+        let leadTimeDays = 0;
+        if (k.startedAt) {
+          const startTime = new Date(k.startedAt);
+          leadTimeDays = getBusinessDays(startTime, now);
+        }
+        return { ...k, status: 'completed', completedAt: now.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''), leadTimeDays };
+      }
+      return k;
+    }));
+    if (productionOrders.length > 0) {
+      const nowStr = now.toISOString().slice(0, 16).replace('T', ' ');
+      setPickCycles(prev => prev.map(p => {
+        if (productionOrders.includes(p.productionOrder) && p.status !== 'completed') {
+          const cycleMin = p.startTime ? calculateWorkingMinutes(p.startTime, now.toISOString()) : 0;
+          return { ...p, completed: nowStr, cycleMin, status: 'completed' };
+        }
+        return p;
+      }));
+    }
+    setSelectedKittings(new Set());
+  };
+
   // Kitting 일괄 완료
   const completeSelectedKittings = () => {
     if (selectedKittings.size === 0) return;
@@ -6529,7 +6567,8 @@ ${tableRows}
             basicStartDate: normalizeDate2(startDate) || new Date().toISOString().split('T')[0],
             worker: 'Z01',
             isUrgent: false,
-            status: 'waiting',
+            status: 'in-progress',
+            startedAt: new Date().toISOString(),
             createdAt: new Date().toISOString(),
             completedAt: null,
             leadTimeDays: null
@@ -6538,7 +6577,7 @@ ${tableRows}
 
         if (newItems.length > 0) {
           setKittingData(prev => [...prev, ...newItems]);
-          alert(`✅ ${newItems.length}개의 Kitting 항목이 추가되었습니다.`);
+          alert(`✅ ${newItems.length}개의 Kitting 항목이 추가되었습니다. (자동 시작됨)`);
         } else {
           alert('추가할 새로운 항목이 없습니다. (중복 제외)');
         }
@@ -7740,14 +7779,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               {isAdmin && (
                 <>
                   <button
-                    onClick={() => setShowBackupModal(true)}
-                    className="flex items-center gap-1.5 px-2 py-1.5 bg-orange-500 hover:bg-orange-600 rounded-lg transition text-xs"
-                    title="데이터 백업 및 복원"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Backup
-                  </button>
-                  <button
                     onClick={exportLocationHTML}
                     className="flex items-center gap-1.5 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-xs"
                     title="QR코드용 자재위치 페이지 내보내기"
@@ -7768,12 +7799,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
                   {lastUpdated && (
-                    <p title={getElapsedTimeDetail(lastUpdated)}>
+                    <p title={`${getElapsedTimeDetail(lastUpdated)}\n자동 스케줄: 08:20, 14:00`}>
                       <span className="text-emerald-300 font-bold">Stock:</span> {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {openPOLastUpdated && (
-                    <p title={getElapsedTimeDetail(openPOLastUpdated)}>
+                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\n자동 스케줄: 08:30, 14:10`}>
                       <span className="text-amber-300 font-bold">Open PO:</span> {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
@@ -7935,13 +7966,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               ))}
             </div>
             {isAdmin && (
-            <div className="mt-6 pt-4 border-t grid grid-cols-2 gap-3">
-              <button
-                onClick={() => { setShowBackupModal(true); setShowMobileMenu(false); }}
-                className="flex items-center justify-center gap-2 p-3 bg-orange-100 text-orange-600 rounded-xl"
-              >
-                <Download className="w-5 h-5" /> Backup
-              </button>
+            <div className="mt-6 pt-4 border-t grid grid-cols-1 gap-3">
               <button
                 onClick={() => { setShowDataUploadModal(true); setShowMobileMenu(false); }}
                 className="flex items-center justify-center gap-2 p-3 bg-indigo-100 text-indigo-600 rounded-xl"
@@ -8167,6 +8192,45 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               return null;
             })()}
 
+            {/* SAP 자동 업데이트 스케줄 */}
+            {isAdmin && (
+              <div className="bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Clock className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-700 text-sm">SAP 자동 업데이트 스케줄</p>
+                      <p className="text-xs text-slate-500">Windows 스케줄러 + Python 자동 추출 → GitHub → 대시보드 자동 반영</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="bg-white rounded-lg p-2.5 border border-emerald-200">
+                    <p className="text-[10px] text-emerald-600 font-bold mb-1">ZBIN (Stock)</p>
+                    <p className="text-xs text-slate-700 font-medium">08:20 / 14:00</p>
+                    <p className="text-[10px] text-slate-400">매일 2회</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2.5 border border-amber-200">
+                    <p className="text-[10px] text-amber-600 font-bold mb-1">ME2N (Open PO)</p>
+                    <p className="text-xs text-slate-700 font-medium">08:30 / 14:10</p>
+                    <p className="text-[10px] text-slate-400">매일 2회</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2.5 border border-blue-200">
+                    <p className="text-[10px] text-blue-600 font-bold mb-1">GR Cancel (MB51)</p>
+                    <p className="text-xs text-slate-700 font-medium">08:00</p>
+                    <p className="text-[10px] text-slate-400">매월 첫째 월요일</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2.5 border border-red-200">
+                    <p className="text-[10px] text-red-600 font-bold mb-1">QStock Alert</p>
+                    <p className="text-xs text-slate-700 font-medium">09:00</p>
+                    <p className="text-[10px] text-slate-400">매일 이메일</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* KPI - 전월 대비 증감 표시 */}
             <div className="grid grid-cols-3 gap-4">
               {(() => {
@@ -8369,12 +8433,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                       return (
                         <div key={model} className={`rounded-xl p-4 border-2 ${bgColor}`}>
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <p className="font-bold text-gray-800">{info.code}</p>
-                              <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          <div className="flex justify-between items-start mb-3">
+                            <p className="font-bold text-gray-800 text-sm leading-tight">
+                              {info.code} <span className="font-normal text-xs text-gray-500">{inventoryData.find(i => i.material === info.code)?.description || info.name}</span>
+                            </p>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ml-2 ${
                               status === 'over' ? 'bg-purple-200 text-purple-800' :
                               status === 'ok' ? 'bg-emerald-200 text-emerald-800' :
                               status === 'warning' ? 'bg-amber-200 text-amber-800' :
@@ -8383,54 +8446,38 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {statusIcon} {statusLabel}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 text-center">
-                              <p className={`text-2xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-sm">대</span></p>
-                              <p className="text-[10px] text-gray-400">Ava Stock</p>
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500">Total Stock</span>
+                              <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
                             {qStockData.length > 0 && (
-                              <>
-                                <span className="text-gray-300 text-lg">|</span>
-                                <div className="flex-1 text-center">
-                                  <p className="text-2xl font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-sm">대</span></p>
-                                  <p className="text-[10px] text-orange-400">Q 제외</p>
-                                </div>
-                              </>
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
-                          <p className="text-xs text-blue-600 mt-0.5">
-                            현재 재고: {currentStock.toLocaleString()} EA
-                          </p>
-                          <div className="mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2 relative">
-                              <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
-                              <div
-                                className={`h-2 rounded-full ${
-                                  status === 'over' ? 'bg-purple-500' :
-                                  status === 'ok' ? 'bg-emerald-500' :
-                                  status === 'warning' ? 'bg-amber-500' :
-                                  'bg-red-500'
-                                }`}
-                                style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
-                              />
+                          <div className="mt-2 pt-2 border-t border-gray-200/60">
+                            <p className="text-xs text-blue-600 font-medium">
+                              현재 재고: {currentStock.toLocaleString()} EA
+                            </p>
+                            <div className="mt-1.5">
+                              <div className="w-full bg-gray-200 rounded-full h-2 relative">
+                                <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    status === 'over' ? 'bg-purple-500' :
+                                    status === 'ok' ? 'bg-emerald-500' :
+                                    status === 'warning' ? 'bg-amber-500' :
+                                    'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
+                                />
+                              </div>
                             </div>
+                            <p className="text-[11px] text-gray-400 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                           </div>
-                          {prodInfo.bottleneck && (
-                            <div className="mt-2 text-xs">
-                              <p className="text-gray-600 truncate">
-                                병목: {prodInfo.bottleneck.material} | {prodInfo.bottleneck.description?.slice(0, 15) || '-'} | 재고: {prodInfo.bottleneck.currentStock} EA
-                                {(() => {
-                                  const openPO = getOpenPOForMaterial(prodInfo.bottleneck.material);
-                                  return openPO ? (
-                                    <span className="text-green-600 font-medium ml-1">| 📦 {openPO.totalQty.toLocaleString()} {openPO.unit}</span>
-                                  ) : (
-                                    <span className="text-red-500 ml-1">| ⚠️ Open PO 없음</span>
-                                  );
-                                })()}
-                              </p>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -8463,11 +8510,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       return (
                         <div key={model} className={`rounded-xl p-4 border-2 ${bgColor}`}>
                           <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <p className="font-bold text-gray-800">{info.code}</p>
-                              <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            <p className="font-bold text-gray-800 text-sm leading-tight">
+                              {info.code} <span className="font-normal text-xs text-gray-500">{inventoryData.find(i => i.material === info.code)?.description || info.name}</span>
+                            </p>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ml-2 ${
                               status === 'over' ? 'bg-purple-200 text-purple-800' :
                               status === 'ok' ? 'bg-emerald-200 text-emerald-800' :
                               status === 'warning' ? 'bg-amber-200 text-amber-800' :
@@ -8476,54 +8522,38 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {statusIcon} {statusLabel}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 text-center">
-                              <p className={`text-2xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-sm">대</span></p>
-                              <p className="text-[10px] text-gray-400">Ava Stock</p>
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500">Total Stock</span>
+                              <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
                             {qStockData.length > 0 && (
-                              <>
-                                <span className="text-gray-300 text-lg">|</span>
-                                <div className="flex-1 text-center">
-                                  <p className="text-2xl font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-sm">대</span></p>
-                                  <p className="text-[10px] text-orange-400">Q 제외</p>
-                                </div>
-                              </>
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
-                          <p className="text-xs text-blue-600 mt-0.5">
-                            현재 재고: {currentStock.toLocaleString()} EA
-                          </p>
-                          <div className="mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2 relative">
-                              <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
-                              <div 
-                                className={`h-2 rounded-full ${
-                                  status === 'over' ? 'bg-purple-500' :
-                                  status === 'ok' ? 'bg-emerald-500' :
-                                  status === 'warning' ? 'bg-amber-500' :
-                                  'bg-red-500'
-                                }`}
-                                style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
-                              />
+                          <div className="mt-2 pt-2 border-t border-gray-200/60">
+                            <p className="text-xs text-blue-600 font-medium">
+                              현재 재고: {currentStock.toLocaleString()} EA
+                            </p>
+                            <div className="mt-1.5">
+                              <div className="w-full bg-gray-200 rounded-full h-2 relative">
+                                <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    status === 'over' ? 'bg-purple-500' :
+                                    status === 'ok' ? 'bg-emerald-500' :
+                                    status === 'warning' ? 'bg-amber-500' :
+                                    'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
+                                />
+                              </div>
                             </div>
+                            <p className="text-[11px] text-gray-400 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                           </div>
-                          {prodInfo.bottleneck && (
-                            <div className="mt-2 text-xs">
-                              <p className="text-gray-600 truncate">
-                                병목: {prodInfo.bottleneck.material} | {prodInfo.bottleneck.description?.slice(0, 15) || '-'} | 재고: {prodInfo.bottleneck.currentStock} EA
-                                {(() => {
-                                  const openPO = getOpenPOForMaterial(prodInfo.bottleneck.material);
-                                  return openPO ? (
-                                    <span className="text-green-600 font-medium ml-1">| 📦 {openPO.totalQty.toLocaleString()} {openPO.unit}</span>
-                                  ) : (
-                                    <span className="text-red-500 ml-1">| ⚠️ Open PO 없음</span>
-                                  );
-                                })()}
-                              </p>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -8558,12 +8588,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                       return (
                         <div key={model} className={`rounded-xl p-4 border-2 ${bgColor}`}>
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <p className="font-bold text-gray-800">{info.code}</p>
-                              <p className="text-xs text-gray-400 truncate" style={{maxWidth:'150px'}}>{inventoryData.find(i => i.material === info.code)?.description || info.name}</p>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          <div className="flex justify-between items-start mb-3">
+                            <p className="font-bold text-gray-800 text-sm leading-tight">
+                              {info.code} <span className="font-normal text-xs text-gray-500">{inventoryData.find(i => i.material === info.code)?.description || info.name}</span>
+                            </p>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ml-2 ${
                               status === 'over' ? 'bg-purple-200 text-purple-800' :
                               status === 'ok' ? 'bg-emerald-200 text-emerald-800' :
                               status === 'warning' ? 'bg-amber-200 text-amber-800' :
@@ -8572,54 +8601,38 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {statusIcon} {statusLabel}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 text-center">
-                              <p className={`text-2xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-sm">대</span></p>
-                              <p className="text-[10px] text-gray-400">Ava Stock</p>
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs text-gray-500">Total Stock</span>
+                              <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
                             {qStockData.length > 0 && (
-                              <>
-                                <span className="text-gray-300 text-lg">|</span>
-                                <div className="flex-1 text-center">
-                                  <p className="text-2xl font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-sm">대</span></p>
-                                  <p className="text-[10px] text-orange-400">Q 제외</p>
-                                </div>
-                              </>
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
+                              </div>
                             )}
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
-                          <p className="text-xs text-blue-600 mt-0.5">
-                            현재 재고: {currentStock.toLocaleString()} EA
-                          </p>
-                          <div className="mt-2">
-                            <div className="w-full bg-gray-200 rounded-full h-2 relative">
-                              <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
-                              <div 
-                                className={`h-2 rounded-full ${
-                                  status === 'over' ? 'bg-purple-500' :
-                                  status === 'ok' ? 'bg-emerald-500' :
-                                  status === 'warning' ? 'bg-amber-500' :
-                                  'bg-red-500'
-                                }`}
-                                style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
-                              />
+                          <div className="mt-2 pt-2 border-t border-gray-200/60">
+                            <p className="text-xs text-blue-600 font-medium">
+                              현재 재고: {currentStock.toLocaleString()} EA
+                            </p>
+                            <div className="mt-1.5">
+                              <div className="w-full bg-gray-200 rounded-full h-2 relative">
+                                <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    status === 'over' ? 'bg-purple-500' :
+                                    status === 'ok' ? 'bg-emerald-500' :
+                                    status === 'warning' ? 'bg-amber-500' :
+                                    'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
+                                />
+                              </div>
                             </div>
+                            <p className="text-[11px] text-gray-400 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                           </div>
-                          {prodInfo.bottleneck && (
-                            <div className="mt-2 text-xs">
-                              <p className="text-gray-600 truncate">
-                                병목: {prodInfo.bottleneck.material} | {prodInfo.bottleneck.description?.slice(0, 15) || '-'} | 재고: {prodInfo.bottleneck.currentStock} EA
-                                {(() => {
-                                  const openPO = getOpenPOForMaterial(prodInfo.bottleneck.material);
-                                  return openPO ? (
-                                    <span className="text-green-600 font-medium ml-1">| 📦 {openPO.totalQty.toLocaleString()} {openPO.unit}</span>
-                                  ) : (
-                                    <span className="text-red-500 ml-1">| ⚠️ Open PO 없음</span>
-                                  );
-                                })()}
-                              </p>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -8633,134 +8646,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </div>
                 </div>
               </div>
-
-              <p className="text-xs text-gray-400 mt-4">
-                💡 병목 자재 = 가장 먼저 소진되는 자재. 해당 자재 재고 부족 시 생산 불가.
-              </p>
             </div>
-
-            {/* 🔍 수입검사 대기 리스트 (Q Stock) */}
-            {qStockData.length > 0 && (() => {
-              const now = new Date();
-              // F1, S1 위치 제외
-              const filteredQStock = qStockData.filter(item => {
-                const bin = (item.bin || '').trim().toUpperCase();
-                return !bin.startsWith('F1') && !bin.startsWith('S1');
-              });
-              const qItems = filteredQStock.map(item => {
-                const grDate = item.grDate ? new Date(item.grDate) : null;
-                const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) : null;
-                return { ...item, daysElapsed };
-              }).sort((a, b) => (b.daysElapsed || 0) - (a.daysElapsed || 0));
-              const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
-              const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
-              const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
-              const totalQty = filteredQStock.reduce((s, i) => s + (i.stock || 0), 0);
-              // 검색 및 필터 적용
-              const displayItems = qItems.filter(item => {
-                // 상태 필터
-                if (qStockStatusFilter !== 'all') {
-                  if (qStockStatusFilter === 'green' && !(item.daysElapsed !== null && item.daysElapsed < 7)) return false;
-                  if (qStockStatusFilter === 'amber' && !(item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10)) return false;
-                  if (qStockStatusFilter === 'red' && !(item.daysElapsed !== null && item.daysElapsed > 10)) return false;
-                }
-                // 검색어 필터
-                if (qStockSearch.trim()) {
-                  const s = qStockSearch.trim().toLowerCase();
-                  return (item.material || '').toLowerCase().includes(s) ||
-                         (item.description || '').toLowerCase().includes(s) ||
-                         (item.bin || '').toLowerCase().includes(s);
-                }
-                return true;
-              });
-              return (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
-                    <h3 className="font-semibold text-lg flex items-center gap-2">
-                      🔍 수입검사 대기 리스트
-                    </h3>
-                    <span className="text-xs text-gray-500 mt-1 sm:mt-0">
-                      총 {filteredQStock.length}건 | {totalQty.toLocaleString()} EA
-                      {qStockData.length !== filteredQStock.length && <span className="ml-1 text-gray-400">(F1/S1 제외 {qStockData.length - filteredQStock.length}건)</span>}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'green' ? 'bg-emerald-200 border-emerald-400 ring-2 ring-emerald-400' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
-                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'green' ? 'all' : 'green')}>
-                      <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
-                      <p className="text-xs text-emerald-600">정상 (&lt;7일)</p>
-                    </div>
-                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'amber' ? 'bg-amber-200 border-amber-400 ring-2 ring-amber-400' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
-                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'amber' ? 'all' : 'amber')}>
-                      <p className="text-2xl font-bold text-amber-600">{amberCount}</p>
-                      <p className="text-xs text-amber-600">주의 (7~10일)</p>
-                    </div>
-                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'red' ? 'bg-red-200 border-red-400 ring-2 ring-red-400' : 'bg-red-50 border-red-200 hover:bg-red-100'}`}
-                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'red' ? 'all' : 'red')}>
-                      <p className="text-2xl font-bold text-red-600">{redCount}</p>
-                      <p className="text-xs text-red-600">초과 (&gt;10일)</p>
-                    </div>
-                  </div>
-                  {/* 검색 및 필터 */}
-                  <div className="flex flex-wrap items-center gap-3 mb-3">
-                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                      <Search className="w-4 h-4 text-gray-400" />
-                      <input type="text" placeholder="자재코드, 품명, 위치 검색..." className="border rounded-lg px-3 py-1.5 text-sm w-full"
-                        value={qStockSearch} onChange={e => setQStockSearch(e.target.value)} />
-                    </div>
-                    {(qStockSearch || qStockStatusFilter !== 'all') && (
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <span>{displayItems.length}건 표시</span>
-                        <button onClick={() => { setQStockSearch(''); setQStockStatusFilter('all'); }}
-                          className="text-indigo-600 hover:text-indigo-800 font-medium">필터 초기화</button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="overflow-x-auto max-h-80 border rounded-lg">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">상태</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">수량</th>
-                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">입고일</th>
-                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500">경과일</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {displayItems.map((item, idx) => {
-                          const isRed = item.daysElapsed !== null && item.daysElapsed > 10;
-                          const isAmber = item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10;
-                          const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
-                          const textCol = isRed ? 'text-red-600 font-bold' : isAmber ? 'text-amber-600 font-bold' : item.daysElapsed !== null ? 'text-emerald-600' : 'text-gray-400';
-                          return (
-                            <tr key={idx} className={isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
-                              <td className="px-3 py-2"><span className={`w-2.5 h-2.5 rounded-full inline-block ${dotColor}`} /></td>
-                              <td className="px-3 py-2 font-mono text-xs font-semibold">{item.material}</td>
-                              <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
-                              <td className="px-3 py-2 text-xs">{item.bin}</td>
-                              <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
-                              <td className="px-3 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
-                              <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
-                                {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {displayItems.length === 0 && (
-                          <tr><td colSpan="7" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-3">
-                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.
-                  </p>
-                </div>
-              );
-            })()}
 
             {/* 🔧 Sub-component 생산 가능 대수 */}
             {subComponentBomData && Object.keys(subComponentBomData).length > 0 && (
@@ -8878,12 +8764,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                           return (
                             <div key={subComName} className={`rounded-xl p-4 border-2 ${bgColor}`}>
-                              <div className="flex justify-between items-start mb-2">
-                                <div>
-                                  <p className="font-bold text-gray-800">{subComName}</p>
-                                  <p className="text-xs text-gray-400 truncate" style={{maxWidth:'140px'}}>{inventoryData.find(i => i.material === subComName)?.description || ''}</p>
-                                </div>
-                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              <div className="flex justify-between items-start mb-3">
+                                <p className="font-bold text-gray-800 text-sm leading-tight">
+                                  {subComName} <span className="font-normal text-xs text-gray-500">{inventoryData.find(i => i.material === subComName)?.description || ''}</span>
+                                </p>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ml-2 ${
                                   status === 'over' ? 'bg-purple-200 text-purple-800' :
                                   status === 'ok' ? 'bg-emerald-200 text-emerald-800' :
                                   status === 'warning' ? 'bg-amber-200 text-amber-800' :
@@ -8892,52 +8777,38 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   {statusIcon} {statusLabel}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 text-center">
-                                  <p className={`text-2xl font-bold ${textColor}`}>{info.units}<span className="text-sm">대</span></p>
-                                  <p className="text-[10px] text-gray-400">Ava Stock</p>
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-gray-500">Total Stock</span>
+                                  <span className={`text-lg font-bold ${textColor}`}>{info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                 </div>
                                 {qStockData.length > 0 && (
-                                  <>
-                                    <span className="text-gray-300 text-lg">|</span>
-                                    <div className="flex-1 text-center">
-                                      <p className="text-2xl font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-sm">대</span></p>
-                                      <p className="text-[10px] text-orange-400">Q 제외</p>
-                                    </div>
-                                  </>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                    <span className="text-lg font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                  </div>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
-                              <p className="text-xs text-blue-600 mt-0.5">
-                                현재 재고: {currentStock.toLocaleString()} EA
-                              </p>
-                              <div className="mt-2">
-                                <div className="w-full bg-gray-200 rounded-full h-2 relative">
-                                  <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
-                                  <div 
-                                    className={`h-2 rounded-full ${
-                                      status === 'over' ? 'bg-purple-500' :
-                                      status === 'ok' ? 'bg-emerald-500' :
-                                      status === 'warning' ? 'bg-amber-500' :
-                                      'bg-red-500'
-                                    }`}
-                                    style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
-                                  />
-                                </div>
-                              </div>
-                              {info.bottleneck && info.units < 20 && (
-                                <p className="mt-2 text-xs text-gray-600 truncate">
-                                  병목: {info.bottleneck.material} | 재고: {info.bottleneck.currentStock} EA
-                                  {(() => {
-                                    const openPO = getOpenPOForMaterial(info.bottleneck.material);
-                                    return openPO ? (
-                                      <span className="text-green-600 font-medium ml-1">| 📦 {openPO.totalQty.toLocaleString()} {openPO.unit}</span>
-                                    ) : (
-                                      <span className="text-red-500 ml-1">| ⚠️ Open PO 없음</span>
-                                    );
-                                  })()}
+                              <div className="mt-2 pt-2 border-t border-gray-200/60">
+                                <p className="text-xs text-blue-600 font-medium">
+                                  현재 재고: {currentStock.toLocaleString()} EA
                                 </p>
-                              )}
+                                <div className="mt-1.5">
+                                  <div className="w-full bg-gray-200 rounded-full h-2 relative">
+                                    <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
+                                    <div
+                                      className={`h-2 rounded-full ${
+                                        status === 'over' ? 'bg-purple-500' :
+                                        status === 'ok' ? 'bg-emerald-500' :
+                                        status === 'warning' ? 'bg-amber-500' :
+                                        'bg-red-500'
+                                      }`}
+                                      style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                                <p className="text-[11px] text-gray-400 mt-1">Safety Stock: {range.min}~{range.max}대</p>
+                              </div>
                             </div>
                           );
                         })}
@@ -8983,13 +8854,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                           return (
                             <div key={subComName} className={`rounded-xl p-4 border-2 ${bgColor}`}>
-                              <div className="flex justify-between items-start mb-2">
+                              <div className="flex justify-between items-start mb-3">
                                 <div>
-                                  <p className="font-bold text-gray-800">{subComName}</p>
-                                  <p className="text-xs text-gray-400 truncate" style={{maxWidth:'140px'}}>{inventoryData.find(i => i.material === subComName)?.description || ''}</p>
+                                  <p className="font-bold text-gray-800 text-sm leading-tight">
+                                    {subComName} <span className="font-normal text-xs text-gray-500">{inventoryData.find(i => i.material === subComName)?.description || ''}</span>
+                                  </p>
                                   {subComName === 'KB0770' && <p className="text-xs text-orange-400">1대당 2EA</p>}
                                 </div>
-                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ml-2 ${
                                   status === 'over' ? 'bg-purple-200 text-purple-800' :
                                   status === 'ok' ? 'bg-emerald-200 text-emerald-800' :
                                   status === 'warning' ? 'bg-amber-200 text-amber-800' :
@@ -8998,52 +8870,38 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   {statusIcon} {statusLabel}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 text-center">
-                                  <p className={`text-2xl font-bold ${textColor}`}>{info.units}<span className="text-sm">대</span></p>
-                                  <p className="text-[10px] text-gray-400">Ava Stock</p>
+                              <div className="space-y-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-xs text-gray-500">Total Stock</span>
+                                  <span className={`text-lg font-bold ${textColor}`}>{info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                 </div>
                                 {qStockData.length > 0 && (
-                                  <>
-                                    <span className="text-gray-300 text-lg">|</span>
-                                    <div className="flex-1 text-center">
-                                      <p className="text-2xl font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-sm">대</span></p>
-                                      <p className="text-[10px] text-orange-400">Q 제외</p>
-                                    </div>
-                                  </>
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                    <span className="text-lg font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                  </div>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
-                              <p className="text-xs text-blue-600 mt-0.5">
-                                현재 재고: {currentStock.toLocaleString()} EA
-                              </p>
-                              <div className="mt-2">
-                                <div className="w-full bg-gray-200 rounded-full h-2 relative">
-                                  <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
-                                  <div 
-                                    className={`h-2 rounded-full ${
-                                      status === 'over' ? 'bg-purple-500' :
-                                      status === 'ok' ? 'bg-emerald-500' :
-                                      status === 'warning' ? 'bg-amber-500' :
-                                      'bg-red-500'
-                                    }`}
-                                    style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
-                                  />
-                                </div>
-                              </div>
-                              {info.bottleneck && info.units < 20 && (
-                                <p className="mt-2 text-xs text-gray-600 truncate">
-                                  병목: {info.bottleneck.material} | 재고: {info.bottleneck.currentStock} EA
-                                  {(() => {
-                                    const openPO = getOpenPOForMaterial(info.bottleneck.material);
-                                    return openPO ? (
-                                      <span className="text-green-600 font-medium ml-1">| 📦 {openPO.totalQty.toLocaleString()} {openPO.unit}</span>
-                                    ) : (
-                                      <span className="text-red-500 ml-1">| ⚠️ Open PO 없음</span>
-                                    );
-                                  })()}
+                              <div className="mt-2 pt-2 border-t border-gray-200/60">
+                                <p className="text-xs text-blue-600 font-medium">
+                                  현재 재고: {currentStock.toLocaleString()} EA
                                 </p>
-                              )}
+                                <div className="mt-1.5">
+                                  <div className="w-full bg-gray-200 rounded-full h-2 relative">
+                                    <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${(range.min / range.max) * 100}%` }} />
+                                    <div
+                                      className={`h-2 rounded-full ${
+                                        status === 'over' ? 'bg-purple-500' :
+                                        status === 'ok' ? 'bg-emerald-500' :
+                                        status === 'warning' ? 'bg-amber-500' :
+                                        'bg-red-500'
+                                      }`}
+                                      style={{ width: `${Math.min((currentStock / range.max) * 100, 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                                <p className="text-[11px] text-gray-400 mt-1">Safety Stock: {range.min}~{range.max}대</p>
+                              </div>
                             </div>
                           );
                         })}
@@ -9058,6 +8916,142 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
 
+
+            {/* 🔍 수입검사 대기 리스트 (Q Stock) */}
+            {qStockData.length > 0 && (() => {
+              const now = new Date();
+              // F1, S1 위치 제외
+              const filteredQStock = qStockData.filter(item => {
+                const bin = (item.bin || '').trim().toUpperCase();
+                return !bin.startsWith('F1') && !bin.startsWith('S1');
+              });
+              const qItems = filteredQStock.map(item => {
+                const grDate = item.grDate ? new Date(item.grDate) : null;
+                const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) : null;
+                const grDateTs = grDate && !isNaN(grDate.getTime()) ? grDate.getTime() : 0;
+                return { ...item, daysElapsed, grDateTs };
+              }).sort((a, b) => {
+                const dir = qStockSortDir === 'asc' ? 1 : -1;
+                if (qStockSortKey === 'grDate') {
+                  return dir * ((a.grDateTs || 0) - (b.grDateTs || 0));
+                }
+                return dir * ((a.daysElapsed || 0) - (b.daysElapsed || 0));
+              });
+              const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
+              const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
+              const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
+              const totalQty = filteredQStock.reduce((s, i) => s + (i.stock || 0), 0);
+              // 검색 및 필터 적용
+              const displayItems = qItems.filter(item => {
+                // 상태 필터
+                if (qStockStatusFilter !== 'all') {
+                  if (qStockStatusFilter === 'green' && !(item.daysElapsed !== null && item.daysElapsed < 7)) return false;
+                  if (qStockStatusFilter === 'amber' && !(item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10)) return false;
+                  if (qStockStatusFilter === 'red' && !(item.daysElapsed !== null && item.daysElapsed > 10)) return false;
+                }
+                // 검색어 필터
+                if (qStockSearch.trim()) {
+                  const s = qStockSearch.trim().toLowerCase();
+                  return (item.material || '').toLowerCase().includes(s) ||
+                         (item.description || '').toLowerCase().includes(s) ||
+                         (item.bin || '').toLowerCase().includes(s);
+                }
+                return true;
+              });
+              return (
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      🔍 수입검사 대기 리스트
+                    </h3>
+                    <span className="text-xs text-gray-500 mt-1 sm:mt-0">
+                      총 {filteredQStock.length}건 | {totalQty.toLocaleString()} EA
+                      {qStockData.length !== filteredQStock.length && <span className="ml-1 text-gray-400">(F1/S1 제외 {qStockData.length - filteredQStock.length}건)</span>}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'green' ? 'bg-emerald-200 border-emerald-400 ring-2 ring-emerald-400' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'green' ? 'all' : 'green')}>
+                      <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
+                      <p className="text-xs text-emerald-600">정상 (&lt;7일)</p>
+                    </div>
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'amber' ? 'bg-amber-200 border-amber-400 ring-2 ring-amber-400' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'amber' ? 'all' : 'amber')}>
+                      <p className="text-2xl font-bold text-amber-600">{amberCount}</p>
+                      <p className="text-xs text-amber-600">주의 (7~10일)</p>
+                    </div>
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'red' ? 'bg-red-200 border-red-400 ring-2 ring-red-400' : 'bg-red-50 border-red-200 hover:bg-red-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'red' ? 'all' : 'red')}>
+                      <p className="text-2xl font-bold text-red-600">{redCount}</p>
+                      <p className="text-xs text-red-600">초과 (&gt;10일)</p>
+                    </div>
+                  </div>
+                  {/* 검색 및 필터 */}
+                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <input type="text" placeholder="자재코드, 품명, 위치 검색..." className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                        value={qStockSearch} onChange={e => setQStockSearch(e.target.value)} />
+                    </div>
+                    {(qStockSearch || qStockStatusFilter !== 'all') && (
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>{displayItems.length}건 표시</span>
+                        <button onClick={() => { setQStockSearch(''); setQStockStatusFilter('all'); }}
+                          className="text-indigo-600 hover:text-indigo-800 font-medium">필터 초기화</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto max-h-80 border rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">상태</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">수량</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
+                            onClick={() => { if (qStockSortKey === 'grDate') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('grDate'); setQStockSortDir('desc'); } }}>
+                            입고일 {qStockSortKey === 'grDate' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
+                          </th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
+                            onClick={() => { if (qStockSortKey === 'daysElapsed') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('daysElapsed'); setQStockSortDir('desc'); } }}>
+                            경과일 {qStockSortKey === 'daysElapsed' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {displayItems.map((item, idx) => {
+                          const isRed = item.daysElapsed !== null && item.daysElapsed > 10;
+                          const isAmber = item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10;
+                          const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
+                          const textCol = isRed ? 'text-red-600 font-bold' : isAmber ? 'text-amber-600 font-bold' : item.daysElapsed !== null ? 'text-emerald-600' : 'text-gray-400';
+                          return (
+                            <tr key={idx} className={isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                              <td className="px-3 py-2"><span className={`w-2.5 h-2.5 rounded-full inline-block ${dotColor}`} /></td>
+                              <td className="px-3 py-2 font-mono text-xs font-semibold">{item.material}</td>
+                              <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
+                              <td className="px-3 py-2 text-xs">{item.bin}</td>
+                              <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
+                              <td className="px-3 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
+                              <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
+                                {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {displayItems.length === 0 && (
+                          <tr><td colSpan="7" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-3">
+                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.
+                  </p>
+                </div>
+              );
+            })()}
 
             {/* A1 개선: 부족 자재 상세 목록 + Open PO 매칭 */}
             <div className="bg-white rounded-xl shadow-sm p-6">
@@ -10971,7 +10965,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* 선택 시 일괄 작업 버튼 */}
-            {selectedKittings.size > 0 && (
+            {selectedKittings.size > 0 ? (
               <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-center gap-3">
                 <span className="text-sm font-medium text-teal-700">{selectedKittings.size}개 선택됨</span>
                 <button onClick={completeSelectedKittings} className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">
@@ -10984,6 +10978,25 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   선택 해제
                 </button>
               </div>
+            ) : (
+              (() => {
+                const incompleteKittings = filteredSortedKittings.filter(k => k.status !== 'completed');
+                return incompleteKittings.length > 0 && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-3">
+                    <span className="text-sm text-blue-700">미완료 <strong>{incompleteKittings.length}</strong>건</span>
+                    <button onClick={() => {
+                      setSelectedKittings(new Set(incompleteKittings.map(k => k.id)));
+                    }} className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                      전체 선택
+                    </button>
+                    <button onClick={() => {
+                      completeAllIncompleteKittings(incompleteKittings.map(k => k.id));
+                    }} className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">
+                      ✅ 전체 일괄 완료
+                    </button>
+                  </div>
+                );
+              })()
             )}
 
             {/* 필터/정렬 컨트롤 */}
@@ -14359,7 +14372,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <p className="text-xs text-gray-500">SAP 재고 현황 조회 • {inventoryData.length}개 품목</p>
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => { setShowDataUploadModal(false); setActiveTab('inventory'); }}
                     className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition text-sm font-medium"
                   >
@@ -14371,6 +14384,34 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p>• 품번/품명 검색 기능</p>
                 </div>
               </div>
+            </div>
+
+            {/* 백업 / 복원 섹션 */}
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h4 className="font-medium text-gray-800 mb-4 flex items-center gap-2">
+                <Download className="w-5 h-5 text-orange-500" /> 백업 / 복원
+              </h4>
+              {lastAutoBackup && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs text-blue-700">🕐 마지막 자동 백업: <span className="font-bold">{lastAutoBackup}</span></p>
+                  <p className="text-xs text-blue-500 mt-1">자동 백업 스케줄: 매일 12:00, 15:55</p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => { setShowDataUploadModal(false); setShowBackupModal(true); exportAllData(); }}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition text-sm font-medium"
+                >
+                  <Database className="w-5 h-5" /> 백업 데이터 생성
+                </button>
+                <label className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition text-sm font-medium cursor-pointer">
+                  <Upload className="w-5 h-5" /> JSON 복원
+                  <input type="file" accept=".json" onChange={(e) => { importAllData(e); setShowDataUploadModal(false); }} className="hidden" />
+                </label>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                💡 백업: 모든 데이터를 JSON으로 내보냅니다 | 복원: 백업 파일을 선택하여 데이터를 덮어씁니다
+              </p>
             </div>
             </div>
 
