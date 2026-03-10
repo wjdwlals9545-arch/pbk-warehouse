@@ -1878,6 +1878,8 @@ export default function PBKWarehouseSystem() {
     const saved = safeStorage.getItem('pbk_qstock');
     return saved ? JSON.parse(saved) : [];
   });
+  const [qStockSearch, setQStockSearch] = useState('');
+  const [qStockStatusFilter, setQStockStatusFilter] = useState('all');
   const [rackSummary, setRackSummary] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -5321,6 +5323,35 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     return results;
   }, [inventoryData, qStockData, qStockByMaterial, customBomData]);
 
+  // Sub-component Q Stock 제외 생산 가능 대수
+  const subComponentUnitsExQ = useMemo(() => {
+    if (!subComponentBomData || inventoryData.length === 0 || qStockData.length === 0) return {};
+    const stockByMaterial = {};
+    inventoryData.forEach(item => {
+      const mat = item.material;
+      if (!stockByMaterial[mat]) stockByMaterial[mat] = 0;
+      stockByMaterial[mat] += item.stock || 0;
+    });
+    Object.entries(qStockByMaterial).forEach(([mat, qQty]) => {
+      if (stockByMaterial[mat]) stockByMaterial[mat] = Math.max(0, stockByMaterial[mat] - qQty);
+    });
+    const results = {};
+    Object.entries(subComponentBomData).forEach(([subComName, bom]) => {
+      let minUnits = Infinity;
+      Object.entries(bom).forEach(([material, requiredQty]) => {
+        const currentStock = stockByMaterial[material] || 0;
+        if (currentStock > 0) {
+          const possibleUnits = Math.floor(currentStock / requiredQty);
+          if (possibleUnits < minUnits) minUnits = possibleUnits;
+        } else {
+          minUnits = 0;
+        }
+      });
+      results[subComName] = { units: minUnits === Infinity ? 0 : minUnits };
+    });
+    return results;
+  }, [subComponentBomData, inventoryData, qStockData, qStockByMaterial]);
+
   const avgPickTime = pickCycles.filter(p => p.cycleMin).reduce((s, p, _, a) => s + p.cycleMin / a.length, 0) || 0;
   const avgReceiveTime = receiveCycles.filter(r => r.cycleMin).reduce((s, r, _, a) => s + r.cycleMin / a.length, 0) || 0;
   const avgLeadTime=(()=>{const cm=new Date().toISOString().slice(0,7);const arr=kittingData.filter(k=>k.status==='completed'&&k.leadTimeDays!=null&&k.leadTimeDays>=0&&(k.startedAt?.startsWith(cm)||k.basicStartDate?.startsWith(cm)));return arr.length>0?(arr.reduce((s,k)=>s+k.leadTimeDays,0)/arr.length):0;})();
@@ -8111,6 +8142,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const now = new Date();
               const overdueQ = qStockData.filter(item => {
                 if (!item.grDate) return false;
+                const bin = (item.bin || '').trim().toUpperCase();
+                if (bin.startsWith('F1') || bin.startsWith('S1')) return false;
                 const grDate = new Date(item.grDate);
                 return !isNaN(grDate.getTime()) && Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) > 10;
               });
@@ -8350,10 +8383,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {statusIcon} {statusLabel}
                             </span>
                           </div>
-                          <div className="flex items-end gap-2">
-                            <p className={`text-3xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-lg">대</span></p>
-                            {qStockData.length > 0 && producibleUnitsExQ[model] && prodInfo.units !== producibleUnitsExQ[model].units && (
-                              <p className="text-xs text-orange-500 mt-0.5">Q제외 {producibleUnitsExQ[model].units}대</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 text-center">
+                              <p className={`text-2xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-sm">대</span></p>
+                              <p className="text-[10px] text-gray-400">Ava Stock</p>
+                            </div>
+                            {qStockData.length > 0 && (
+                              <>
+                                <span className="text-gray-300 text-lg">|</span>
+                                <div className="flex-1 text-center">
+                                  <p className="text-2xl font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-sm">대</span></p>
+                                  <p className="text-[10px] text-orange-400">Q 제외</p>
+                                </div>
+                              </>
                             )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
@@ -8434,10 +8476,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {statusIcon} {statusLabel}
                             </span>
                           </div>
-                          <div className="flex items-end gap-2">
-                            <p className={`text-3xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-lg">대</span></p>
-                            {qStockData.length > 0 && producibleUnitsExQ[model] && prodInfo.units !== producibleUnitsExQ[model].units && (
-                              <p className="text-xs text-orange-500 mt-0.5">Q제외 {producibleUnitsExQ[model].units}대</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 text-center">
+                              <p className={`text-2xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-sm">대</span></p>
+                              <p className="text-[10px] text-gray-400">Ava Stock</p>
+                            </div>
+                            {qStockData.length > 0 && (
+                              <>
+                                <span className="text-gray-300 text-lg">|</span>
+                                <div className="flex-1 text-center">
+                                  <p className="text-2xl font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-sm">대</span></p>
+                                  <p className="text-[10px] text-orange-400">Q 제외</p>
+                                </div>
+                              </>
                             )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
@@ -8521,10 +8572,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {statusIcon} {statusLabel}
                             </span>
                           </div>
-                          <div className="flex items-end gap-2">
-                            <p className={`text-3xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-lg">대</span></p>
-                            {qStockData.length > 0 && producibleUnitsExQ[model] && prodInfo.units !== producibleUnitsExQ[model].units && (
-                              <p className="text-xs text-orange-500 mt-0.5">Q제외 {producibleUnitsExQ[model].units}대</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 text-center">
+                              <p className={`text-2xl font-bold ${textColor}`}>{prodInfo.units}<span className="text-sm">대</span></p>
+                              <p className="text-[10px] text-gray-400">Ava Stock</p>
+                            </div>
+                            {qStockData.length > 0 && (
+                              <>
+                                <span className="text-gray-300 text-lg">|</span>
+                                <div className="flex-1 text-center">
+                                  <p className="text-2xl font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-sm">대</span></p>
+                                  <p className="text-[10px] text-orange-400">Q 제외</p>
+                                </div>
+                              </>
                             )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
@@ -8582,7 +8642,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {/* 🔍 수입검사 대기 리스트 (Q Stock) */}
             {qStockData.length > 0 && (() => {
               const now = new Date();
-              const qItems = qStockData.map(item => {
+              // F1, S1 위치 제외
+              const filteredQStock = qStockData.filter(item => {
+                const bin = (item.bin || '').trim().toUpperCase();
+                return !bin.startsWith('F1') && !bin.startsWith('S1');
+              });
+              const qItems = filteredQStock.map(item => {
                 const grDate = item.grDate ? new Date(item.grDate) : null;
                 const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) : null;
                 return { ...item, daysElapsed };
@@ -8590,7 +8655,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
               const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
               const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
-              const totalQty = qStockData.reduce((s, i) => s + (i.stock || 0), 0);
+              const totalQty = filteredQStock.reduce((s, i) => s + (i.stock || 0), 0);
+              // 검색 및 필터 적용
+              const displayItems = qItems.filter(item => {
+                // 상태 필터
+                if (qStockStatusFilter !== 'all') {
+                  if (qStockStatusFilter === 'green' && !(item.daysElapsed !== null && item.daysElapsed < 7)) return false;
+                  if (qStockStatusFilter === 'amber' && !(item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10)) return false;
+                  if (qStockStatusFilter === 'red' && !(item.daysElapsed !== null && item.daysElapsed > 10)) return false;
+                }
+                // 검색어 필터
+                if (qStockSearch.trim()) {
+                  const s = qStockSearch.trim().toLowerCase();
+                  return (item.material || '').toLowerCase().includes(s) ||
+                         (item.description || '').toLowerCase().includes(s) ||
+                         (item.bin || '').toLowerCase().includes(s);
+                }
+                return true;
+              });
               return (
                 <div className="bg-white rounded-xl shadow-sm p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -8598,22 +8680,41 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       🔍 수입검사 대기 리스트
                     </h3>
                     <span className="text-xs text-gray-500 mt-1 sm:mt-0">
-                      총 {qStockData.length}건 | {totalQty.toLocaleString()} EA
+                      총 {filteredQStock.length}건 | {totalQty.toLocaleString()} EA
+                      {qStockData.length !== filteredQStock.length && <span className="ml-1 text-gray-400">(F1/S1 제외 {qStockData.length - filteredQStock.length}건)</span>}
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'green' ? 'bg-emerald-200 border-emerald-400 ring-2 ring-emerald-400' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'green' ? 'all' : 'green')}>
                       <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
                       <p className="text-xs text-emerald-600">정상 (&lt;7일)</p>
                     </div>
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'amber' ? 'bg-amber-200 border-amber-400 ring-2 ring-amber-400' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'amber' ? 'all' : 'amber')}>
                       <p className="text-2xl font-bold text-amber-600">{amberCount}</p>
                       <p className="text-xs text-amber-600">주의 (7~10일)</p>
                     </div>
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'red' ? 'bg-red-200 border-red-400 ring-2 ring-red-400' : 'bg-red-50 border-red-200 hover:bg-red-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'red' ? 'all' : 'red')}>
                       <p className="text-2xl font-bold text-red-600">{redCount}</p>
                       <p className="text-xs text-red-600">초과 (&gt;10일)</p>
                     </div>
+                  </div>
+                  {/* 검색 및 필터 */}
+                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <input type="text" placeholder="자재코드, 품명, 위치 검색..." className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                        value={qStockSearch} onChange={e => setQStockSearch(e.target.value)} />
+                    </div>
+                    {(qStockSearch || qStockStatusFilter !== 'all') && (
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>{displayItems.length}건 표시</span>
+                        <button onClick={() => { setQStockSearch(''); setQStockStatusFilter('all'); }}
+                          className="text-indigo-600 hover:text-indigo-800 font-medium">필터 초기화</button>
+                      </div>
+                    )}
                   </div>
                   <div className="overflow-x-auto max-h-80 border rounded-lg">
                     <table className="w-full text-sm">
@@ -8629,7 +8730,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {qItems.map((item, idx) => {
+                        {displayItems.map((item, idx) => {
                           const isRed = item.daysElapsed !== null && item.daysElapsed > 10;
                           const isAmber = item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10;
                           const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
@@ -8648,11 +8749,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </tr>
                           );
                         })}
+                        {displayItems.length === 0 && (
+                          <tr><td colSpan="7" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
                   <p className="text-xs text-gray-400 mt-3">
-                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. 10일 초과 시 검사 지연으로 분류됩니다.
+                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.
                   </p>
                 </div>
               );
@@ -8788,8 +8892,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   {statusIcon} {statusLabel}
                                 </span>
                               </div>
-                              <div className="flex items-end gap-2">
-                                <p className={`text-3xl font-bold ${textColor}`}>{info.units}<span className="text-lg">대</span></p>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 text-center">
+                                  <p className={`text-2xl font-bold ${textColor}`}>{info.units}<span className="text-sm">대</span></p>
+                                  <p className="text-[10px] text-gray-400">Ava Stock</p>
+                                </div>
+                                {qStockData.length > 0 && (
+                                  <>
+                                    <span className="text-gray-300 text-lg">|</span>
+                                    <div className="flex-1 text-center">
+                                      <p className="text-2xl font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-sm">대</span></p>
+                                      <p className="text-[10px] text-orange-400">Q 제외</p>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                               <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                               <p className="text-xs text-blue-600 mt-0.5">
@@ -8882,8 +8998,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   {statusIcon} {statusLabel}
                                 </span>
                               </div>
-                              <div className="flex items-end gap-2">
-                                <p className={`text-3xl font-bold ${textColor}`}>{info.units}<span className="text-lg">대</span></p>
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 text-center">
+                                  <p className={`text-2xl font-bold ${textColor}`}>{info.units}<span className="text-sm">대</span></p>
+                                  <p className="text-[10px] text-gray-400">Ava Stock</p>
+                                </div>
+                                {qStockData.length > 0 && (
+                                  <>
+                                    <span className="text-gray-300 text-lg">|</span>
+                                    <div className="flex-1 text-center">
+                                      <p className="text-2xl font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-sm">대</span></p>
+                                      <p className="text-[10px] text-orange-400">Q 제외</p>
+                                    </div>
+                                  </>
+                                )}
                               </div>
                               <p className="text-xs text-gray-500 mt-1">Safety Stock: {range.min}~{range.max}대</p>
                               <p className="text-xs text-blue-600 mt-0.5">

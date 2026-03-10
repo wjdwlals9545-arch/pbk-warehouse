@@ -1,6 +1,9 @@
 name: Q-Stock Inspection Alert
 
 on:
+  schedule:
+    # 매일 오전 8시 KST (UTC 23:00 전날)
+    - cron: '0 23 * * *'
   push:
     branches: [main]
     paths:
@@ -13,8 +16,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check Q-Stock Ages and Create Alert
+      - name: Check Q-Stock Ages and Send Alert
         uses: actions/github-script@v7
+        id: check
         with:
           script: |
             const fs = require('fs');
@@ -39,6 +43,9 @@ jobs:
 
             items.forEach(item => {
               if (!item.grDate) return;
+              // F1, S1 위치 제외
+              const bin = (item.bin || '').trim().toUpperCase();
+              if (bin.startsWith('F1') || bin.startsWith('S1')) return;
               const grDate = new Date(item.grDate);
               if (isNaN(grDate.getTime())) return;
               const days = Math.floor((now - grDate) / (1000 * 60 * 60 * 24));
@@ -48,39 +55,86 @@ jobs:
 
             if (urgents.length === 0 && warnings.length === 0) {
               console.log('No overdue Q-stock items. All items within 7-day threshold.');
+              core.setOutput('should_send', 'false');
               return;
             }
 
-            // Build issue body
-            let body = `## 🔍 Q-Stock 수입검사 지연 알림\n\n`;
-            body += `**검사일:** ${now.toISOString().split('T')[0]}\n`;
-            body += `**총 Q-Stock:** ${items.length}건\n\n`;
+            // 긴급도 순 정렬 (경과일 내림차순)
+            const allAlerts = [...urgents, ...warnings].sort((a, b) => b.days - a.days);
+
+            // Build HTML email body
+            let htmlBody = `<div style="font-family: 'Malgun Gothic', Arial, sans-serif; max-width: 800px; margin: 0 auto;">`;
+            htmlBody += `<p>안녕하세요, 정지민입니다.</p>`;
+            htmlBody += `<p>수입검사 대기 리스트 공유드립니다.</p>`;
+            htmlBody += `<p>리스트 참고하여 수입검사 부탁드립니다.</p>`;
+            htmlBody += `<br/>`;
+            htmlBody += `<p style="color: #666; font-size: 13px;">검사일: ${now.toISOString().split('T')[0]} | 총 알림: ${allAlerts.length}건 (긴급 ${urgents.length}건, 주의 ${warnings.length}건)</p>`;
+            htmlBody += `<table style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px;">`;
+            htmlBody += `<thead><tr style="background: #f3f4f6;">`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: center;">상태</th>`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: left;">자재코드</th>`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: left;">품명</th>`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: left;">위치</th>`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: right;">수량</th>`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: center;">입고일</th>`;
+            htmlBody += `<th style="border: 1px solid #e5e7eb; padding: 8px; text-align: center;">경과일</th>`;
+            htmlBody += `</tr></thead><tbody>`;
+
+            allAlerts.forEach(item => {
+              const isUrgent = item.days > 10;
+              const bgColor = isUrgent ? '#fef2f2' : '#fffbeb';
+              const statusEmoji = isUrgent ? '🚨 긴급' : '⚠️ 주의';
+              const daysColor = isUrgent ? '#dc2626' : '#d97706';
+              htmlBody += `<tr style="background: ${bgColor};">`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center;">${statusEmoji}</td>`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; font-weight: bold;">${item.material}</td>`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px;">${item.description || '-'}</td>`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px;">${item.bin || '-'}</td>`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; text-align: right;">${item.stock} ${item.unit}</td>`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center;">${item.grDate}</td>`;
+              htmlBody += `<td style="border: 1px solid #e5e7eb; padding: 8px; text-align: center; color: ${daysColor}; font-weight: bold;">${item.days}일</td>`;
+              htmlBody += `</tr>`;
+            });
+
+            htmlBody += `</tbody></table>`;
+            htmlBody += `<br/><p style="color: #999; font-size: 11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p>`;
+            htmlBody += `</div>`;
+
+            core.setOutput('should_send', 'true');
+            core.setOutput('email_body', htmlBody);
+            core.setOutput('urgent_count', urgents.length.toString());
+            core.setOutput('warning_count', warnings.length.toString());
+            core.setOutput('date_str', now.toISOString().split('T')[0]);
+
+            // Also create/update GitHub Issue for history
+            let issueBody = `## 🔍 Q-Stock 수입검사 지연 알림\n\n`;
+            issueBody += `**검사일:** ${now.toISOString().split('T')[0]}\n`;
+            issueBody += `**총 알림:** ${allAlerts.length}건\n\n`;
 
             if (urgents.length > 0) {
-              body += `### 🚨 긴급 (10일 초과) - ${urgents.length}건\n\n`;
-              body += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n`;
-              body += `|---------|------|------|------|--------|--------|\n`;
+              issueBody += `### 🚨 긴급 (10일 초과) - ${urgents.length}건\n\n`;
+              issueBody += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n`;
+              issueBody += `|---------|------|------|------|--------|--------|\n`;
               urgents.forEach(i => {
-                body += `| **${i.material}** | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | **${i.days}일** |\n`;
+                issueBody += `| **${i.material}** | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | **${i.days}일** |\n`;
               });
-              body += '\n';
+              issueBody += '\n';
             }
 
             if (warnings.length > 0) {
-              body += `### ⚠️ 주의 (7~10일) - ${warnings.length}건\n\n`;
-              body += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n`;
-              body += `|---------|------|------|------|--------|--------|\n`;
+              issueBody += `### ⚠️ 주의 (7~10일) - ${warnings.length}건\n\n`;
+              issueBody += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n`;
+              issueBody += `|---------|------|------|------|--------|--------|\n`;
               warnings.forEach(i => {
-                body += `| ${i.material} | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | ${i.days}일 |\n`;
+                issueBody += `| ${i.material} | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | ${i.days}일 |\n`;
               });
-              body += '\n';
+              issueBody += '\n';
             }
 
-            body += `\n---\n*자동 생성 by PBK Warehouse Dashboard*`;
+            issueBody += `\n---\n*자동 생성 by PBK Warehouse Dashboard*`;
 
             const title = `[Q-Stock Alert] ${urgents.length > 0 ? '🚨' : '⚠️'} ${urgents.length}건 긴급, ${warnings.length}건 주의 (${now.toISOString().split('T')[0]})`;
 
-            // Check for existing open issue with same date to avoid duplicates
             const existingIssues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -95,33 +149,45 @@ jobs:
             );
 
             if (duplicateIssue) {
-              // Update existing issue
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: duplicateIssue.number,
-                body: body
+                body: issueBody
               });
               console.log(`Updated existing issue #${duplicateIssue.number}`);
             } else {
-              // Create new issue
               try {
                 await github.rest.issues.create({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   title: title,
-                  body: body,
+                  body: issueBody,
                   labels: ['q-stock-alert']
                 });
                 console.log('Created new Q-Stock alert issue');
               } catch (e) {
-                // Label might not exist, create without label
                 await github.rest.issues.create({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   title: title,
-                  body: body
+                  body: issueBody
                 });
                 console.log('Created new Q-Stock alert issue (without label)');
               }
             }
+
+      - name: Send Email Alert
+        if: steps.check.outputs.should_send == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          secure: true
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "[수입검사 알림] 🚨 ${{ steps.check.outputs.urgent_count }}건 긴급, ${{ steps.check.outputs.warning_count }}건 주의 (${{ steps.check.outputs.date_str }})"
+          html_body: ${{ steps.check.outputs.email_body }}
+          from: jimin.jung@promega.com
+          to: heejae.kim@promega.com, changyeol.yoo@promega.com
+          cc: jimin.jung@promega.com, kwangsub.ahn@promega.com
