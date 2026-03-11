@@ -9290,7 +9290,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <input
                     type="text"
                     placeholder="Material 번호 입력 (예: 711101, 712591)"
-                    className="w-full px-4 py-3 rounded-lg text-gray-900 text-lg font-medium placeholder:text-white/70"
+                    className="w-full px-4 py-3 rounded-lg text-gray-900 text-lg font-medium bg-white/90 border-2 border-white/60 placeholder:text-gray-400 focus:border-yellow-400 focus:bg-white focus:outline-none shadow-lg"
                     value={locateSearch || ''}
                     onChange={e => { setLocateSearch(e.target.value); if(locateQuery) setLocateQuery(''); }}
                     onKeyDown={e => { if(e.key === 'Enter'){setLocateQuery(locateSearch);} }}
