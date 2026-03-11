@@ -3799,12 +3799,13 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   }, [tempHumidityData, inventoryData, openPOData, dataHistory]);
 
   // GitHub에서 대시보드 상태 + Stock/OpenPO 데이터 자동 로드
-  // 대시보드 상태 + JSON: 항상 로드 / Excel 파싱: 8시, 14시에만 (모바일 메모리 보호)
+  // 대시보드 상태 + JSON: 항상 로드 / Excel 파싱: 8:40~, 14:20~에만 (SAP 추출 완료 후)
   useEffect(() => {
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
     const now = new Date();
     const h = now.getHours();
-    const isExcelHour = (h === 8 || h === 14);
+    const m = now.getMinutes();
+    const isExcelHour = (h === 8 && m >= 40) || (h === 14 && m >= 20);
 
     // XLSX 라이브러리 로드 헬퍼
     const ensureXLSX = () => new Promise((resolve, reject) => {
