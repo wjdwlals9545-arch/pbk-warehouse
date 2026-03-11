@@ -7463,7 +7463,7 @@ tr:hover td{background:#f8f9ff}
 <div class="sw">
   <div class="sr">
     <div style="flex:1;position:relative">
-      <input class="si" id="si" type="text" placeholder="Material 번호 또는 Description (예: AS8500, KB0768)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <input class="si" id="si" type="text" placeholder="Material 번호 또는 Description (예: 711101, 712591)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       <div class="ac" id="ac" style="display:none"></div>
     </div>
     <button class="sb" onclick="doSearch()">🔍 검색</button>
@@ -7475,10 +7475,10 @@ tr:hover td{background:#f8f9ff}
     <p>Material 번호를 입력하면<br>창고 보관 위치를 안내합니다</p>
     <small style="color:#94a3b8;font-size:12px">Material 번호 또는 Description으로 검색 가능</small>
     <div class="hc">
-      <span class="hchip" onclick="qs('AS8500')">AS8500</span>
-      <span class="hchip" onclick="qs('AS4500')">AS4500</span>
-      <span class="hchip" onclick="qs('KB0768')">KB0768</span>
-      <span class="hchip" onclick="qs('712696')">712696</span>
+      <span class="hchip" onclick="qs('711101')">711101</span>
+      <span class="hchip" onclick="qs('711202')">711202</span>
+      <span class="hchip" onclick="qs('712591')">712591</span>
+      <span class="hchip" onclick="qs('712618')">712618</span>
     </div>
   </div>
 </div>
@@ -9287,7 +9287,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="flex-1 relative">
                   <input
                     type="text"
-                    placeholder="Material 번호 입력 (예: AS8500, KB0768)"
+                    placeholder="Material 번호 입력 (예: 711101, 712591)"
                     className="w-full px-4 py-3 rounded-lg text-gray-900 text-lg font-medium placeholder:text-white/70"
                     value={locateSearch || ''}
                     onChange={e => { setLocateSearch(e.target.value); if(locateQuery) setLocateQuery(''); }}
@@ -9537,7 +9537,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className="text-lg font-medium text-gray-700">Material 번호를 입력하여 자재 위치를 검색하세요</p>
                 <p className="text-sm text-gray-500 mt-2">Material 번호 또는 Description으로 검색할 수 있습니다.</p>
                 <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  {['AS8500', 'AS4500', 'KB0768', 'KB0775', '712696'].map(ex => (
+                  {['711101', '711202', '712591', '711131', '712618'].map(ex => (
                     <button key={ex} onClick={() => { setLocateSearch(ex); setLocateQuery(ex); }}
                       className="px-3 py-1.5 bg-gray-100 hover:bg-indigo-100 text-sm text-gray-600 rounded-lg transition">
                       {ex}
