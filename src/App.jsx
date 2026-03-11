@@ -3961,10 +3961,10 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         const stockExcelCheck = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
         const savedTs = safeStorage.getItem('pbk_last_updated') || '';
         const isNewer = stockExcelCheck.commitTime && stockExcelCheck.commitTime !== savedTs;
-        const forceReparse = parseVersionChanged && stockExcelCheck.fresh;
-        if (forceReparse) console.log('[Stock] 파싱 버전 변경 → 강제 재파싱');
+        const forceReparse = parseVersionChanged;
+        if (forceReparse) console.log('[Stock] 파싱 버전 변경 → 강제 재파싱 (날짜 무관)');
         if (!stockExcelCheck.fresh && savedTs && !forceReparse) { /* 오늘 업데이트 안 됐고 기존 데이터 있으면 스킵 */ }
-        else if (stockExcelCheck.fresh && (!savedTs || isNewer || forceReparse)) try {
+        else if ((stockExcelCheck.fresh && (!savedTs || isNewer)) || forceReparse) try {
           const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
           if (xlsResp.ok) {
             await ensureXLSX();
@@ -4000,9 +4000,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           const poExcelCheck = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
           const savedPoTs = safeStorage.getItem('pbk_open_po_updated') || '';
           const isPoNewer = poExcelCheck.commitTime && poExcelCheck.commitTime !== savedPoTs;
-          const forcePoReparse = parseVersionChanged && poExcelCheck.fresh;
+          const forcePoReparse = parseVersionChanged;
           if (!poExcelCheck.fresh && savedPoTs && !forcePoReparse) { /* 스킵 */ }
-          else if (poExcelCheck.fresh && (!savedPoTs || isPoNewer || forcePoReparse)) try {
+          else if ((poExcelCheck.fresh && (!savedPoTs || isPoNewer)) || forcePoReparse) try {
             const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
               await ensureXLSX();
