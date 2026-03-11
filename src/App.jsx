@@ -1880,7 +1880,7 @@ export default function PBKWarehouseSystem() {
   });
   const [qStockSearch, setQStockSearch] = useState('');
   const [qStockStatusFilter, setQStockStatusFilter] = useState('all');
-  const [qStockSortKey, setQStockSortKey] = useState('daysElapsed'); // 'grDate' | 'daysElapsed'
+  const [qStockSortKey, setQStockSortKey] = useState('daysElapsed'); // 'grDate' | 'daysElapsed' | 'warehouseStock'
   const [qStockSortDir, setQStockSortDir] = useState('desc'); // 'asc' | 'desc'
   const [rackSummary, setRackSummary] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -2370,11 +2370,27 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const [walkHudVisible, setWalkHudVisible] = useState(false);// 카메라/기능 제어용
   
   useEffect(() => {
-    // 초기 로드: 저장된 데이터가 있으면 파싱
-    try {
-      const saved = safeStorage.getItem('pbk_layout_data');
-      if (saved) setLayoutData(JSON.parse(saved));
-    } catch(ex) {}
+    // 초기 로드: GitHub에서 최신 레이아웃 로드 → 실패 시 localStorage 폴백
+    const loadLayout = async () => {
+      try {
+        const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/layout.json?t=${Date.now()}`);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.R && data.R.length > 0) {
+            const jsonStr = JSON.stringify(data);
+            safeStorage.setItem('pbk_layout_data', jsonStr);
+            setLayoutData(data);
+            console.log('[Layout] GitHub에서 최신 레이아웃 로드, 랙:', data.R.length);
+            return;
+          }
+        }
+      } catch(ex) { console.log('[Layout] GitHub fetch 실패, localStorage 폴백:', ex.message); }
+      try {
+        const saved = safeStorage.getItem('pbk_layout_data');
+        if (saved) setLayoutData(JSON.parse(saved));
+      } catch(ex) {}
+    };
+    loadLayout();
   }, []);
 
   useEffect(() => {
@@ -2393,15 +2409,30 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         } catch(ex) { console.error('[Layout] 저장 처리 오류:', ex); }
       }
       if (e.data.type === 'layoutReady') {
-        try {
-          const saved = safeStorage.getItem('pbk_layout_data');
-          if (saved && layoutIframeRef.current) {
-            const parsed = JSON.parse(saved);
-            if (parsed.R && parsed.R.length > 0) {
-              layoutIframeRef.current.contentWindow.postMessage({ type: 'layoutLoad', data: saved }, '*');
+        const sendToIframe = (jsonStr) => {
+          try {
+            const parsed = JSON.parse(jsonStr);
+            if (parsed.R && parsed.R.length > 0 && layoutIframeRef.current) {
+              layoutIframeRef.current.contentWindow.postMessage({ type: 'layoutLoad', data: jsonStr }, '*');
             }
-          }
-        } catch(ex) {}
+          } catch(ex) {}
+        };
+        // GitHub에서 최신 레이아웃 로드 → 실패 시 localStorage 폴백
+        fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/layout.json?t=${Date.now()}`)
+          .then(r => r.ok ? r.text() : null)
+          .then(text => {
+            if (text) {
+              safeStorage.setItem('pbk_layout_data', text);
+              setLayoutData(JSON.parse(text));
+              sendToIframe(text);
+            } else {
+              const saved = safeStorage.getItem('pbk_layout_data');
+              if (saved) sendToIframe(saved);
+            }
+          }).catch(() => {
+            const saved = safeStorage.getItem('pbk_layout_data');
+            if (saved) sendToIframe(saved);
+          });
       }
     };
     window.addEventListener('message', handleLayoutMessage);
@@ -7838,12 +7869,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
                   {lastUpdated && (
-                    <p title={`${getElapsedTimeDetail(lastUpdated)}\n자동 스케줄: 08:20, 14:00`}>
+                    <p title={`${getElapsedTimeDetail(lastUpdated)}\nSAP 추출: 08:20 / 14:00\n대시보드 반영: 08:40 / 14:20`}>
                       <span className="text-emerald-300 font-bold">Stock:</span> {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {openPOLastUpdated && (
-                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\n자동 스케줄: 08:30, 14:10`}>
+                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP 추출: 08:30 / 14:10\n대시보드 반영: 08:40 / 14:20`}>
                       <span className="text-amber-300 font-bold">Open PO:</span> {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
@@ -8231,8 +8262,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               return null;
             })()}
 
-            {/* SAP 자동 업데이트 스케줄 (접기/펼치기) */}
-            {isAdmin && (
+            {/* SAP 자동 업데이트 스케줄 (접기/펼치기) - 모든 사용자에게 표시 */}
+            {(
               <div className="bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-4">
                 <div className="flex items-center justify-between cursor-pointer select-none" onClick={() => setShowSapSchedule(prev => !prev)}>
                   <div className="flex items-center gap-3">
@@ -9134,6 +9165,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 if (qStockSortKey === 'grDate') {
                   return dir * ((a.grDateTs || 0) - (b.grDateTs || 0));
                 }
+                if (qStockSortKey === 'warehouseStock') {
+                  const aTotal = inventoryData.filter(i => i.material === a.material).reduce((s, i) => s + (i.stock || 0), 0);
+                  const bTotal = inventoryData.filter(i => i.material === b.material).reduce((s, i) => s + (i.stock || 0), 0);
+                  const aWh = aTotal - (qStockByMaterial[a.material] || 0);
+                  const bWh = bTotal - (qStockByMaterial[b.material] || 0);
+                  return dir * (aWh - bWh);
+                }
                 return dir * ((a.daysElapsed || 0) - (b.daysElapsed || 0));
               });
               const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
@@ -9208,10 +9246,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">수량</th>
-                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">검사대기수량</th>
+                          <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
                             onClick={() => { if (qStockSortKey === 'grDate') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('grDate'); setQStockSortDir('desc'); } }}>
                             입고일 {qStockSortKey === 'grDate' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
+                          </th>
+                          <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
+                            onClick={() => { if (qStockSortKey === 'warehouseStock') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('warehouseStock'); setQStockSortDir('asc'); } }}>
+                            창고 재고 {qStockSortKey === 'warehouseStock' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
                           </th>
                           <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
                             onClick={() => { if (qStockSortKey === 'daysElapsed') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('daysElapsed'); setQStockSortDir('desc'); } }}>
@@ -9232,7 +9274,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
                               <td className="px-3 py-2 text-xs">{item.bin}</td>
                               <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
-                              <td className="px-3 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
+                              <td className="px-2 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
+                              <td className="px-2 py-2 text-right text-xs font-medium">
+                                {(() => {
+                                  const totalStock = inventoryData.filter(i => i.material === item.material).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const totalQ = qStockByMaterial[item.material] || 0;
+                                  const warehouseStock = totalStock - totalQ;
+                                  return <span className={warehouseStock <= 0 ? 'text-red-500 font-bold' : 'text-blue-600'}>{warehouseStock.toLocaleString()} {item.unit}</span>;
+                                })()}
+                              </td>
                               <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
                                 {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
                               </td>
@@ -9240,7 +9290,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           );
                         })}
                         {displayItems.length === 0 && (
-                          <tr><td colSpan="7" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
+                          <tr><td colSpan="8" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
                         )}
                       </tbody>
                     </table>
