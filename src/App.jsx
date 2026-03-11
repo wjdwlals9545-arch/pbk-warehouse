@@ -2095,7 +2095,7 @@ export default function PBKWarehouseSystem() {
   const [kittingFilterModel, setKittingFilterModel] = useState('all');
   const [kittingFilterStatus, setKittingFilterStatus] = useState('all');
   const [kittingSearchTerm, setKittingSearchTerm] = useState('');
-  const [kittingSortBy, setKittingSortBy] = useState('basicStartDate');
+  const [kittingSortBy, setKittingSortBy] = useState('startedAt');
   const [kittingSortOrder, setKittingSortOrder] = useState('asc');
   const [editingKitting, setEditingKitting] = useState(null);
 
@@ -10998,7 +10998,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* 선택 시 일괄 작업 버튼 */}
-            {selectedKittings.size > 0 ? (
+            {selectedKittings.size > 0 && (
               <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex items-center gap-3">
                 <span className="text-sm font-medium text-teal-700">{selectedKittings.size}개 선택됨</span>
                 <button onClick={completeSelectedKittings} className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">
@@ -11011,25 +11011,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   선택 해제
                 </button>
               </div>
-            ) : (
-              (() => {
-                const incompleteKittings = filteredSortedKittings.filter(k => k.status !== 'completed');
-                return incompleteKittings.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-3">
-                    <span className="text-sm text-blue-700">미완료 <strong>{incompleteKittings.length}</strong>건</span>
-                    <button onClick={() => {
-                      setSelectedKittings(new Set(incompleteKittings.map(k => k.id)));
-                    }} className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                      전체 선택
-                    </button>
-                    <button onClick={() => {
-                      completeAllIncompleteKittings(incompleteKittings.map(k => k.id));
-                    }} className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700">
-                      ✅ 전체 일괄 완료
-                    </button>
-                  </div>
-                );
-              })()
             )}
 
             {/* 필터/정렬 컨트롤 */}
@@ -11086,6 +11067,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     onChange={e => setKittingSortBy(e.target.value)}
                   >
                     <option value="productionOrder">Production Order</option>
+                    <option value="startedAt">시작시간</option>
                     <option value="basicStartDate">시작예정일</option>
                     <option value="completedAt">완료일</option>
                   </select>
