@@ -3799,13 +3799,20 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   }, [tempHumidityData, inventoryData, openPOData, dataHistory]);
 
   // GitHub에서 대시보드 상태 + Stock/OpenPO 데이터 자동 로드
-  // 대시보드 상태 + JSON: 항상 로드 / Excel 파싱: 8:40~, 14:20~에만 (SAP 추출 완료 후)
+  // Excel 파싱: 스케줄 시간(8:40~, 14:20~) 또는 오늘 데이터 미로드 시 항상
   useEffect(() => {
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
     const now = new Date();
     const h = now.getHours();
     const m = now.getMinutes();
-    const isExcelHour = (h === 8 && m >= 40) || (h === 14 && m >= 20);
+    const isScheduledHour = (h === 8 && m >= 40) || (h === 14 && m >= 20);
+    // 오늘 날짜의 데이터가 localStorage에 없으면 시간 무관 Excel 로드
+    const todayStr = now.getFullYear() + '. ' + (now.getMonth() + 1) + '. ' + now.getDate() + '.';
+    const savedStockTs = safeStorage.getItem('pbk_last_updated') || '';
+    const savedPOTs = safeStorage.getItem('pbk_open_po_updated') || '';
+    const stockNotToday = !savedStockTs.includes(todayStr);
+    const poNotToday = !savedPOTs.includes(todayStr);
+    const isExcelHour = isScheduledHour || stockNotToday || poNotToday;
 
     // XLSX 라이브러리 로드 헬퍼
     const ensureXLSX = () => new Promise((resolve, reject) => {
