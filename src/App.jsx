@@ -3803,8 +3803,12 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
   // GitHub에서 대시보드 상태 + Stock/OpenPO 데이터 자동 로드
   // Excel 파싱: GitHub 커밋 시간이 현재 저장된 데이터보다 새로우면 항상 파싱
+  // 파싱 로직 버전: 변경 시 캐시 무시하고 강제 재파싱
+  const PARSE_VERSION = '2';
   useEffect(() => {
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
+    const savedParseVer = safeStorage.getItem('pbk_parse_version') || '';
+    const parseVersionChanged = savedParseVer !== PARSE_VERSION;
 
     // XLSX 라이브러리 로드 헬퍼
     const ensureXLSX = () => new Promise((resolve, reject) => {
@@ -3926,8 +3930,10 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         const stockExcelCheck = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
         const savedTs = safeStorage.getItem('pbk_last_updated') || '';
         const isNewer = stockExcelCheck.commitTime && stockExcelCheck.commitTime !== savedTs;
-        if (!stockExcelCheck.fresh && savedTs) { /* 오늘 업데이트 안 됐고 기존 데이터 있으면 스킵 */ }
-        else if (stockExcelCheck.fresh && (!savedTs || isNewer)) try {
+        const forceReparse = parseVersionChanged && stockExcelCheck.fresh;
+        if (forceReparse) console.log('[Stock] 파싱 버전 변경 → 강제 재파싱');
+        if (!stockExcelCheck.fresh && savedTs && !forceReparse) { /* 오늘 업데이트 안 됐고 기존 데이터 있으면 스킵 */ }
+        else if (stockExcelCheck.fresh && (!savedTs || isNewer || forceReparse)) try {
           const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
           if (xlsResp.ok) {
             await ensureXLSX();
@@ -3950,6 +3956,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
                 setQStockData([]);
                 safeStorage.removeItem('pbk_qstock');
               }
+              safeStorage.setItem('pbk_parse_version', PARSE_VERSION);
               showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개${qStockItems.length > 0 ? `, Q:${qStockItems.length}건` : ''})`, 'success');
               addDataHistory('stock', 'GitHub Excel 자동 로드', inventory.length);
               stockLoaded = true;
@@ -3962,8 +3969,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           const poExcelCheck = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
           const savedPoTs = safeStorage.getItem('pbk_open_po_updated') || '';
           const isPoNewer = poExcelCheck.commitTime && poExcelCheck.commitTime !== savedPoTs;
-          if (!poExcelCheck.fresh && savedPoTs) { /* 스킵 */ }
-          else if (poExcelCheck.fresh && (!savedPoTs || isPoNewer)) try {
+          const forcePoReparse = parseVersionChanged && poExcelCheck.fresh;
+          if (!poExcelCheck.fresh && savedPoTs && !forcePoReparse) { /* 스킵 */ }
+          else if (poExcelCheck.fresh && (!savedPoTs || isPoNewer || forcePoReparse)) try {
             const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
               await ensureXLSX();
