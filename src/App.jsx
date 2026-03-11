@@ -4381,8 +4381,8 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
     result.sort((a, b) => {
       let aVal, bVal;
       if (receiveSortBy === 'poNo') {
-        aVal = parseInt(a.poNo) || 0;
-        bVal = parseInt(b.poNo) || 0;
+        aVal = a.delivery || a.startTime || '';
+        bVal = b.delivery || b.startTime || '';
       } else if (receiveSortBy === 'delivery') {
         aVal = a.delivery || '';
         bVal = b.delivery || '';
@@ -4400,6 +4400,29 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
     return result;
   }, [receiveCycles, receiveFilterMonth, receiveSearchTerm, receiveFilterStatus, receiveSortBy, receiveSortOrder]);
+
+  // 입고 월별 순번 계산 (매월 No.1부터 시작)
+  const receiveMonthlyNo = React.useMemo(() => {
+    const monthGroups = {};
+    receiveCycles.forEach(r => {
+      const dt = r.delivery || r.startTime || '';
+      const month = dt.slice(0, 7); // "YYYY-MM"
+      if (!monthGroups[month]) monthGroups[month] = [];
+      monthGroups[month].push(r);
+    });
+    const noMap = new Map();
+    Object.keys(monthGroups).forEach(month => {
+      const items = monthGroups[month].sort((a, b) => {
+        const aD = a.delivery || a.startTime || '';
+        const bD = b.delivery || b.startTime || '';
+        return aD.localeCompare(bD);
+      });
+      items.forEach((item, idx) => {
+        noMap.set(item.id, idx + 1);
+      });
+    });
+    return noMap;
+  }, [receiveCycles]);
 
   // 무게 데이터 수정
   const updateWeight = (material, field, value) => {
@@ -5613,7 +5636,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       filename = `불출_Cycle_Time_${new Date().toISOString().slice(0,10)}.xlsx`;
     } else {
       data = receiveCycles.map(r => ({
-        'No.': r.poNo,
+        'No.': receiveMonthlyNo.get(r.id) || r.poNo,
         '협력업체': r.vendor,
         '납품 시각': r.delivery ? r.delivery.replace(/^(\d{4}-\d{2}-\d{2})[\-T](\d{2}:\d{2}).*/, '$1 $2') : '-',
         '시작 시간': r.startTime ? new Date(r.startTime).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-',
@@ -6080,11 +6103,7 @@ ${tableRows}
       const d = r.delivery || r.startTime || '';
       return d.startsWith(currentMonthPadded) || d.startsWith(currentMonthNoPad + '-');
     });
-    const maxNo = thisMonthCycles.reduce((max, r) => {
-      const num = parseInt(r.poNo) || 0;
-      return num > max ? num : max;
-    }, 0);
-    const newPoNo = String(maxNo + 1);
+    const newPoNo = String(thisMonthCycles.length + 1);
 
     // 현재 시간을 납품 시각으로 사용 (위에서 선언한 now 재사용)
     const deliveryStr = now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
@@ -8223,11 +8242,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <p className="text-[10px] text-emerald-600 font-bold mb-1">ZBIN (Stock)</p>
                     <p className="text-xs text-slate-700 font-medium">08:20 / 14:00</p>
                     <p className="text-[10px] text-slate-400">매일 2회</p>
+                    {lastUpdated && <p className="text-[10px] text-emerald-500 mt-1 font-medium">✅ {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                   </div>
                   <div className="bg-white rounded-lg p-2.5 border border-amber-200">
                     <p className="text-[10px] text-amber-600 font-bold mb-1">ME2N (Open PO)</p>
                     <p className="text-xs text-slate-700 font-medium">08:30 / 14:10</p>
                     <p className="text-[10px] text-slate-400">매일 2회</p>
+                    {openPOLastUpdated && <p className="text-[10px] text-amber-500 mt-1 font-medium">✅ {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                   </div>
                   <div className="bg-white rounded-lg p-2.5 border border-blue-200">
                     <p className="text-[10px] text-blue-600 font-bold mb-1">GR Cancel (MB51)</p>
@@ -11499,7 +11520,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           onChange={() => toggleReceiveSelection(r.id)}
                           className="w-4 h-4 rounded" />
                       </td>
-                      <td className="px-4 py-3 font-medium">{r.poNo}</td>
+                      <td className="px-4 py-3 font-medium">{receiveMonthlyNo.get(r.id) || r.poNo}</td>
                       <td className="px-4 py-3">{r.vendor}</td>
                       <td className="px-4 py-3 text-center text-sm">{r.delivery ? r.delivery.replace(/^(\d{4}-\d{2}-\d{2})[\-T](\d{2}:\d{2}).*/, '$1 $2') : '-'}</td>
                       <td className="px-4 py-3 text-center text-sm">{r.migo ? convertToKoreaTime(r.migo) : '-'}</td>
