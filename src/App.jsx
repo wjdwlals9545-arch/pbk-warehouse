@@ -3802,20 +3802,9 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   }, [tempHumidityData, inventoryData, openPOData, dataHistory]);
 
   // GitHub에서 대시보드 상태 + Stock/OpenPO 데이터 자동 로드
-  // Excel 파싱: 스케줄 시간(8:40~, 14:20~) 또는 오늘 데이터 미로드 시 항상
+  // Excel 파싱: GitHub 커밋 시간이 현재 저장된 데이터보다 새로우면 항상 파싱
   useEffect(() => {
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data';
-    const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const isScheduledHour = (h === 8 && m >= 40) || (h === 14 && m >= 20);
-    // 오늘 날짜의 데이터가 localStorage에 없으면 시간 무관 Excel 로드
-    const todayStr = now.getFullYear() + '. ' + (now.getMonth() + 1) + '. ' + now.getDate() + '.';
-    const savedStockTs = safeStorage.getItem('pbk_last_updated') || '';
-    const savedPOTs = safeStorage.getItem('pbk_open_po_updated') || '';
-    const stockNotToday = !savedStockTs.includes(todayStr);
-    const poNotToday = !savedPOTs.includes(todayStr);
-    const isExcelHour = isScheduledHour || stockNotToday || poNotToday;
 
     // XLSX 라이브러리 로드 헬퍼
     const ensureXLSX = () => new Promise((resolve, reject) => {
@@ -3865,14 +3854,24 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
           }
         }
       });
-      const inventory = jsonData
-        .filter(row => row['Material'] && (!row['Material Description'] || !row['Material Description'].toString().trim()))
-        .map(row => {
-          const material = String(row['Material'] || '');
+      // Storage Type 110/101 기준 실제 창고 재고 합산
+      const warehouseStockByMaterial = {};
+      jsonData.forEach(row => {
+        const material = row['Material'];
+        const storageType = String(row['Storage Type'] || '').trim();
+        if (material && (storageType === '110' || storageType === '101')) {
+          const matKey = String(material);
+          if (!warehouseStockByMaterial[matKey]) warehouseStockByMaterial[matKey] = { stock: 0, unit: 'EA' };
+          warehouseStockByMaterial[matKey].stock += parseFloat(row['Available stock']) || 0;
+          warehouseStockByMaterial[matKey].unit = String(row['Base Unit of Measure'] || 'EA');
+        }
+      });
+      const inventory = Object.entries(warehouseStockByMaterial)
+        .map(([material, data]) => {
           const info = materialInfoMap[material] || { description: '', bins: [] };
-          return { material, description: info.description, bin: info.bins[0] || '', allBins: info.bins, stock: parseFloat(row['Available stock']) || 0, unit: String(row['Base Unit of Measure'] || 'EA') };
+          return { material, description: info.description, bin: info.bins[0] || '', allBins: info.bins, stock: data.stock, unit: data.unit };
         })
-        .filter(item => item.bin);
+        .filter(item => item.description);
       return { inventory, qStockItems };
     };
 
@@ -3921,12 +3920,14 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       let stockLoaded = false;
       let poLoaded = false;
 
-      // ── Excel 로드: 8시/14시에만 (XLSX 라이브러리+대용량 파일 → 모바일 메모리 보호) ──
-      if (isExcelHour) {
+      // ── Excel 로드: GitHub 커밋 시간이 저장된 데이터보다 새로우면 파싱 ──
+      {
         // 1. Excel 시도 (Stock)
         const stockExcelCheck = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
-        if (!stockExcelCheck.fresh) showToast('⚠️ Stock Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
-        if (stockExcelCheck.fresh) try {
+        const savedTs = safeStorage.getItem('pbk_last_updated') || '';
+        const isNewer = stockExcelCheck.commitTime && stockExcelCheck.commitTime !== savedTs;
+        if (!stockExcelCheck.fresh && savedTs) { /* 오늘 업데이트 안 됐고 기존 데이터 있으면 스킵 */ }
+        else if (stockExcelCheck.fresh && (!savedTs || isNewer)) try {
           const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
           if (xlsResp.ok) {
             await ensureXLSX();
@@ -3959,8 +3960,10 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         // 2. Excel 시도 (OpenPO)
         if (!poLoaded) {
           const poExcelCheck = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
-          if (!poExcelCheck.fresh) showToast('⚠️ Open PO Excel: 오늘 업데이트 안 됨 - 자동 로드 스킵', 'warning');
-          if (poExcelCheck.fresh) try {
+          const savedPoTs = safeStorage.getItem('pbk_open_po_updated') || '';
+          const isPoNewer = poExcelCheck.commitTime && poExcelCheck.commitTime !== savedPoTs;
+          if (!poExcelCheck.fresh && savedPoTs) { /* 스킵 */ }
+          else if (poExcelCheck.fresh && (!savedPoTs || isPoNewer)) try {
             const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
               await ensureXLSX();
@@ -4859,30 +4862,24 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         }
       });
 
-      // 2. 노란색 행 (Description 없는 행)에서 총 재고 추출
-      const inventory = jsonData
-        .filter(row => {
-          const material = row['Material'];
-          const desc = row['Material Description'];
-          // Material은 있고, Description은 비어있는 행 (노란색)
-          return material && (!desc || !desc.toString().trim());
-        })
-        .map(row => {
-          const material = String(row['Material'] || '');
+      // 2. Storage Type 110/101 기준 실제 창고 재고 합산
+      const warehouseStockByMaterial = {};
+      jsonData.forEach(row => {
+        const material = row['Material'];
+        const storageType = String(row['Storage Type'] || '').trim();
+        if (material && (storageType === '110' || storageType === '101')) {
+          const matKey = String(material);
+          if (!warehouseStockByMaterial[matKey]) warehouseStockByMaterial[matKey] = { stock: 0, unit: 'EA' };
+          warehouseStockByMaterial[matKey].stock += parseFloat(row['Available stock']) || 0;
+          warehouseStockByMaterial[matKey].unit = String(row['Base Unit of Measure'] || 'EA');
+        }
+      });
+      const inventory = Object.entries(warehouseStockByMaterial)
+        .map(([material, data]) => {
           const info = materialInfoMap[material] || { description: '', bins: [] };
-          // 첫 번째 Bin을 대표 Bin으로 사용
-          const primaryBin = info.bins.length > 0 ? info.bins[0] : '';
-
-          return {
-            material: material,
-            description: info.description,
-            bin: primaryBin,
-            allBins: info.bins, // 모든 Bin 저장
-            stock: parseFloat(row['Available stock']) || 0,
-            unit: String(row['Base Unit of Measure'] || 'EA'),
-          };
+          return { material, description: info.description, bin: info.bins[0] || '', allBins: info.bins, stock: data.stock, unit: data.unit };
         })
-        .filter(item => item.bin); // Bin 정보가 있는 것만 (Production Order 제외됨)
+        .filter(item => item.description);
 
       if (inventory.length === 0) {
         throw new Error('유효한 재고 데이터가 없습니다. SAP 엑셀 형식을 확인해주세요.');
@@ -8492,12 +8489,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                               <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
-                            {qStockData.length > 0 && (
-                              <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
-                                <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
-                                <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
-                              </div>
-                            )}
+                            {(() => {
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              const qItems = qStockData.filter(q => q.material in (customBomData || MODEL_BOM_DATA)[model]);
+                              if (!qItems.length || qExU === prodInfo.units) return null;
+                              return (
+                                <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                  <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
+                                  <span className="text-lg font-bold text-orange-600">{qExU}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="mt-2 pt-2 border-t border-gray-200/60">
                             <div className="flex justify-between items-center">
@@ -8523,17 +8525,30 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             {(() => {
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
-                              if (modelQItems.length === 0) return null;
+                              if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
+                              let bottleneck = null;
+                              let minUnits = Infinity;
+                              Object.entries(modelBom).forEach(([mat, reqQty]) => {
+                                if (reqQty <= 0) return;
+                                const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
+                                const qQty = qStockByMaterial[mat] || 0;
+                                if (qQty <= 0) return;
+                                const units = Math.floor((avail - qQty) / reqQty);
+                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                              });
+                              if (!bottleneck) return null;
+                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
+                              const avaExQ = bottleneck.avail - bottleneck.qQty;
                               return (
                                 <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                  <p className="text-[10px] text-orange-600 font-bold mb-1">Q Stock 품목</p>
-                                  {modelQItems.map((q, qi) => (
-                                    <div key={qi} className="flex justify-between items-center text-[10px] text-gray-600 leading-relaxed">
-                                      <span className="truncate mr-1">{q.material} <span className="text-gray-400">{q.description}</span></span>
-                                      <span className="whitespace-nowrap font-medium text-orange-600">{q.stock} {q.unit}</span>
-                                    </div>
-                                  ))}
+                                  <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
+                                  <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                  <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                    <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -8587,12 +8602,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                               <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
-                            {qStockData.length > 0 && (
-                              <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
-                                <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
-                                <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
-                              </div>
-                            )}
+                            {(() => {
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              const qItems = qStockData.filter(q => q.material in (customBomData || MODEL_BOM_DATA)[model]);
+                              if (!qItems.length || qExU === prodInfo.units) return null;
+                              return (
+                                <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                  <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
+                                  <span className="text-lg font-bold text-orange-600">{qExU}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="mt-2 pt-2 border-t border-gray-200/60">
                             <div className="flex justify-between items-center">
@@ -8618,17 +8638,30 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             {(() => {
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
-                              if (modelQItems.length === 0) return null;
+                              if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
+                              let bottleneck = null;
+                              let minUnits = Infinity;
+                              Object.entries(modelBom).forEach(([mat, reqQty]) => {
+                                if (reqQty <= 0) return;
+                                const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
+                                const qQty = qStockByMaterial[mat] || 0;
+                                if (qQty <= 0) return;
+                                const units = Math.floor((avail - qQty) / reqQty);
+                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                              });
+                              if (!bottleneck) return null;
+                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
+                              const avaExQ = bottleneck.avail - bottleneck.qQty;
                               return (
                                 <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                  <p className="text-[10px] text-orange-600 font-bold mb-1">Q Stock 품목</p>
-                                  {modelQItems.map((q, qi) => (
-                                    <div key={qi} className="flex justify-between items-center text-[10px] text-gray-600 leading-relaxed">
-                                      <span className="truncate mr-1">{q.material} <span className="text-gray-400">{q.description}</span></span>
-                                      <span className="whitespace-nowrap font-medium text-orange-600">{q.stock} {q.unit}</span>
-                                    </div>
-                                  ))}
+                                  <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
+                                  <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                  <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                    <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -8685,12 +8718,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                               <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
-                            {qStockData.length > 0 && (
-                              <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
-                                <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
-                                <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
-                              </div>
-                            )}
+                            {(() => {
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              const qItems = qStockData.filter(q => q.material in (customBomData || MODEL_BOM_DATA)[model]);
+                              if (!qItems.length || qExU === prodInfo.units) return null;
+                              return (
+                                <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                  <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
+                                  <span className="text-lg font-bold text-orange-600">{qExU}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="mt-2 pt-2 border-t border-gray-200/60">
                             <div className="flex justify-between items-center">
@@ -8716,17 +8754,30 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             {(() => {
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
-                              if (modelQItems.length === 0) return null;
+                              if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
+                              let bottleneck = null;
+                              let minUnits = Infinity;
+                              Object.entries(modelBom).forEach(([mat, reqQty]) => {
+                                if (reqQty <= 0) return;
+                                const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
+                                const qQty = qStockByMaterial[mat] || 0;
+                                if (qQty <= 0) return;
+                                const units = Math.floor((avail - qQty) / reqQty);
+                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                              });
+                              if (!bottleneck) return null;
+                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
+                              const avaExQ = bottleneck.avail - bottleneck.qQty;
                               return (
                                 <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                  <p className="text-[10px] text-orange-600 font-bold mb-1">Q Stock 품목</p>
-                                  {modelQItems.map((q, qi) => (
-                                    <div key={qi} className="flex justify-between items-center text-[10px] text-gray-600 leading-relaxed">
-                                      <span className="truncate mr-1">{q.material} <span className="text-gray-400">{q.description}</span></span>
-                                      <span className="whitespace-nowrap font-medium text-orange-600">{q.stock} {q.unit}</span>
-                                    </div>
-                                  ))}
+                                  <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
+                                  <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                  <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                    <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
+                                  </div>
                                 </div>
                               );
                             })()}
@@ -8880,12 +8931,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                                   <span className={`text-lg font-bold ${textColor}`}>{info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                 </div>
-                                {qStockData.length > 0 && (
-                                  <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
-                                    <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
-                                    <span className="text-lg font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const qExU = subComponentUnitsExQ[subComName]?.units ?? info.units;
+                                  if (!qStockData.length || qExU === info.units) return null;
+                                  return (
+                                    <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                      <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
+                                      <span className="text-lg font-bold text-orange-600">{qExU}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <div className="mt-2 pt-2 border-t border-gray-200/60">
                                 <div className="flex justify-between items-center">
@@ -8911,15 +8966,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {(() => {
                                   const subQItems = qStockData.filter(q => q.material === subComName);
                                   if (subQItems.length === 0) return null;
+                                  const totalQ = subQItems.reduce((s, q) => s + (q.stock || 0), 0);
+                                  const totalStock = inventoryData.filter(i => i.material === subComName).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const avaExQ = totalStock - totalQ;
                                   return (
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                      <p className="text-[10px] text-orange-600 font-bold mb-1">Q Stock 품목</p>
-                                      {subQItems.map((q, qi) => (
-                                        <div key={qi} className="flex justify-between items-center text-[10px] text-gray-600 leading-relaxed">
-                                          <span className="truncate mr-1">{q.material} <span className="text-gray-400">{q.description}</span></span>
-                                          <span className="whitespace-nowrap font-medium text-orange-600">{q.stock} {q.unit}</span>
-                                        </div>
-                                      ))}
+                                      <div className="flex justify-between items-center text-[10px]">
+                                        <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava(Q제외): {avaExQ} EA</span>
+                                        <span className="text-orange-600 font-bold">Q: {totalQ} EA</span>
+                                      </div>
                                     </div>
                                   );
                                 })()}
@@ -8990,12 +9045,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                                   <span className={`text-lg font-bold ${textColor}`}>{info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                 </div>
-                                {qStockData.length > 0 && (
-                                  <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
-                                    <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
-                                    <span className="text-lg font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const qExU = subComponentUnitsExQ[subComName]?.units ?? info.units;
+                                  if (!qStockData.length || qExU === info.units) return null;
+                                  return (
+                                    <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                      <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
+                                      <span className="text-lg font-bold text-orange-600">{qExU}<span className="text-xs font-normal ml-0.5">대</span></span>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               <div className="mt-2 pt-2 border-t border-gray-200/60">
                                 <div className="flex justify-between items-center">
@@ -9021,15 +9080,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {(() => {
                                   const subQItems = qStockData.filter(q => q.material === subComName);
                                   if (subQItems.length === 0) return null;
+                                  const totalQ = subQItems.reduce((s, q) => s + (q.stock || 0), 0);
+                                  const totalStock = inventoryData.filter(i => i.material === subComName).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const avaExQ = totalStock - totalQ;
                                   return (
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                      <p className="text-[10px] text-orange-600 font-bold mb-1">Q Stock 품목</p>
-                                      {subQItems.map((q, qi) => (
-                                        <div key={qi} className="flex justify-between items-center text-[10px] text-gray-600 leading-relaxed">
-                                          <span className="truncate mr-1">{q.material} <span className="text-gray-400">{q.description}</span></span>
-                                          <span className="whitespace-nowrap font-medium text-orange-600">{q.stock} {q.unit}</span>
-                                        </div>
-                                      ))}
+                                      <div className="flex justify-between items-center text-[10px]">
+                                        <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava(Q제외): {avaExQ} EA</span>
+                                        <span className="text-orange-600 font-bold">Q: {totalQ} EA</span>
+                                      </div>
                                     </div>
                                   );
                                 })()}
