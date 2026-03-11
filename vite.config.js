@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: '/pbk-warehouse/',
   build: {
+    target: ['es2020', 'safari14'],
     rollupOptions: {
       output: {
         manualChunks(id) {

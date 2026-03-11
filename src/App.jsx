@@ -2120,7 +2120,7 @@ export default function PBKWarehouseSystem() {
 <style>
 /* fonts loaded from parent */
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1424;color:#e2e8f0;min-height:100vh;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d1424;color:#e2e8f0;min-height:100vh;min-height:100dvh;overflow:hidden;-webkit-overflow-scrolling:touch}
 .topbar{height:40px;background:#1e293b;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;padding:0 10px;z-index:200}
 .topbar h1{font-size:13px;font-weight:700;color:#f1f5f9}
 .tb-g{display:flex;align-items:center;gap:4px}
@@ -2146,10 +2146,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .mode-desc{margin-left:12px;font-size:10px;color:#475569;flex:1}
 .lg{display:flex;gap:3px;font-size:9px;color:#64748b;align-items:center}
 .lg-s{width:10px;height:7px;border-radius:1px;display:inline-block}
-#CA{position:relative;width:100%;height:calc(100vh - 40px - 34px - 26px);overflow:auto;background:#111a2e}
+#CA{position:relative;width:100%;height:calc(100vh - 40px - 34px - 26px);height:calc(100dvh - 40px - 34px - 26px);overflow:auto;background:#111a2e;-webkit-overflow-scrolling:touch}
 #CA.m-move{cursor:grab}#CA.m-move.panning{cursor:grabbing}
 #CA.m-select{cursor:default}#CA.m-ruler{cursor:crosshair}#CA.m-text{cursor:text}
-#CV{position:relative;transform-origin:0 0}
+#CV{position:relative;-webkit-transform-origin:0 0;transform-origin:0 0}
 .bld{position:absolute;border:2.5px solid rgba(255,255,255,.7);border-radius:3px;background:rgba(20,30,50,.2);z-index:1;pointer-events:none}
 .blbl{position:absolute;font-size:9px;color:#4b5c73;font-weight:500;pointer-events:none;white-space:nowrap}
 .defect{position:absolute;border:2.5px solid rgba(239,68,68,.6);background:rgba(239,68,68,.15);border-radius:4px;z-index:2;display:flex;align-items:center;justify-content:center;pointer-events:none}
@@ -2186,7 +2186,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .dl-preview{position:absolute;z-index:83;pointer-events:none;left:0;top:0}
 .area-sel{position:absolute;z-index:85;border:2px solid #22d3ee;background:rgba(34,211,238,.08);pointer-events:none;border-radius:2px}
 .area-label{position:absolute;z-index:86;background:rgba(15,23,42,.92);border:1.5px solid #22d3ee;color:#22d3ee;font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;white-space:nowrap;pointer-events:all;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);font-family:inherit}
-#spPanel{position:fixed;right:0;top:34px;width:400px;height:calc(100vh - 34px);background:#0f172a;border-left:1px solid #1e293b;z-index:200;overflow-y:auto;transform:translateX(100%);transition:transform .3s;font-family:inherit;font-size:11px}
+#spPanel{position:fixed;right:0;top:34px;width:400px;height:calc(100vh - 34px);height:calc(100dvh - 34px);background:#0f172a;border-left:1px solid #1e293b;z-index:200;overflow-y:auto;-webkit-transform:translateX(100%);transform:translateX(100%);-webkit-transition:-webkit-transform .3s;transition:transform .3s;font-family:inherit;font-size:11px}
 #spPanel.open{transform:translateX(0)}
 .sp-hd{background:#1e293b;padding:10px 12px;font-weight:700;color:#e2e8f0;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
 .sp-sect{padding:10px 12px;border-bottom:1px solid #1e293b}
@@ -2205,7 +2205,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sp-aisle-warn{background:rgba(245,158,11,.1);border-left:3px solid #f59e0b;color:#fde68a}
 .sp-aisle-bad{background:rgba(239,68,68,.1);border-left:3px solid #ef4444;color:#fca5a5}
 .sp-tip{background:rgba(99,102,241,.12);border-left:3px solid #6366f1;color:#a5b4fc;padding:5px 8px;border-radius:0 4px 4px 0;font-size:10px;margin:3px 0;line-height:1.5}
-#spToggle{position:fixed;right:0;top:50%;transform:translateY(-50%);background:#3b82f6;color:#fff;border:none;border-radius:6px 0 0 6px;padding:8px 5px;cursor:pointer;z-index:201;font-size:16px;writing-mode:vertical-rl;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:1px}
+#spToggle{position:fixed;right:0;top:50%;-webkit-transform:translateY(-50%);transform:translateY(-50%);background:#3b82f6;color:#fff;border:none;border-radius:6px 0 0 6px;padding:8px 5px;cursor:pointer;z-index:201;font-size:16px;-webkit-writing-mode:vertical-rl;writing-mode:vertical-rl;font-family:inherit;font-size:10px;font-weight:700;letter-spacing:1px}
 .aisle-overlay{position:absolute;pointer-events:none;z-index:77}
 .sp-collapsible{cursor:pointer;user-select:none;display:flex;justify-content:space-between;align-items:center}
 .sp-collapsible::after{content:"▼";font-size:9px;color:#64748b;transition:transform .2s;margin-left:4px}
@@ -2243,7 +2243,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .ttr{display:flex;justify-content:space-between;gap:8px;padding:1px 0}.ttl{color:#94a3b8}.ttv{font-weight:600;color:#f1f5f9}
 .statusbar{height:26px;background:#1e293b;border-top:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:9px;color:#64748b}
 .gl{position:absolute;pointer-events:none;z-index:0}.glv{width:1px;background:rgba(45,58,79,.5)}.glh{height:1px;background:rgba(45,58,79,.5)}
-.panel{position:fixed;top:74px;right:0;width:195px;background:#1e293b;border-left:1px solid #1e293b;border-bottom:1px solid #1e293b;padding:10px;z-index:150;display:none;border-radius:0 0 0 8px;max-height:calc(100vh - 120px);overflow-y:auto}
+.panel{position:fixed;top:74px;right:0;width:195px;background:#1e293b;border-left:1px solid #1e293b;border-bottom:1px solid #1e293b;padding:10px;z-index:150;display:none;border-radius:0 0 0 8px;max-height:calc(100vh - 120px);max-height:calc(100dvh - 120px);overflow-y:auto;-webkit-overflow-scrolling:touch}
 .panel.show{display:block}.panel h3{font-size:11px;font-weight:700;color:#e2e8f0;margin-bottom:8px;display:flex;justify-content:space-between}
 .panel h3 .xb{cursor:pointer;color:#64748b;font-size:14px}.panel h3 .xb:hover{color:#e2e8f0}
 .pr{display:flex;gap:4px;margin-bottom:5px;align-items:center}.pr label{font-size:9px;color:#94a3b8;min-width:38px}
@@ -2635,8 +2635,10 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0f172a);
       const camera = new THREE.PerspectiveCamera(50, W/H, 0.1, 200);
-      const renderer = new THREE.WebGLRenderer({canvas:cv, antialias:true, preserveDrawingBuffer:true});
-      renderer.setSize(W, H); renderer.shadowMap.enabled = true;
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const renderer = new THREE.WebGLRenderer({canvas:cv, antialias:!isSafari, preserveDrawingBuffer:false, powerPreference:'high-performance'});
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(W, H); renderer.shadowMap.enabled = !isSafari;
       view3dSceneRef.current = {scene, camera, renderer};
       scene.add(new THREE.AmbientLight(0xffffff, 0.5));
       const dl = new THREE.DirectionalLight(0xffffff, 0.6);
@@ -9603,7 +9605,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               <iframe
                 ref={layoutIframeRef}
                 srcDoc={LAYOUT_EDITOR_HTML}
-                style={{ width: '100%', height: 'calc(100vh - 120px)', border: 'none', minHeight: '1200px' }}
+                style={{ width: '100%', height: 'calc(100dvh - 120px)', border: 'none', minHeight: '800px' }}
                 title="PBK 창고 랙 배치도" sandbox="allow-scripts allow-same-origin allow-modals allow-popups allow-forms"
               />
             </div>
@@ -9642,7 +9644,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </div>
               ) : (
                 <div className="relative">
-                  <canvas ref={view3dCanvasRef} style={{width:'100%',height:'calc(100vh - 160px)',minHeight:'600px',display:'block'}} />
+                  <canvas ref={view3dCanvasRef} style={{width:'100%',height:'calc(100dvh - 160px)',minHeight:'600px',display:'block'}} />
                   {/* 워크스루 HUD 오버레이 */}
                   {walkHudVisible && (
                     <WalkHud walkRef={view3dWalkRef} ctrlRef={view3dCtrlRef} onClose={()=>{
