@@ -8481,12 +8481,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <div className="space-y-1">
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">Total Stock</span>
+                              <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                               <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
                             {qStockData.length > 0 && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-orange-500">Q Stock 제외</span>
+                              <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
                                 <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                               </div>
                             )}
@@ -8557,12 +8557,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <div className="space-y-1">
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">Total Stock</span>
+                              <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                               <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
                             {qStockData.length > 0 && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-orange-500">Q Stock 제외</span>
+                              <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
                                 <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                               </div>
                             )}
@@ -8636,12 +8636,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                           <div className="space-y-1">
                             <div className="flex justify-between items-center">
-                              <span className="text-xs text-gray-500">Total Stock</span>
+                              <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                               <span className={`text-lg font-bold ${textColor}`}>{prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                             </div>
                             {qStockData.length > 0 && (
-                              <div className="flex justify-between items-center">
-                                <span className="text-xs text-orange-500">Q Stock 제외</span>
+                              <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
                                 <span className="text-lg font-bold text-orange-600">{producibleUnitsExQ[model]?.units ?? prodInfo.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                               </div>
                             )}
@@ -8812,12 +8812,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </div>
                               <div className="space-y-1">
                                 <div className="flex justify-between items-center">
-                                  <span className="text-xs text-gray-500">Total Stock</span>
+                                  <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                                   <span className={`text-lg font-bold ${textColor}`}>{info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                 </div>
                                 {qStockData.length > 0 && (
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                  <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                    <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
                                     <span className="text-lg font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                   </div>
                                 )}
@@ -8905,12 +8905,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </div>
                               <div className="space-y-1">
                                 <div className="flex justify-between items-center">
-                                  <span className="text-xs text-gray-500">Total Stock</span>
+                                  <span className="text-xs text-gray-500 font-bold">Total Stock</span>
                                   <span className={`text-lg font-bold ${textColor}`}>{info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                 </div>
                                 {qStockData.length > 0 && (
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-xs text-orange-500">Q Stock 제외</span>
+                                  <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
+                                    <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
                                     <span className="text-lg font-bold text-orange-600">{subComponentUnitsExQ[subComName]?.units ?? info.units}<span className="text-xs font-normal ml-0.5">대</span></span>
                                   </div>
                                 )}
@@ -16379,14 +16379,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   onChange={e => {
                     const completedAt = e.target.value;
                     let leadTimeDays = null;
-                    if (completedAt && editingKitting.basicStartDate) {
-                      const start = new Date(editingKitting.basicStartDate);
-                      const end = new Date(completedAt);
-                      leadTimeDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                    if (completedAt) {
+                      const endDate = new Date(completedAt + 'T17:00:00+09:00'); // 완료일 17시(한국시간)
+                      if (editingKitting.startedAt) {
+                        // 실제 시작시간 기준 영업일 계산
+                        leadTimeDays = getBusinessDays(new Date(editingKitting.startedAt), endDate);
+                      } else if (editingKitting.basicStartDate) {
+                        // startedAt 없으면 시작예정일 기준 fallback
+                        leadTimeDays = getBusinessDays(new Date(editingKitting.basicStartDate + 'T08:00:00+09:00'), endDate);
+                      }
                     }
                     setEditingKitting({
-                      ...editingKitting, 
-                      completedAt, 
+                      ...editingKitting,
+                      completedAt,
                       leadTimeDays,
                       status: completedAt ? 'completed' : editingKitting.status
                     });
