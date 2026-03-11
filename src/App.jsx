@@ -5901,7 +5901,7 @@ ${tableRows}
             existingPickOrders.add(order);
           }
 
-          // Kitting 현황에 추가 (중복 아닌 경우)
+          // Kitting 현황에 추가 (중복 아닌 경우) - 업로드 즉시 시작
           if (!existingKittingOrders.has(order)) {
             newKittingOrders.push({
               id: Date.now() + i + 100000,
@@ -5912,7 +5912,8 @@ ${tableRows}
               basicStartDate: normalizeDate(startDate) || new Date().toISOString().split('T')[0],
               worker: worker,  // 담당자 자동 매핑
               isUrgent: false,
-              status: 'waiting',
+              status: 'in-progress',
+              startedAt: new Date().toISOString(),
               createdAt: new Date().toISOString(),
               completedAt: null,
               leadTimeDays: null
@@ -5936,7 +5937,7 @@ ${tableRows}
           setKittingData(prev => [...prev, ...newKittingOrders]);
         }
 
-        alert(`✅ Order 업로드 완료!\n\n📦 불출 Cycle: ${newPickOrders.length}개 추가\n📋 Kitting 현황: ${newKittingOrders.length}개 추가`);
+        alert(`✅ Order 업로드 완료!\n\n📦 불출 Cycle: ${newPickOrders.length}개 추가\n📋 Kitting 현황: ${newKittingOrders.length}개 추가 (자동 시작됨)`);
       } catch (error) {
         console.error('CSV parsing error:', error);
         alert('❌ CSV 파일 파싱 중 오류가 발생했습니다.');
@@ -6071,10 +6072,13 @@ ${tableRows}
 
     // 자동 번호 계산: 해당 월 기준 최대값 + 1 (월별 No.1부터 시작)
     const now = new Date();
-    const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const curY = now.getFullYear();
+    const curM = now.getMonth() + 1;
+    const currentMonthPadded = curY + '-' + String(curM).padStart(2, '0'); // "2026-03"
+    const currentMonthNoPad = curY + '-' + curM; // "2026-3"
     const thisMonthCycles = receiveCycles.filter(r => {
       const d = r.delivery || r.startTime || '';
-      return d.startsWith(currentMonth);
+      return d.startsWith(currentMonthPadded) || d.startsWith(currentMonthNoPad + '-');
     });
     const maxNo = thisMonthCycles.reduce((max, r) => {
       const num = parseInt(r.poNo) || 0;
