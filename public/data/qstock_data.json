@@ -1,1 +1,1162 @@
-{"data":[{"material":"716150","description":"PowerEntryModule_nonshield","bin":"C3-20","stock":200,"unit":"EA","grDate":"2026-03-05"},{"material":"714167","description":"Vertical Bearing Cover, MX48_CSC","bin":"C3-19","stock":80,"unit":"EA","grDate":"2026-03-04"},{"material":"714165","description":"Vertical, Motor Plate-R, MX48_CSC","bin":"B1-08","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"714164","description":"Vertical, Motor Plate-L, MX48_CSC","bin":"B1-08","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"714163","description":"Vertical, Motor Housing, MX48_CSC","bin":"B1-09","stock":40,"unit":"EA","grDate":"2026-03-04"},{"material":"714162","description":"Vertical, Motor Plate Top, MX48_CSC","bin":"A1-03","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"714157","description":"Vertical, Motor Tensioner, MX48_CSC","bin":"C3-19","stock":40,"unit":"EA","grDate":"2026-03-04"},{"material":"714060","description":"Support bar, Tablet, SM","bin":"A2-03","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712944","description":"Bracket, Main Enclosure, MX48","bin":"A1-01","stock":100,"unit":"EA","grDate":"2026-03-06"},{"material":"712630","description":"Board Cover, MX48","bin":"A1-02","stock":50,"unit":"EA","grDate":"2026-03-06"},{"material":"712622","description":"Support Hinge, Door, MX48","bin":"B1-09","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712620","description":"Vision, lighting bracket, MX48","bin":"A1-06","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712618","description":"VERTICAL, RIGHT PLATE, MX48","bin":"A1-04","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712613","description":"VERTICAL, LEFT PLATE, MX48","bin":"A1-04","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712612","description":"VERTICAL, BEARING HOUSING, MX48","bin":"C3-03","stock":80,"unit":"EA","grDate":"2026-03-04"},{"material":"712609","description":"PLUNGER, COVER, MX48","bin":"B1-05","stock":40,"unit":"EA","grDate":"2026-03-04"},{"material":"712607","description":"Plunger Bar, Right, MX48","bin":"A1-05","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712604","description":"Magnet Bar,MX48","bin":"A1-06","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712603","description":"Magnet Bar, Right , MX48","bin":"A1-05","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712602","description":"Magnet Bar,Left, MX48","bin":"A1-05","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712586","description":"BASE, MOUNT MOTOR TRAY, MX48","bin":"C3-02","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712582","description":"BASE, BASE PLATE, MX48","bin":"E","stock":20,"unit":"EA","grDate":"2026-03-04"},{"material":"712581","description":"BAR, BELT GRIPPER, MX48","bin":"C3-01","stock":80,"unit":"EA","grDate":"2026-03-04"},{"material":"712580","description":"BAR, BELT GRIPPER COVER, MX48","bin":"C3-01","stock":80,"unit":"EA","grDate":"2026-03-04"},{"material":"711142","description":"Tray, Low Profile, Ares","bin":"A5-06","stock":30,"unit":"EA","grDate":"2026-03-05"},{"material":"711131","description":"Deck Low Profile, Ares","bin":"A6-01","stock":30,"unit":"EA","grDate":"2026-03-05"}],"updated":"2026. 3. 11. 오전 9:07","count":26}
+[
+  {
+    "material": "KB0840",
+    "description": "New Tablet stand, ASM",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46065"
+  },
+  {
+    "material": "KB0835",
+    "description": "Shelf, Main Board ASM, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45817"
+  },
+  {
+    "material": "KB0802",
+    "description": "Pulley, Vertical Bearing ASM, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45714"
+  },
+  {
+    "material": "KB0798",
+    "description": "Shaft 450mm with Bearing inserted",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44839"
+  },
+  {
+    "material": "KB0786",
+    "description": "PCBA-V.LIGHT, MX-48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45723"
+  },
+  {
+    "material": "KB0783",
+    "description": "PCBA-HEAT Back, MX-48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45736"
+  },
+  {
+    "material": "KB0782",
+    "description": "PCBA-HEAT Front, MX-48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45736"
+  },
+  {
+    "material": "KB0780",
+    "description": "LED Indicator ASM,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46064"
+  },
+  {
+    "material": "KB0778",
+    "description": "Tray Back ASM,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46066"
+  },
+  {
+    "material": "KB0776",
+    "description": "Tray Front ASM,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46086"
+  },
+  {
+    "material": "KB0775",
+    "description": "USB Terminal Board ASM,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46048"
+  },
+  {
+    "material": "KB0771",
+    "description": "UV Lamp ASM,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46057"
+  },
+  {
+    "material": "KB0770",
+    "description": "Magnet Rod ASM,MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46058"
+  },
+  {
+    "material": "KB0768",
+    "description": "Plunger Bar ASM,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "46050"
+  },
+  {
+    "material": "KB0673",
+    "description": "Ferrite Core ZCAT 2035-0930",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45113"
+  },
+  {
+    "material": "KB0438",
+    "description": "Socket button Head Cap Screw, BHSS, M3x6",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "KB0132",
+    "description": "Washer [M4]",
+    "stock": 20,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "KB0064",
+    "description": "Wrench Bolt [M3*12L,SUS]",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "9800-880",
+    "description": "PCBA-UV Lamp Converter Assy, Ares",
+    "stock": 20,
+    "unit": "EA",
+    "bin": "0001429311",
+    "grDate": "45831"
+  },
+  {
+    "material": "716652",
+    "description": "Foot, M8x12",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45926"
+  },
+  {
+    "material": "715851",
+    "description": "Cable, USB B-C for SP9",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45274"
+  },
+  {
+    "material": "715299",
+    "description": "Windows 10 Enterprise IoT LTSC 2021",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45275"
+  },
+  {
+    "material": "715298",
+    "description": "SURFACE PRO 9",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45275"
+  },
+  {
+    "material": "715024",
+    "description": "Set screw (flat type), M4x5",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44851"
+  },
+  {
+    "material": "714981",
+    "description": "Socket Head Knurled Knobs M4-11.6",
+    "stock": 6,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44818"
+  },
+  {
+    "material": "714930",
+    "description": "Cable clip flat c-type",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44943"
+  },
+  {
+    "material": "714686",
+    "description": "M/V Camera Rotation block",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44670"
+  },
+  {
+    "material": "714684",
+    "description": "M/V Camera Bushing",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45694"
+  },
+  {
+    "material": "714683",
+    "description": "M/V Camera Stepper screw",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44662"
+  },
+  {
+    "material": "714682",
+    "description": "M/V Camera Rolling block",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44670"
+  },
+  {
+    "material": "714681",
+    "description": "M/V Camera Bracket",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44670"
+  },
+  {
+    "material": "714647",
+    "description": "Lens holder_TLH CS-F",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44706"
+  },
+  {
+    "material": "714646",
+    "description": "Lens_TBL 2.5 5MP",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44706"
+  },
+  {
+    "material": "714645",
+    "description": "Vision Camera_DMK42AUC03",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44706"
+  },
+  {
+    "material": "714444",
+    "description": "Screw, M5×15mm, FLT HD SS(SOC)",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44872"
+  },
+  {
+    "material": "714167",
+    "description": "Vertical Bearing Cover, MX48_CSC",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44900"
+  },
+  {
+    "material": "714165",
+    "description": "Vertical, Motor Plate-R, MX48_CSC",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45049"
+  },
+  {
+    "material": "714164",
+    "description": "Vertical, Motor Plate-L, MX48_CSC",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45049"
+  },
+  {
+    "material": "714163",
+    "description": "Vertical, Motor Housing, MX48_CSC",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45355"
+  },
+  {
+    "material": "714162",
+    "description": "Vertical, Motor Plate Top, MX48_CSC",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44847"
+  },
+  {
+    "material": "714157",
+    "description": "Vertical, Motor Tensioner, MX48_CSC",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45278"
+  },
+  {
+    "material": "714087",
+    "description": "USB2.0 A/M To Mini B/M Angle Cable",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45631"
+  },
+  {
+    "material": "714028",
+    "description": "Screw, M4×6mm, SOC Cap SS(SOC)",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43875"
+  },
+  {
+    "material": "714027",
+    "description": "Urethane Washers",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43875"
+  },
+  {
+    "material": "713780",
+    "description": "GD4590 Barcode Scanner",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43658"
+  },
+  {
+    "material": "713722",
+    "description": "3M DUAL LOCK Fasteners",
+    "stock": 6.5,
+    "unit": "CM",
+    "bin": "0001429310",
+    "grDate": "43518"
+  },
+  {
+    "material": "713646",
+    "description": "Base, Screw for bearing, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45341"
+  },
+  {
+    "material": "713645",
+    "description": "Vertical, Screw for bearing, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45121"
+  },
+  {
+    "material": "713413",
+    "description": "Door Hinge Pipes, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45681"
+  },
+  {
+    "material": "713412",
+    "description": "Door Hinge Spring, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44257"
+  },
+  {
+    "material": "713125",
+    "description": "Screw flange, M3×10mm, BTN HD BLK(SOC)",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42830"
+  },
+  {
+    "material": "713124",
+    "description": "Heater Cover Back, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43872"
+  },
+  {
+    "material": "713123",
+    "description": "Heater Cover Front, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42867"
+  },
+  {
+    "material": "713046",
+    "description": "Screw-with S_W, M3×10mm, SOC Cap SS(SOC)",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42936"
+  },
+  {
+    "material": "712955",
+    "description": "Support Tablet, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43922"
+  },
+  {
+    "material": "712947",
+    "description": "Washer, 6mm ID",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45694"
+  },
+  {
+    "material": "712945",
+    "description": "Switch cover, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44475"
+  },
+  {
+    "material": "712944",
+    "description": "Bracket, Main Enclosure, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44847"
+  },
+  {
+    "material": "712943",
+    "description": "Left, Main Enclosure, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44756"
+  },
+  {
+    "material": "712942",
+    "description": "Right, Main Enclosure, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44756"
+  },
+  {
+    "material": "712941",
+    "description": "Top, Main Enclosure, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44756"
+  },
+  {
+    "material": "712940",
+    "description": "Window , Enclosure, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44172"
+  },
+  {
+    "material": "712939",
+    "description": "Door, Enclosure, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45663"
+  },
+  {
+    "material": "712937",
+    "description": "Hinge Shaft, Door, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45679"
+  },
+  {
+    "material": "712935",
+    "description": "Door, PIvot Hinge Base, MX48",
+    "stock": 6,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44685"
+  },
+  {
+    "material": "712930",
+    "description": "Shaft-One End Threaded One End Tapped",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44622"
+  },
+  {
+    "material": "712929",
+    "description": "Back Plate, Bottom, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44697"
+  },
+  {
+    "material": "712896",
+    "description": "SPEED GUIDE, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44810"
+  },
+  {
+    "material": "712821",
+    "description": "Cable-Encoder, MX-48",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45307"
+  },
+  {
+    "material": "712772",
+    "description": "Cable Clip",
+    "stock": 5,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42825"
+  },
+  {
+    "material": "712701",
+    "description": "Cable-ST.Motor, MX-48",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45307"
+  },
+  {
+    "material": "712696",
+    "description": "ST.Motor With Encoder, MX-48",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44372"
+  },
+  {
+    "material": "712691",
+    "description": "UV Lamp, TUV 6W FAM",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45145"
+  },
+  {
+    "material": "712685",
+    "description": "Cable-MV.Light, MX-48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44600"
+  },
+  {
+    "material": "712682",
+    "description": "Cable-Heater, MX-48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45170"
+  },
+  {
+    "material": "712680",
+    "description": "Sensor-M.Home, MX-48",
+    "stock": 3,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44644"
+  },
+  {
+    "material": "712664",
+    "description": "LM Guide, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44848"
+  },
+  {
+    "material": "712662",
+    "description": "Set screw, M4*3L",
+    "stock": 20,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712661",
+    "description": "Screw-with S_W, M5×15mm, SOC Cap SS(SOC)",
+    "stock": 6,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712660",
+    "description": "Screw-with S_W, M4×12mm, SOC Cap SS(SOC)",
+    "stock": 43,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712659",
+    "description": "Screw-with S_W, M4×10mm, SOC Cap SS(SOC)",
+    "stock": 16,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712658",
+    "description": "Screw-with S_W, M3×8mm, SOC Cap SS(SOC)",
+    "stock": 43,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42830"
+  },
+  {
+    "material": "712657",
+    "description": "Screw-with S_W, M3×6mm, SOC Cap SS(SOC)",
+    "stock": 13,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712655",
+    "description": "Screw-with S_W, M4×8mm, SOC Cap SS(SOC)",
+    "stock": 38,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712653",
+    "description": "Screw, M4×25mm, LOW SOC HD",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "712647",
+    "description": "Deck, Guide Line, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44685"
+  },
+  {
+    "material": "712646",
+    "description": "Bushing, Deck Bearing, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45203"
+  },
+  {
+    "material": "712641",
+    "description": "BEARING, B684ZZ",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45694"
+  },
+  {
+    "material": "712640",
+    "description": "Pulley, Vertical Motor, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45366"
+  },
+  {
+    "material": "712639",
+    "description": "Pulley-B, Vertical shaft, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45366"
+  },
+  {
+    "material": "712636",
+    "description": "Pulley, Deck Motor, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45366"
+  },
+  {
+    "material": "712635",
+    "description": "Pulley, Deck Bearing, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45366"
+  },
+  {
+    "material": "712634",
+    "description": "BELT, DECK, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44851"
+  },
+  {
+    "material": "712633",
+    "description": "BELT, VERTICAL, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45366"
+  },
+  {
+    "material": "712632",
+    "description": "BELT, MAGNET, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44635"
+  },
+  {
+    "material": "712631",
+    "description": "BELT, PLUNGER, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44635"
+  },
+  {
+    "material": "712630",
+    "description": "Board Cover, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44839"
+  },
+  {
+    "material": "712624",
+    "description": "BACK PLATE, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44839"
+  },
+  {
+    "material": "712622",
+    "description": "Support Hinge, Door, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44697"
+  },
+  {
+    "material": "712620",
+    "description": "Vision, lighting bracket, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43992"
+  },
+  {
+    "material": "712618",
+    "description": "VERTICAL, RIGHT PLATE, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45063"
+  },
+  {
+    "material": "712613",
+    "description": "VERTICAL, LEFT PLATE, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44866"
+  },
+  {
+    "material": "712612",
+    "description": "VERTICAL, BEARING HOUSING, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45205"
+  },
+  {
+    "material": "712607",
+    "description": "Plunger Bar, Right, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44893"
+  },
+  {
+    "material": "712606",
+    "description": "PLUNGER BAR, LEFT, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44774"
+  },
+  {
+    "material": "712604",
+    "description": "Magnet Bar,MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44627"
+  },
+  {
+    "material": "712603",
+    "description": "Magnet Bar, Right , MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44777"
+  },
+  {
+    "material": "712602",
+    "description": "Magnet Bar,Left, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44774"
+  },
+  {
+    "material": "712600",
+    "description": "HEAT BLOCK, SPACER, MX48",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45055"
+  },
+  {
+    "material": "712598",
+    "description": "Heat Block, Washer, MX48",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45694"
+  },
+  {
+    "material": "712593",
+    "description": "DECK LOW, SIDE-R, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44627"
+  },
+  {
+    "material": "712592",
+    "description": "DECK LOW, SIDE-L, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44627"
+  },
+  {
+    "material": "712591",
+    "description": "DECK LOW, PLATE , MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45705"
+  },
+  {
+    "material": "712590",
+    "description": "Deck Low, Back-B, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45355"
+  },
+  {
+    "material": "712589",
+    "description": "Deck Low, Back-F, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45355"
+  },
+  {
+    "material": "712588",
+    "description": "BASE, SLIDE RAIL, MX48",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45355"
+  },
+  {
+    "material": "712587",
+    "description": "BASE, PULLY HOUSING, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45324"
+  },
+  {
+    "material": "712586",
+    "description": "BASE, MOUNT MOTOR TRAY, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45278"
+  },
+  {
+    "material": "712585",
+    "description": "BASE, BELT GRIPPER UP, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "44642"
+  },
+  {
+    "material": "712584",
+    "description": "BASE, BELT GRIPPER DOWN, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43896"
+  },
+  {
+    "material": "712583",
+    "description": "BASE, BEARING TENSIONER, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45324"
+  },
+  {
+    "material": "712582",
+    "description": "BASE, BASE PLATE, MX48",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45070"
+  },
+  {
+    "material": "712581",
+    "description": "BAR, BELT GRIPPER, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45324"
+  },
+  {
+    "material": "712580",
+    "description": "BAR, BELT GRIPPER COVER, MX48",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45384"
+  },
+  {
+    "material": "711956",
+    "description": "Horizontal Motor, End cut",
+    "stock": 20,
+    "unit": "EA",
+    "bin": "0001429358",
+    "grDate": "45755"
+  },
+  {
+    "material": "711673",
+    "description": "Flat Head Wrench Bolt SUS, M5×10",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "711668",
+    "description": "Flat Head Wrench Bolt SUS, M3×8",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41970"
+  },
+  {
+    "material": "711204",
+    "description": "Screw, M4×10mm, LOW SOC HD",
+    "stock": 19,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "43684"
+  },
+  {
+    "material": "711125",
+    "description": "Tie Wrap(Zip Ties), 2.5 X 100mm, NAT",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42416"
+  },
+  {
+    "material": "711106",
+    "description": "Screw, M4×12mm, SOC Cap SS(SOC)",
+    "stock": 7,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42830"
+  },
+  {
+    "material": "710389",
+    "description": "Flat Head Wrench Bolt SUS, M4×8",
+    "stock": 22,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "710385",
+    "description": "Flat Head Wrench Bolt SUS, M3×10",
+    "stock": 10,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42835"
+  },
+  {
+    "material": "710381",
+    "description": "Wrench Bolt SUS / M4×10",
+    "stock": 8,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "42830"
+  },
+  {
+    "material": "710377",
+    "description": "Spring Washers M4",
+    "stock": 6,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "081-9801",
+    "description": "Flat Tie Wrap Holder, 4.582 Long, Ø5.3",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45457"
+  },
+  {
+    "material": "081-0802",
+    "description": "Saddle Clamp, #4 Mount 931x Platform",
+    "stock": 2,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "45457"
+  },
+  {
+    "material": "079-0800",
+    "description": "Washer, #8, Internal Tooth SS",
+    "stock": 19,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41715"
+  },
+  {
+    "material": "075-9822",
+    "description": "Screw, M4×12mm, FLT HDSS(SOC)",
+    "stock": 4,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41715"
+  },
+  {
+    "material": "075-9821",
+    "description": "Screw, M3×6mm, SOC CAP SS(SOC)",
+    "stock": 16,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41716"
+  },
+  {
+    "material": "018141",
+    "description": "Labels-UV Size D-0.69 Base X 0.60\" Ht",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "017899",
+    "description": "Safety Label, Biohazard, 0.69\" Base X 0.",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "017681",
+    "description": "Safety Label, Hand Crush",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "017680",
+    "description": "Safety Label, Hot Surface",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "017678",
+    "description": "Safety Label, Lightning Bolt",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  },
+  {
+    "material": "017677",
+    "description": "Safety Label, Exclamation Point",
+    "stock": 1,
+    "unit": "EA",
+    "bin": "0001429310",
+    "grDate": "41578"
+  }
+]
