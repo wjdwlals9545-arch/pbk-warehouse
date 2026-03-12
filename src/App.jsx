@@ -2557,7 +2557,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
 
       // 로드 후 현재 해시 저장 (불필요한 업로드 방지)
       lastSyncHashRef.current = simpleHash(JSON.stringify(stateObj));
-      showToast('☁️ 대시보드 데이터 동기화 완료', 'success');
+      console.log('[DashSync] 대시보드 데이터 동기화 완료');
     } catch (err) {
       console.log('[DashSync] Load error:', err.message);
     }
@@ -3988,7 +3988,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
                 safeStorage.removeItem('pbk_qstock');
               }
               safeStorage.setItem('pbk_parse_version', PARSE_VERSION);
-              showToast(`📊 GitHub Stock Excel 자동 파싱 완료 (${inventory.length}개${qStockItems.length > 0 ? `, Q:${qStockItems.length}건` : ''})`, 'success');
+              console.log(`[Stock] GitHub Excel 자동 파싱 완료 (${inventory.length}개${qStockItems.length > 0 ? `, Q:${qStockItems.length}건` : ''})`);
               addDataHistory('stock', 'GitHub Excel 자동 로드', inventory.length);
               stockLoaded = true;
             }
@@ -4036,7 +4036,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
               if (stockJson.updated) setLastUpdated(stockJson.updated);
               safeStorage.setItem('pbk_inventory', JSON.stringify(stockJson.data));
               if (stockJson.updated) safeStorage.setItem('pbk_last_updated', stockJson.updated);
-              showToast(`☁️ GitHub Stock 데이터 자동 로드 완료 (${stockJson.data.length}개)`, 'success');
+              console.log(`[Stock] GitHub JSON 자동 로드 완료 (${stockJson.data.length}개)`);
               addDataHistory('stock', 'GitHub JSON 자동 로드', stockJson.data.length);
               stockLoaded = true;
             }
@@ -4066,7 +4066,7 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
               if (poJson.updated) setOpenPOLastUpdated(poJson.updated);
               safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
               if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
-              showToast(`☁️ GitHub OpenPO 데이터 자동 로드 완료 (${poJson.data.length}개)`, 'success');
+              console.log(`[OpenPO] GitHub JSON 자동 로드 완료 (${poJson.data.length}개)`);
               addDataHistory('openPO', 'GitHub JSON 자동 로드', poJson.data.length);
               poLoaded = true;
             }
