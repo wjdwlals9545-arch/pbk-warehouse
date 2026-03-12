@@ -8,6 +8,12 @@ export default defineConfig({
   base: '/pbk-warehouse/',
   build: {
     target: ['es2020', 'safari14'],
+    modulePreload: {
+      resolveDependencies: (_filename, deps) => {
+        // pdf-export, recharts는 lazy-load → preload에서 제외
+        return deps.filter(d => !d.includes('pdf-export') && !d.includes('recharts'));
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks(id) {
