@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
-const APP_VERSION = 'v19';
-import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck } from 'lucide-react';
+const APP_VERSION = 'v19.5';
+import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck, MessageSquare, Send, Bot } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
@@ -1897,6 +1897,10 @@ export default function PBKWarehouseSystem() {
   const [openPOLastUpdated, setOpenPOLastUpdated] = useState(() => {
     return safeStorage.getItem('pbk_open_po_updated') || null;
   });
+  // Open PO 원본 행별 데이터 (PO별 개별 항목)
+  const [openPORawItems, setOpenPORawItems] = useState(() => {
+    try { const s = safeStorage.getItem('pbk_open_po_raw'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
   const [showOpenPOModal, setShowOpenPOModal] = useState(false);
   const [openPOError, setOpenPOError] = useState(null);
   
@@ -2002,7 +2006,14 @@ export default function PBKWarehouseSystem() {
   const [binDetailModal, setBinDetailModal] = useState(null); // Bin 품목 상세 모달
   const [binOverloadExpanded, setBinOverloadExpanded] = useState(false); // Bin별 과적 현황 토글
   const [showSapSchedule, setShowSapSchedule] = useState(false); // SAP 스케줄 접기/펼치기 (기본: 접힘)
-  
+
+  // 🤖 AI 챗봇 상태
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
   // 다중 선택 상태
   const [selectedPicks, setSelectedPicks] = useState(new Set());
   const [selectedReceives, setSelectedReceives] = useState(new Set());
@@ -3691,19 +3702,22 @@ export default function PBKWarehouseSystem() {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(sheet);
       const poByMaterial = {};
+      const rawItems = [];
       jsonData.filter(row => parseFloat(row['Still to be delivered (qty)']) > 0).forEach(row => {
         const material = String(row['Material'] || '').trim();
         const description = String(row['Short Text'] || '').trim();
         const qty = parseFloat(row['Still to be delivered (qty)']) || 0;
         const unit = String(row['Order Unit'] || 'EA').trim();
-        const poNo = row['Purchasing Document'];
+        const poNo = String(row['Purchasing Document'] || '').trim();
+        const supplier = String(row['Supplier/Supplying Plant'] || row['Name of Vendor'] || row['Name 1'] || '').trim();
         if (material) {
+          rawItems.push({ material, description, qty, unit, poNo, supplier });
           if (!poByMaterial[material]) poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [] };
           poByMaterial[material].totalQty += qty;
           if (poNo && !poByMaterial[material].poNumbers.includes(poNo)) poByMaterial[material].poNumbers.push(poNo);
         }
       });
-      return Object.values(poByMaterial);
+      return { aggregated: Object.values(poByMaterial), rawItems };
     };
 
     // Delivery Data Excel 파싱 (V열추가 계층구조: PO헤더 → Item → 데이터행)
@@ -3776,22 +3790,22 @@ export default function PBKWarehouseSystem() {
     };
 
     // GitHub 파일의 마지막 커밋 날짜 확인 (오늘 업데이트된 파일만 로드)
-    const isFileUpdatedToday = async (filePath) => {
+    // GitHub 커밋 시간 조회 — epoch(ms) 기반 비교로 타임존 문제 완전 제거
+    const getFileCommitInfo = async (filePath) => {
       try {
         const token = safeStorage.getItem('pbk_gh_token');
-        if (!token) return { fresh: true, commitTime: null }; // 토큰 없으면 그냥 로드
+        if (!token) return { epoch: 0, display: null }; // 토큰 없으면 항상 로드
         const resp = await fetch(`https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/commits?path=${filePath}&per_page=1`, {
           headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
         });
-        if (!resp.ok) return { fresh: true, commitTime: null };
+        if (!resp.ok) return { epoch: 0, display: null };
         const commits = await resp.json();
-        if (!commits || commits.length === 0) return { fresh: false, commitTime: null };
+        if (!commits || commits.length === 0) return { epoch: 0, display: null };
         const commitDate = new Date(commits[0].commit.committer.date);
-        const commitTimeKR = commitDate.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
-        const todayKR = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-        const isFresh = commitDate.toISOString().slice(0, 10) === todayKR.toISOString().slice(0, 10);
-        return { fresh: isFresh, commitTime: commitTimeKR };
-      } catch (e) { return { fresh: true, commitTime: null }; }
+        const epoch = commitDate.getTime(); // UTC epoch — 타임존 무관
+        const display = commitDate.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+        return { epoch, display };
+      } catch (e) { return { epoch: 0, display: null }; }
     };
 
     const fetchGitHubData = async () => {
@@ -3800,14 +3814,13 @@ export default function PBKWarehouseSystem() {
 
       // ── Excel 로드: GitHub 커밋 시간이 저장된 데이터보다 새로우면 파싱 ──
       {
-        // 1. Excel 시도 (Stock)
-        const stockExcelCheck = await isFileUpdatedToday('public/data/Zbindata_latest.xlsx');
-        const savedTs = safeStorage.getItem('pbk_last_updated') || '';
-        const isNewer = stockExcelCheck.commitTime && stockExcelCheck.commitTime !== savedTs;
+        // 1. Excel 시도 (Stock) — epoch 기반 비교
+        const stockInfo = await getFileCommitInfo('public/data/Zbindata_latest.xlsx');
+        const savedStockEpoch = parseInt(safeStorage.getItem('pbk_stock_epoch') || '0');
+        const stockNewer = stockInfo.epoch > savedStockEpoch;
         const forceReparse = parseVersionChanged;
-        if (forceReparse) console.log('[Stock] 파싱 버전 변경 → 강제 재파싱 (날짜 무관)');
-        if (!stockExcelCheck.fresh && savedTs && !forceReparse) { /* 오늘 업데이트 안 됐고 기존 데이터 있으면 스킵 */ }
-        else if ((stockExcelCheck.fresh && (!savedTs || isNewer)) || forceReparse) try {
+        if (forceReparse) console.log('[Stock] 파싱 버전 변경 → 강제 재파싱');
+        if (stockNewer || forceReparse || !safeStorage.getItem('pbk_inventory')) try {
           const xlsResp = await fetch(`${BASE}/Zbindata_latest.xlsx?t=${Date.now()}`);
           if (xlsResp.ok) {
             await ensureXLSX();
@@ -3816,12 +3829,12 @@ export default function PBKWarehouseSystem() {
             if (inventory.length > 0) {
               setInventoryData(inventory);
               processRackSummary(inventory);
-              const ts = stockExcelCheck.commitTime || new Date().toLocaleString('ko-KR');
+              const ts = stockInfo.display || new Date().toLocaleString('ko-KR');
               setLastUpdated(ts);
               safeStorage.setItem('pbk_inventory', JSON.stringify(inventory));
               safeStorage.setItem('pbk_last_updated', ts);
+              safeStorage.setItem('pbk_stock_epoch', String(stockInfo.epoch));
               uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: ts, count: inventory.length }, 'Stock 데이터 (자동)');
-              // Q Stock 데이터 저장
               if (qStockItems && qStockItems.length > 0) {
                 setQStockData(qStockItems);
                 safeStorage.setItem('pbk_qstock', JSON.stringify(qStockItems));
@@ -3839,39 +3852,43 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('Stock Excel fetch skip:', e.message); }
 
         // 2. Excel 시도 (OpenPO)
+        // 2. Excel 시도 (OpenPO) — epoch 기반 비교
         if (!poLoaded) {
-          const poExcelCheck = await isFileUpdatedToday('public/data/OpenPOData_latest.xlsx');
-          const savedPoTs = safeStorage.getItem('pbk_open_po_updated') || '';
-          const isPoNewer = poExcelCheck.commitTime && poExcelCheck.commitTime !== savedPoTs;
-          const forcePoReparse = parseVersionChanged;
-          if (!poExcelCheck.fresh && savedPoTs && !forcePoReparse) { /* 스킵 */ }
-          else if ((poExcelCheck.fresh && (!savedPoTs || isPoNewer)) || forcePoReparse) try {
+          const poInfo = await getFileCommitInfo('public/data/OpenPOData_latest.xlsx');
+          const savedPoEpoch = parseInt(safeStorage.getItem('pbk_po_epoch') || '0');
+          const poNewer = poInfo.epoch > savedPoEpoch;
+          const needRawItems = !safeStorage.getItem('pbk_open_po_raw');
+          const forcePoReparse = parseVersionChanged || needRawItems;
+          if (poNewer || forcePoReparse || !safeStorage.getItem('pbk_open_po')) try {
             const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
               await ensureXLSX();
               const buf = await xlsResp.arrayBuffer();
-              const openPOList = parseOpenPOExcel(buf);
-              if (openPOList.length > 0) {
-                setOpenPOData(openPOList);
-                const ts = poExcelCheck.commitTime || new Date().toLocaleString('ko-KR');
+              const poResult = parseOpenPOExcel(buf);
+              if (poResult.aggregated.length > 0) {
+                setOpenPOData(poResult.aggregated);
+                setOpenPORawItems(poResult.rawItems);
+                safeStorage.setItem('pbk_open_po_raw', JSON.stringify(poResult.rawItems));
+                const ts = poInfo.display || new Date().toLocaleString('ko-KR');
                 setOpenPOLastUpdated(ts);
-                safeStorage.setItem('pbk_open_po', JSON.stringify(openPOList));
+                safeStorage.setItem('pbk_open_po', JSON.stringify(poResult.aggregated));
                 safeStorage.setItem('pbk_open_po_updated', ts);
-                uploadDataToGitHub('public/data/openpo_data.json', { data: openPOList, updated: ts, count: openPOList.length }, 'OpenPO 데이터 (자동)');
-                showToast(`📊 GitHub Open PO Excel 자동 파싱 완료 (${openPOList.length}개)`, 'success');
-                addDataHistory('openPO', 'GitHub Excel 자동 로드', openPOList.length);
+                safeStorage.setItem('pbk_po_epoch', String(poInfo.epoch));
+                uploadDataToGitHub('public/data/openpo_data.json', { data: poResult.aggregated, updated: ts, count: poResult.aggregated.length }, 'OpenPO 데이터 (자동)');
+                showToast(`📊 GitHub Open PO Excel 자동 파싱 완료 (${poResult.aggregated.length}개)`, 'success');
+                addDataHistory('openPO', 'GitHub Excel 자동 로드', poResult.aggregated.length);
                 poLoaded = true;
               }
             }
           } catch (e) { console.log('OpenPO Excel fetch skip:', e.message); }
         }
 
-        // 3. Excel 시도 (Delivery Data)
+        // 3. Excel 시도 (Delivery Data) — epoch 기반 비교
         try {
-          const delExcelCheck = await isFileUpdatedToday('public/data/DeliveryData_latest.xlsx');
-          const savedDelTs = safeStorage.getItem('pbk_delivery_updated') || '';
-          const isDelNewer = delExcelCheck.commitTime && delExcelCheck.commitTime !== savedDelTs;
-          if ((delExcelCheck.fresh && (!savedDelTs || isDelNewer)) || parseVersionChanged) {
+          const delInfo = await getFileCommitInfo('public/data/DeliveryData_latest.xlsx');
+          const savedDelEpoch = parseInt(safeStorage.getItem('pbk_del_epoch') || '0');
+          const delNewer = delInfo.epoch > savedDelEpoch;
+          if (delNewer || parseVersionChanged || !safeStorage.getItem('pbk_delivery_data')) {
             const xlsResp = await fetch(`${BASE}/DeliveryData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
               await ensureXLSX();
@@ -3879,10 +3896,11 @@ export default function PBKWarehouseSystem() {
               const delItems = parseDeliveryExcel(buf);
               if (delItems.length > 0) {
                 setDeliveryData(delItems);
-                const ts = delExcelCheck.commitTime || new Date().toLocaleString('ko-KR');
+                const ts = delInfo.display || new Date().toLocaleString('ko-KR');
                 setDeliveryLastUpdated(ts);
                 safeStorage.setItem('pbk_delivery_data', JSON.stringify(delItems));
                 safeStorage.setItem('pbk_delivery_updated', ts);
+                safeStorage.setItem('pbk_del_epoch', String(delInfo.epoch));
                 uploadDataToGitHub('public/data/delivery_data.json', { data: delItems, updated: ts, count: delItems.length }, 'Delivery 데이터 (자동)');
                 showToast(`📦 Delivery Data 자동 파싱 완료 (${delItems.length}개)`, 'success');
                 addDataHistory('delivery', 'GitHub Excel 자동 로드', delItems.length);
@@ -4893,16 +4911,19 @@ export default function PBKWarehouseSystem() {
         return qty > 0;
       });
 
-      // Material별로 그룹화 (같은 Material의 수량 합산)
+      // Material별로 그룹화 (같은 Material의 수량 합산) + raw items
       const poByMaterial = {};
+      const rawItems = [];
       filtered.forEach(row => {
         const material = String(row['Material'] || '').trim();
         const description = String(row['Short Text'] || '').trim();
         const qty = parseFloat(row['Still to be delivered (qty)']) || 0;
         const unit = String(row['Order Unit'] || 'EA').trim();
-        const poNo = row['Purchasing Document'];
+        const poNo = String(row['Purchasing Document'] || '').trim();
+        const supplier = String(row['Supplier/Supplying Plant'] || row['Name of Vendor'] || row['Name 1'] || '').trim();
 
         if (material) {
+          rawItems.push({ material, description, qty, unit, poNo, supplier });
           if (!poByMaterial[material]) {
             poByMaterial[material] = {
               material,
@@ -4927,6 +4948,8 @@ export default function PBKWarehouseSystem() {
 
       // 저장
       setOpenPOData(openPOList);
+      setOpenPORawItems(rawItems);
+      safeStorage.setItem('pbk_open_po_raw', JSON.stringify(rawItems));
       const now = new Date().toLocaleString('ko-KR');
       setOpenPOLastUpdated(now);
 
@@ -6680,6 +6703,161 @@ ${tableRows}
     }, 3000);
   };
 
+  // 🤖 AI 챗봇: 창고 데이터 컨텍스트 빌더
+  const buildWarehouseContext = (userMsg) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const lines = [`[창고 데이터 현황 - ${today}]`];
+
+    // 1. 재고 요약
+    if (inventoryData.length > 0) {
+      const totalStock = inventoryData.reduce((s, i) => s + (parseFloat(i.stock) || 0), 0);
+      lines.push(`\n[재고] 총 ${inventoryData.length}개 품목, 총 재고 ${totalStock.toLocaleString()} EA`);
+      // 사용자가 특정 자재코드 언급 시 해당 자재 상세
+      const mentionedMats = inventoryData.filter(i => userMsg.includes(String(i.material)));
+      if (mentionedMats.length > 0) {
+        lines.push('검색된 자재 상세:');
+        mentionedMats.forEach(i => lines.push(`  ${i.material} | ${i.description} | 재고: ${i.stock} ${i.unit} | 위치: ${i.bin}`));
+      }
+      // 상위 30개 (재고 많은 순)
+      const top = [...inventoryData].sort((a, b) => (b.stock || 0) - (a.stock || 0)).slice(0, 30);
+      lines.push('주요 재고 품목 (상위 30):');
+      top.forEach(i => lines.push(`  ${i.material} | ${i.description} | ${i.stock} ${i.unit} | ${i.bin}`));
+    }
+
+    // 2. Open PO (미입고)
+    if (openPORawItems.length > 0) {
+      const totalQty = openPORawItems.reduce((s, i) => s + (i.qty || 0), 0);
+      lines.push(`\n[Open PO] ${openPORawItems.length}건, 미입고 총 ${totalQty.toLocaleString()} EA`);
+      openPORawItems.slice(0, 20).forEach(i =>
+        lines.push(`  PO:${i.poNo} | ${i.material} ${i.description} | ${i.qty} ${i.unit} | ${i.supplier}`)
+      );
+    }
+
+    // 3. 납품 예정 + 지연
+    if (deliveryData.length > 0) {
+      const poWithDates = openPORawItems.map(item => {
+        const dMatch = deliveryData.find(d => d.poNo === item.poNo && d.material === item.material);
+        return { ...item, deliveryDate: dMatch ? dMatch.deliveryDate : null };
+      });
+      const overdue = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < today);
+      const upcoming = poWithDates.filter(d => d.deliveryDate && d.deliveryDate >= today);
+      lines.push(`\n[납품] 지연: ${overdue.length}건, 예정: ${upcoming.length}건`);
+      if (overdue.length > 0) {
+        lines.push('납기 지연:');
+        overdue.slice(0, 10).forEach(d => lines.push(`  PO:${d.poNo} | ${d.material} ${d.description} | 납기: ${d.deliveryDate} | ${d.qty} ${d.unit}`));
+      }
+      if (upcoming.length > 0) {
+        lines.push('납품 예정:');
+        upcoming.sort((a, b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || '')).slice(0, 15).forEach(d =>
+          lines.push(`  ${d.deliveryDate} | PO:${d.poNo} | ${d.material} ${d.description} | ${d.qty} ${d.unit}`)
+        );
+      }
+    }
+
+    // 4. Q-Stock (수입검사 대기)
+    if (qStockData.length > 0) {
+      const koNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+      const items = qStockData.filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'));
+      const withDays = items.map(i => {
+        const gr = i.grDate ? new Date(i.grDate) : null;
+        const days = gr ? Math.floor((koNow - gr) / 86400000) : null;
+        return { ...i, days };
+      });
+      const over7 = withDays.filter(i => i.days >= 7).length;
+      lines.push(`\n[수입검사 대기] ${items.length}건 (7일 이상: ${over7}건)`);
+      withDays.sort((a, b) => (b.days || 0) - (a.days || 0)).slice(0, 15).forEach(i =>
+        lines.push(`  ${i.material} | ${i.description} | ${i.stock} ${i.unit} | 입고일: ${i.grDate} | ${i.days}일 경과`)
+      );
+    }
+
+    // 5. 생산 가능 대수 (BOM 기반)
+    if (customBomData && Object.keys(customBomData).length > 0) {
+      lines.push('\n[생산 가능 대수]');
+      Object.entries(customBomData).forEach(([model, bom]) => {
+        if (!bom || bom.length === 0) return;
+        let minUnits = Infinity;
+        let bottleneck = '';
+        bom.forEach(part => {
+          const inv = inventoryData.find(i => String(i.material) === String(part.material));
+          const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
+          const qStock = qStockData.filter(q => String(q.material) === String(part.material)).reduce((s, q) => s + (q.stock || 0), 0);
+          const available = stock - qStock;
+          const possible = part.quantity > 0 ? Math.floor(available / part.quantity) : Infinity;
+          if (possible < minUnits) { minUnits = possible; bottleneck = part.material; }
+        });
+        if (minUnits === Infinity) minUnits = 0;
+        lines.push(`  ${model}: ${minUnits}대 가능${minUnits < 10 ? ` (병목: ${bottleneck})` : ''}`);
+      });
+    }
+
+    return lines.join('\n');
+  };
+
+  // 🤖 AI 챗봇: 메시지 전송
+  const sendChatMessage = async (userMessage) => {
+    if (!userMessage.trim()) return;
+    const apiKey = safeStorage.getItem('pbk_anthropic_key');
+    if (!apiKey) {
+      setChatMessages(prev => [...prev,
+        { role: 'user', content: userMessage },
+        { role: 'assistant', content: '⚠️ API 키가 설정되지 않았습니다.\n\n브라우저 콘솔(F12)에서 다음을 실행해주세요:\n\nlocalStorage.setItem("pbk_anthropic_key", "your-api-key")' }
+      ]);
+      return;
+    }
+
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setChatInput('');
+    setChatLoading(true);
+
+    try {
+      const context = buildWarehouseContext(userMessage);
+      const systemPrompt = `당신은 PBK 창고 관리 AI 어시스턴트입니다. 아래 실시간 창고 데이터를 기반으로 질문에 답변합니다.
+간결하고 정확하게 한국어로 답변하세요. 숫자와 단위를 정확히 사용하세요.
+데이터에 없는 정보는 "현재 데이터에서 확인할 수 없습니다"라고 답하세요.
+
+${context}`;
+
+      const messages = [
+        ...chatMessages.filter(m => m.role !== 'system').slice(-10), // 최근 10개 대화 유지
+        { role: 'user', content: userMessage }
+      ];
+
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages: messages
+        })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error?.message || `API 오류 (${resp.status})`);
+      }
+
+      const data = await resp.json();
+      const reply = data.content?.[0]?.text || '응답을 받지 못했습니다.';
+      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `❌ 오류: ${e.message}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // 챗봇 스크롤 자동 하단
+  useEffect(() => {
+    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, chatLoading]);
+
   // v17: XLSX 라이브러리 동적 로드 헬퍼
   const ensureXLSX = () => new Promise((resolve, reject) => {
     if (window.XLSX) return resolve();
@@ -7650,6 +7828,87 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         ))}
       </div>
 
+      {/* 🤖 AI 챗봇 플로팅 UI */}
+      {!chatOpen && (
+        <button onClick={() => setChatOpen(true)}
+          className="fixed bottom-6 right-6 z-[80] w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center group"
+          title="AI 창고 어시스턴트">
+          <Bot className="w-7 h-7" />
+          <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full animate-pulse" />
+        </button>
+      )}
+      {chatOpen && (
+        <div className={`fixed bottom-6 right-6 z-[80] w-[400px] h-[540px] ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border rounded-2xl shadow-2xl flex flex-col overflow-hidden`}>
+          {/* 헤더 */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Bot className="w-5 h-5" />
+              <span className="font-semibold text-sm">AI Warehouse Assistant</span>
+            </div>
+            <button onClick={() => setChatOpen(false)} className="hover:bg-white/20 rounded p-1 transition"><X className="w-4 h-4" /></button>
+          </div>
+
+          {/* 메시지 영역 */}
+          <div className={`flex-1 overflow-y-auto p-3 space-y-3 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
+            {chatMessages.length === 0 && !chatLoading && (
+              <div className="text-center py-8">
+                <Bot className={`w-12 h-12 mx-auto mb-3 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`} />
+                <p className={`text-sm font-medium mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>무엇이든 물어보세요!</p>
+                <p className={`text-xs mb-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>창고 데이터를 기반으로 답변합니다</p>
+                <div className="space-y-2">
+                  {['MX48 몇 대 생산 가능해?', '이번주 납품 예정은?', '수입검사 지연 현황 알려줘', '712696 재고 얼마야?'].map((q, i) => (
+                    <button key={i} onClick={() => { setChatInput(q); sendChatMessage(q); }}
+                      className={`block w-full text-left text-xs px-3 py-2 rounded-lg border transition ${darkMode ? 'border-gray-700 hover:bg-gray-800 text-gray-300' : 'border-gray-200 hover:bg-white text-gray-600'}`}>
+                      💬 {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm whitespace-pre-wrap ${
+                  msg.role === 'user'
+                    ? 'bg-indigo-600 text-white rounded-br-sm'
+                    : darkMode ? 'bg-gray-700 text-gray-100 rounded-bl-sm' : 'bg-white text-gray-800 shadow-sm border border-gray-100 rounded-bl-sm'
+                }`}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="flex justify-start">
+                <div className={`px-4 py-3 rounded-xl rounded-bl-sm ${darkMode ? 'bg-gray-700' : 'bg-white shadow-sm border border-gray-100'}`}>
+                  <div className="flex gap-1.5">
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}} />
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}} />
+                    <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}} />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* 입력창 */}
+          <div className={`flex-shrink-0 p-3 border-t ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
+            <div className="flex gap-2">
+              <input type="text" value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !chatLoading) { e.preventDefault(); sendChatMessage(chatInput); } }}
+                placeholder="질문을 입력하세요..."
+                className={`flex-1 text-sm px-3 py-2 rounded-xl border outline-none focus:ring-2 focus:ring-indigo-400 ${darkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'bg-gray-50 border-gray-200 text-gray-800'}`}
+                disabled={chatLoading} />
+              <button onClick={() => sendChatMessage(chatInput)}
+                disabled={chatLoading || !chatInput.trim()}
+                className={`px-3 py-2 rounded-xl text-white transition ${chatLoading || !chatInput.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* v15: 로딩 오버레이 */}
       {isLoading && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[90]">
@@ -7740,14 +7999,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     title="모바일 자재위치 검색 QR코드"
                   >
                     <Smartphone className="w-3.5 h-3.5" />
-                    모바일 QR
+                    Mobile QR
                   </button>
                   <button
                     onClick={() => setShowDataUploadModal(true)}
                     className="flex items-center gap-1.5 px-2 py-1.5 bg-indigo-500 hover:bg-indigo-600 rounded-lg transition text-xs"
                   >
                     <Database className="w-3.5 h-3.5" />
-                    데이터 관리
+                    Data Mgmt
                   </button>
                 </>
               )}
@@ -7755,13 +8014,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
                   {lastUpdated && (
-                    <p title={`${getElapsedTimeDetail(lastUpdated)}\nSAP 추출: 08:20 / 14:00\n대시보드 반영: 08:40 / 14:20`}>
+                    <p title={`${getElapsedTimeDetail(lastUpdated)}\nSAP 추출: 08:20 / 14:00\nGitHub push 후 자동 반영`}>
                       <span className="text-emerald-300 font-bold">Stock:</span> {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {openPOLastUpdated && (
-                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP 추출: 08:30 / 14:10\n대시보드 반영: 08:40 / 14:20`}>
+                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP 추출: 08:30 / 14:10\nGitHub push 후 자동 반영`}>
                       <span className="text-amber-300 font-bold">Open PO:</span> {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
+                    </p>
+                  )}
+                  {deliveryLastUpdated && (
+                    <p title={`${getElapsedTimeDetail(deliveryLastUpdated)}\nSAP 추출: 08:33 / 14:13\nGitHub push 후 자동 반영`}>
+                      <span className="text-teal-300 font-bold">Delivery:</span> {deliveryLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {bomLastUpdated && (
@@ -7812,17 +8076,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex gap-1 overflow-x-auto">
             {[
-              { id: 'dashboard', label: 'Overview', icon: BarChart3 },
-              { id: 'delivery', label: '입고 관리', icon: Truck },
-              { id: 'receive', label: '입고 Cycle', icon: Database },
+              { id: 'dashboard', label: 'Production', icon: BarChart3 },
+              { id: 'delivery', label: 'Delivery', icon: Truck },
+              { id: 'receive', label: 'Receiving', icon: Database },
               { id: 'kitting', label: 'Kitting L/T', icon: Package },
               { id: 'pick', label: 'Kitting Cycle', icon: Clock },
               { id: 'kpi', label: 'KPI', icon: TrendingUp },
               { id: 'analysis', label: 'Area Analysis', icon: BarChart3 },
-              { id: 'locate', label: '자재 위치', icon: Search },
-              { id: 'layout', label: '랙 배치도', icon: Warehouse },
-              { id: 'view3d', label: '3D 뷰', icon: Box },
-              { id: 'temphumidity', label: '온습도 관리', icon: Thermometer },
+              { id: 'locate', label: 'Locator', icon: Search },
+              { id: 'layout', label: 'Layout', icon: Warehouse },
+              { id: 'view3d', label: '3D View', icon: Box },
+              { id: 'temphumidity', label: 'Climate', icon: Thermometer },
               ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
             ].map(tab => (
               <button
@@ -7865,11 +8129,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-t'} shadow-lg z-50`}>
         <div className="flex justify-around items-center py-2">
           {[
-            { id: 'dashboard', label: 'Overview', icon: BarChart3 },
-            { id: 'receive', label: '입고', icon: Database },
+            { id: 'dashboard', label: 'Production', icon: BarChart3 },
+            { id: 'receive', label: 'Receiving', icon: Database },
             { id: 'kitting', label: 'Kitting', icon: Package },
             { id: 'pick', label: 'Cycle', icon: Clock },
-            { id: 'more', label: '더보기', icon: List },
+            { id: 'more', label: 'More', icon: List },
           ].map(tab => (
             <button
               key={tab.id}
@@ -7902,9 +8166,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             <h3 className="font-semibold text-lg mb-4">메뉴</h3>
             <div className="grid grid-cols-4 gap-4">
               {[
-                { id: 'dashboard', label: 'Overview', icon: BarChart3 },
-                { id: 'delivery', label: '입고관리', icon: Truck },
-                { id: 'receive', label: '입고', icon: Database },
+                { id: 'dashboard', label: 'Production', icon: BarChart3 },
+                { id: 'delivery', label: 'Delivery', icon: Truck },
+                { id: 'receive', label: 'Receiving', icon: Database },
                 { id: 'kitting', label: 'Kitting', icon: Package },
                 { id: 'pick', label: 'Cycle', icon: Clock },
                 { id: 'kpi', label: 'KPI', icon: TrendingUp },
@@ -7929,7 +8193,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 onClick={() => { setShowDataUploadModal(true); setShowMobileMenu(false); }}
                 className="flex items-center justify-center gap-2 p-3 bg-indigo-100 text-indigo-600 rounded-xl"
               >
-                <Database className="w-5 h-5" /> 데이터 관리
+                <Database className="w-5 h-5" /> Data Mgmt
               </button>
             </div>
             )}
@@ -8143,6 +8407,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </p>
                         </div>
                       </div>
+                      <button onClick={() => setActiveTab('delivery')}
+                        className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2 text-sm whitespace-nowrap">
+                        Delivery 이동
+                      </button>
                     </div>
                   </div>
                 );
@@ -8166,20 +8434,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   {showSapSchedule ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                 </div>
                 {showSapSchedule && (
-                  <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2">
                     <div className="bg-white rounded-lg p-2.5 border border-emerald-200">
                       <p className="text-[10px] text-emerald-600 font-bold mb-1">ZBIN (Stock)</p>
                       <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:20 / 14:00</p>
-                      <p className="text-xs text-slate-700 font-medium">대시보드: 08:40 / 14:20</p>
-                      <p className="text-[10px] text-slate-400">매일 2회</p>
+                      <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
                       {lastUpdated && <p className="text-[10px] text-emerald-500 mt-1 font-medium">✅ {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-amber-200">
                       <p className="text-[10px] text-amber-600 font-bold mb-1">ME2N (Open PO)</p>
                       <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:30 / 14:10</p>
-                      <p className="text-xs text-slate-700 font-medium">대시보드: 08:40 / 14:20</p>
-                      <p className="text-[10px] text-slate-400">매일 2회</p>
+                      <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
                       {openPOLastUpdated && <p className="text-[10px] text-amber-500 mt-1 font-medium">✅ {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
+                    </div>
+                    <div className="bg-white rounded-lg p-2.5 border border-teal-200">
+                      <p className="text-[10px] text-teal-600 font-bold mb-1">ME2N (Delivery)</p>
+                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:33 / 14:13</p>
+                      <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
+                      {deliveryLastUpdated && <p className="text-[10px] text-teal-500 mt-1 font-medium">✅ {deliveryLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-blue-200">
                       <p className="text-[10px] text-blue-600 font-bold mb-1">GR Cancel (MB51)</p>
@@ -8196,83 +8468,28 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
 
-            {/* KPI - 전월 대비 증감 표시 */}
-            <div className="grid grid-cols-3 gap-4">
-              {(() => {
-                // 이번 달과 지난 달 데이터 분리
-                const now = new Date();
-                const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
-
-                // 불출시간 - 이번 달 vs 지난 달
-                const thisMonthPicks = pickCycles.filter(p => p.status === 'completed' && p.cycleMin && p.completed?.startsWith(thisMonth));
-                const lastMonthPicks = pickCycles.filter(p => p.status === 'completed' && p.cycleMin && p.completed?.startsWith(lastMonth));
-                const thisMonthPickAvg = thisMonthPicks.length > 0 ? thisMonthPicks.reduce((s, p) => s + p.cycleMin, 0) / thisMonthPicks.length : 0;
-                const lastMonthPickAvg = lastMonthPicks.length > 0 ? lastMonthPicks.reduce((s, p) => s + p.cycleMin, 0) / lastMonthPicks.length : 0;
-                const pickDiff = lastMonthPickAvg > 0 ? thisMonthPickAvg - lastMonthPickAvg : 0;
-
-                // 입고시간 - 이번 달 vs 지난 달
-                const thisMonthReceives = receiveCycles.filter(r => r.status === 'completed' && r.cycleMin && r.migo?.startsWith(thisMonth));
-                const lastMonthReceives = receiveCycles.filter(r => r.status === 'completed' && r.cycleMin && r.migo?.startsWith(lastMonth));
-                const thisMonthReceiveAvg = thisMonthReceives.length > 0 ? thisMonthReceives.reduce((s, r) => s + r.cycleMin, 0) / thisMonthReceives.length : 0;
-                const lastMonthReceiveAvg = lastMonthReceives.length > 0 ? lastMonthReceives.reduce((s, r) => s + r.cycleMin, 0) / lastMonthReceives.length : 0;
-                const receiveDiff = lastMonthReceiveAvg > 0 ? thisMonthReceiveAvg - lastMonthReceiveAvg : 0;
-
-                // 리드타임 - 이번 달 vs 지난 달
-                const thisMonthKittings = kittingData.filter(k => k.status === 'completed' && k.leadTimeDays && k.completedAt?.startsWith(thisMonth));
-                const lastMonthKittings = kittingData.filter(k => k.status === 'completed' && k.leadTimeDays && k.completedAt?.startsWith(lastMonth));
-                const thisMonthLeadAvg = thisMonthKittings.length > 0 ? thisMonthKittings.reduce((s, k) => s + k.leadTimeDays, 0) / thisMonthKittings.length : 0;
-                const lastMonthLeadAvg = lastMonthKittings.length > 0 ? lastMonthKittings.reduce((s, k) => s + k.leadTimeDays, 0) / lastMonthKittings.length : 0;
-                const leadDiff = lastMonthLeadAvg > 0 ? thisMonthLeadAvg - lastMonthLeadAvg : 0;
-
-                return (
-                  <>
-                    <div 
-                      className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-rose-500 cursor-pointer hover:bg-rose-50 transition"
-                      onClick={() => setShowReceiveDetailModal(true)}
-                    >
-                      <p className="text-sm text-gray-500">평균 입고시간 <span className="text-xs text-rose-500">▶ 클릭</span></p>
-                      <div className="flex items-end gap-2">
-                        <p className="text-2xl font-bold">{avgReceiveTime.toFixed(0)}분</p>
-                        <span className={`text-sm font-medium ${receiveDiff > 0 ? 'text-red-500' : receiveDiff < 0 ? 'text-green-500' : 'text-gray-400'}`}>
-                          {receiveDiff !== 0 ? (receiveDiff > 0 ? '↑' : '↓') + Math.abs(receiveDiff).toFixed(0) + '분' : '-'} <span className="text-xs text-gray-400">전월대비</span>
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">완료 {receiveCycles.filter(r => r.status === 'completed').length}건 기준</p>
-                    </div>
-                    <div 
-                      className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-cyan-500 cursor-pointer hover:bg-cyan-50 transition"
-                      onClick={() => setShowLeadTimeDetailModal(true)}
-                    >
-                      <p className="text-sm text-gray-500">평균 Kitting 리드타임 <span className="text-xs text-cyan-500">▶ 클릭</span></p>
-                      <div className="flex items-end gap-2">
-                        <p className="text-2xl font-bold">{avgLeadTime.toFixed(1)}일</p>
-                        <span className={`text-sm font-medium ${leadDiff > 0 ? 'text-red-500' : leadDiff < 0 ? 'text-green-500' : 'text-gray-400'}`}>
-                          {leadDiff !== 0 ? (leadDiff > 0 ? '↑' : '↓') + Math.abs(leadDiff).toFixed(1) + '일' : '-'} <span className="text-xs text-gray-400">전월대비</span>
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">Kitting 완료 {kittingData.filter(k => k.status === 'completed').length}건 기준</p>
-                    </div>
-                    <div 
-                      className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-purple-500 cursor-pointer hover:bg-purple-50 transition"
-                      onClick={() => setShowPickDetailModal(true)}
-                    >
-                      <p className="text-sm text-gray-500">평균 Kitting 시간 <span className="text-xs text-purple-500">▶ 클릭</span></p>
-                      <div className="flex items-end gap-2">
-                        <p className="text-2xl font-bold">{avgPickTime.toFixed(0)}분</p>
-                        <span className={`text-sm font-medium ${pickDiff > 0 ? 'text-red-500' : pickDiff < 0 ? 'text-green-500' : 'text-gray-400'}`}>
-                          {pickDiff !== 0 ? (pickDiff > 0 ? '↑' : '↓') + Math.abs(pickDiff).toFixed(0) + '분' : '-'} <span className="text-xs text-gray-400">전월대비</span>
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">완료 {pickCycles.filter(p => p.status === 'completed').length}건 기준</p>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
+            {/* KPI 카드 제거됨 — 각 전용 탭 및 KPI 탭에서 확인 */}
 
             {/* 🏭 생산 가능 대수 */}
+            {!syncReady && inventoryData.length === 0 ? (
+              <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-700">Loading Production Data...</p>
+                    <p className="text-xs text-gray-400">SAP data syncing from GitHub</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[1,2,3,4].map(i => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse"></div>)}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[1,2,3].map(i => <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse"></div>)}
+                </div>
+              </div>
+            ) : (<>
             <div className="bg-white rounded-xl shadow-sm p-6">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
                 <h3 className="font-semibold flex items-center gap-2">
@@ -9024,160 +9241,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             )}
 
 
-            {/* 🔍 수입검사 대기 리스트 (Q Stock) */}
-            {qStockData.length > 0 && (() => {
-              const now = new Date();
-              // F1, S1 위치 제외
-              const filteredQStock = qStockData.filter(item => {
-                const bin = (item.bin || '').trim().toUpperCase();
-                return !bin.startsWith('F1') && !bin.startsWith('S1');
-              });
-              const qItems = filteredQStock.map(item => {
-                const grDate = item.grDate ? new Date(item.grDate) : null;
-                const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((now - grDate) / (1000 * 60 * 60 * 24)) : null;
-                const grDateTs = grDate && !isNaN(grDate.getTime()) ? grDate.getTime() : 0;
-                return { ...item, daysElapsed, grDateTs };
-              }).sort((a, b) => {
-                const dir = qStockSortDir === 'asc' ? 1 : -1;
-                if (qStockSortKey === 'grDate') {
-                  return dir * ((a.grDateTs || 0) - (b.grDateTs || 0));
-                }
-                if (qStockSortKey === 'warehouseStock') {
-                  const aTotal = inventoryData.filter(i => i.material === a.material).reduce((s, i) => s + (i.stock || 0), 0);
-                  const bTotal = inventoryData.filter(i => i.material === b.material).reduce((s, i) => s + (i.stock || 0), 0);
-                  const aWh = aTotal - (qStockByMaterial[a.material] || 0);
-                  const bWh = bTotal - (qStockByMaterial[b.material] || 0);
-                  return dir * (aWh - bWh);
-                }
-                return dir * ((a.daysElapsed || 0) - (b.daysElapsed || 0));
-              });
-              const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
-              const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
-              const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
-              const totalQty = filteredQStock.reduce((s, i) => s + (i.stock || 0), 0);
-              // 검색 및 필터 적용
-              const displayItems = qItems.filter(item => {
-                // 상태 필터
-                if (qStockStatusFilter !== 'all') {
-                  if (qStockStatusFilter === 'green' && !(item.daysElapsed !== null && item.daysElapsed < 7)) return false;
-                  if (qStockStatusFilter === 'amber' && !(item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10)) return false;
-                  if (qStockStatusFilter === 'red' && !(item.daysElapsed !== null && item.daysElapsed > 10)) return false;
-                }
-                // 검색어 필터
-                if (qStockSearch.trim()) {
-                  const s = qStockSearch.trim().toLowerCase();
-                  return (item.material || '').toLowerCase().includes(s) ||
-                         (item.description || '').toLowerCase().includes(s) ||
-                         (item.bin || '').toLowerCase().includes(s);
-                }
-                return true;
-              });
-              return (
-                <div className="bg-white rounded-xl shadow-sm p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
-                    <h3 className="font-semibold text-lg flex items-center gap-2">
-                      🔍 수입검사 대기 리스트
-                    </h3>
-                    <span className="text-xs text-gray-500 mt-1 sm:mt-0">
-                      총 {filteredQStock.length}건 | {totalQty.toLocaleString()} EA
-                      {qStockData.length !== filteredQStock.length && <span className="ml-1 text-gray-400">(F1/S1 제외 {qStockData.length - filteredQStock.length}건)</span>}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 mb-4">
-                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'green' ? 'bg-emerald-200 border-emerald-400 ring-2 ring-emerald-400' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
-                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'green' ? 'all' : 'green')}>
-                      <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
-                      <p className="text-xs text-emerald-600">정상 (&lt;7일)</p>
-                    </div>
-                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'amber' ? 'bg-amber-200 border-amber-400 ring-2 ring-amber-400' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
-                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'amber' ? 'all' : 'amber')}>
-                      <p className="text-2xl font-bold text-amber-600">{amberCount}</p>
-                      <p className="text-xs text-amber-600">주의 (7~10일)</p>
-                    </div>
-                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'red' ? 'bg-red-200 border-red-400 ring-2 ring-red-400' : 'bg-red-50 border-red-200 hover:bg-red-100'}`}
-                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'red' ? 'all' : 'red')}>
-                      <p className="text-2xl font-bold text-red-600">{redCount}</p>
-                      <p className="text-xs text-red-600">초과 (&gt;10일)</p>
-                    </div>
-                  </div>
-                  {/* 검색 및 필터 */}
-                  <div className="flex flex-wrap items-center gap-3 mb-3">
-                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                      <Search className="w-4 h-4 text-gray-400" />
-                      <input type="text" placeholder="자재코드, 품명, 위치 검색..." className="border rounded-lg px-3 py-1.5 text-sm w-full"
-                        value={qStockSearch} onChange={e => setQStockSearch(e.target.value)} />
-                    </div>
-                    {(qStockSearch || qStockStatusFilter !== 'all') && (
-                      <div className="flex items-center gap-2 text-xs text-gray-500">
-                        <span>{displayItems.length}건 표시</span>
-                        <button onClick={() => { setQStockSearch(''); setQStockStatusFilter('all'); }}
-                          className="text-indigo-600 hover:text-indigo-800 font-medium">필터 초기화</button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="overflow-x-auto max-h-80 border rounded-lg">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">상태</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">검사대기수량</th>
-                          <th className="px-2 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
-                            onClick={() => { if (qStockSortKey === 'grDate') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('grDate'); setQStockSortDir('desc'); } }}>
-                            입고일 {qStockSortKey === 'grDate' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
-                          </th>
-                          <th className="px-2 py-2 text-right text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
-                            onClick={() => { if (qStockSortKey === 'warehouseStock') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('warehouseStock'); setQStockSortDir('asc'); } }}>
-                            창고 재고 {qStockSortKey === 'warehouseStock' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
-                          </th>
-                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
-                            onClick={() => { if (qStockSortKey === 'daysElapsed') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('daysElapsed'); setQStockSortDir('desc'); } }}>
-                            경과일 {qStockSortKey === 'daysElapsed' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {displayItems.map((item, idx) => {
-                          const isRed = item.daysElapsed !== null && item.daysElapsed > 10;
-                          const isAmber = item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10;
-                          const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
-                          const textCol = isRed ? 'text-red-600 font-bold' : isAmber ? 'text-amber-600 font-bold' : item.daysElapsed !== null ? 'text-emerald-600' : 'text-gray-400';
-                          return (
-                            <tr key={idx} className={isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
-                              <td className="px-3 py-2"><span className={`w-2.5 h-2.5 rounded-full inline-block ${dotColor}`} /></td>
-                              <td className="px-3 py-2 font-mono text-xs font-semibold">{item.material}</td>
-                              <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
-                              <td className="px-3 py-2 text-xs">{item.bin}</td>
-                              <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
-                              <td className="px-2 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
-                              <td className="px-2 py-2 text-right text-xs font-medium">
-                                {(() => {
-                                  const totalStock = inventoryData.filter(i => i.material === item.material).reduce((s, i) => s + (i.stock || 0), 0);
-                                  const totalQ = qStockByMaterial[item.material] || 0;
-                                  const warehouseStock = totalStock - totalQ;
-                                  return <span className={warehouseStock <= 0 ? 'text-red-500 font-bold' : 'text-blue-600'}>{warehouseStock.toLocaleString()} {item.unit}</span>;
-                                })()}
-                              </td>
-                              <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
-                                {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {displayItems.length === 0 && (
-                          <tr><td colSpan="8" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-3">
-                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.
-                  </p>
-                </div>
-              );
-            })()}
+            {/* 수입검사 대기 리스트 → 입고 관리 탭으로 이동 */}
 
             {/* A1 개선: 부족 자재 상세 목록 + Open PO 매칭 */}
             <div className="bg-white rounded-xl shadow-sm p-6">
@@ -9365,7 +9429,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 );
               })()}
             </div>
-
+            </>)}
           </div>
         )}
 
@@ -11403,8 +11467,29 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const twoWeekStart = thisMonday.toISOString().slice(0,10);
           const todayStr = koNow.toISOString().slice(0,10);
 
+          // Open PO 기반 + Delivery Date 매칭
+          // Delivery data의 schedule line을 순서대로 매칭 (consumed tracking)
+          const deliveryUsed = new Array(deliveryData.length).fill(false);
+          const poWithDates = openPORawItems.map(item => {
+            let bestMatch = null;
+            for (let di = 0; di < deliveryData.length; di++) {
+              if (deliveryUsed[di]) continue;
+              const d = deliveryData[di];
+              if (d.poNo === item.poNo && d.material === item.material) {
+                bestMatch = d;
+                deliveryUsed[di] = true;
+                break;
+              }
+            }
+            return {
+              ...item,
+              deliveryDate: bestMatch ? bestMatch.deliveryDate : null,
+              supplier: item.supplier || (bestMatch ? bestMatch.supplier : ''),
+            };
+          });
+
           // 2주 내 납품 예정 필터
-          const upcomingDeliveries = deliveryData.filter(d => d.deliveryDate >= todayStr && d.deliveryDate <= twoWeekEnd);
+          const upcomingDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate >= todayStr && d.deliveryDate <= twoWeekEnd);
           // 날짜별 그룹
           const byDate = {};
           upcomingDeliveries.forEach(d => {
@@ -11413,8 +11498,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           });
           const sortedDates = Object.keys(byDate).sort();
 
-          // 지난 납품 (오늘 이전, 미입고)
-          const overdueDeliveries = deliveryData.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.remainQty > 0);
+          // 납기 지연 (납기일이 오늘 이전 + 미입고 수량 > 0)
+          const overdueDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
 
           // 수입검사 대기 (Q-Stock, F1/S1 제외)
           const filteredQStock = qStockData.filter(item => {
@@ -11465,20 +11550,26 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="text-left text-xs text-red-600 border-b border-red-200">
-                      <th className="pb-2 pr-3">Material</th><th className="pb-2 pr-3">품명</th><th className="pb-2 pr-3">PO</th>
-                      <th className="pb-2 pr-3">납기일</th><th className="pb-2 pr-3">미입고</th><th className="pb-2 pr-3">현재재고</th>
+                      <th className="pb-2 pl-3 whitespace-nowrap" style={{width:'90px'}}>PO</th>
+                      <th className="pb-2 whitespace-nowrap" style={{width:'65px'}}>Material</th>
+                      <th className="pb-2" style={{width:'30%'}}>Description</th>
+                      <th className="pb-2" style={{width:'20%'}}>공급업체</th>
+                      <th className="pb-2 whitespace-nowrap" style={{width:'85px'}}>납기일</th>
+                      <th className="pb-2 whitespace-nowrap text-right" style={{width:'70px'}}>미입고</th>
+                      <th className="pb-2 whitespace-nowrap text-right pr-3" style={{width:'65px'}}>현재재고</th>
                     </tr></thead>
                     <tbody>{overdueDeliveries.slice(0, 20).map((d, i) => {
                       const inv = inventoryData.find(it => String(it.material) === d.material);
-                      const stock = inv ? (parseFloat(inv.unrestricted) || 0) : 0;
+                      const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
                       return (
                         <tr key={i} className="border-b border-red-100 hover:bg-red-100/50">
-                          <td className="py-1.5 pr-3 font-mono text-xs">{d.material}</td>
-                          <td className="py-1.5 pr-3 text-xs max-w-[200px] truncate">{d.description}</td>
-                          <td className="py-1.5 pr-3 text-xs">{d.poNo}</td>
-                          <td className="py-1.5 pr-3 text-xs font-medium text-red-700">{d.deliveryDate}</td>
-                          <td className="py-1.5 pr-3 text-xs font-bold">{d.remainQty} {d.unit}</td>
-                          <td className="py-1.5 pr-3 text-xs">{stock > 0 ? `${stock} EA` : '-'}</td>
+                          <td className="py-1.5 text-xs pl-3 whitespace-nowrap">{d.poNo}</td>
+                          <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                          <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
+                          <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
+                          <td className="py-1.5 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
+                          <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                          <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">{stock > 0 ? `${stock} EA` : '-'}</td>
                         </tr>
                       );
                     })}</tbody>
@@ -11496,11 +11587,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <span className="text-sm font-normal text-gray-500 ml-2">{upcomingDeliveries.length}건</span>
                 </h3>
               </div>
-              {deliveryData.length === 0 ? (
+              {openPORawItems.length === 0 ? (
                 <div className="p-8 text-center text-gray-400">
                   <Truck className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>Delivery 데이터가 없습니다.</p>
-                  <p className="text-xs mt-1">데이터 관리에서 DeliveryData Excel을 업로드해주세요.</p>
+                  <p>Open PO 데이터가 없습니다.</p>
+                  <p className="text-xs mt-1">데이터 관리에서 Open PO Excel을 업로드해주세요.</p>
                 </div>
               ) : sortedDates.length === 0 ? (
                 <div className="p-6 text-center text-gray-400">
@@ -11525,20 +11616,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead><tr className="text-left text-xs text-gray-500 border-b">
-                              <th className="px-4 py-1.5">Material</th><th className="py-1.5">품명</th><th className="py-1.5">공급업체</th>
-                              <th className="py-1.5">PO</th><th className="py-1.5 text-right">미입고 수량</th><th className="py-1.5 text-right pr-4">현재 재고</th>
+                              <th className="pl-4 py-1.5 whitespace-nowrap" style={{width:'90px'}}>PO</th>
+                              <th className="py-1.5 whitespace-nowrap" style={{width:'65px'}}>Material</th>
+                              <th className="py-1.5" style={{width:'30%'}}>Description</th>
+                              <th className="py-1.5" style={{width:'20%'}}>공급업체</th>
+                              <th className="py-1.5 whitespace-nowrap text-right" style={{width:'70px'}}>미입고 수량</th>
+                              <th className="py-1.5 whitespace-nowrap text-right pr-3" style={{width:'65px'}}>현재 재고</th>
                             </tr></thead>
                             <tbody>{items.map((d, i) => {
                               const inv = inventoryData.find(it => String(it.material) === d.material);
-                              const stock = inv ? (parseFloat(inv.unrestricted) || 0) : 0;
+                              const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
                               return (
                                 <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                                  <td className="px-4 py-1.5 font-mono text-xs">{d.material}</td>
-                                  <td className="py-1.5 text-xs max-w-[200px] truncate">{d.description}</td>
-                                  <td className="py-1.5 text-xs text-gray-500 max-w-[150px] truncate">{d.supplier}</td>
-                                  <td className="py-1.5 text-xs">{d.poNo}</td>
-                                  <td className="py-1.5 text-xs font-bold text-right">{d.remainQty} {d.unit}</td>
-                                  <td className="py-1.5 text-xs text-right pr-4">{stock > 0 ? <span className="text-blue-600">{stock} EA</span> : <span className="text-gray-300">-</span>}</td>
+                                  <td className="pl-4 py-1.5 text-xs whitespace-nowrap">{d.poNo}</td>
+                                  <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                                  <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
+                                  <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
+                                  <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                                  <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">{stock > 0 ? <span className="text-blue-600">{stock} EA</span> : <span className="text-gray-300">-</span>}</td>
                                 </tr>
                               );
                             })}</tbody>
@@ -11551,51 +11646,150 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               )}
             </div>
 
-            {/* 수입검사 대기 리스트 */}
-            <div className="bg-white rounded-xl border shadow-sm">
-              <div className="p-4 border-b">
-                <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                  <Search className="w-4 h-4 text-amber-600" /> 수입검사 대기 ({filteredQStock.length}건)
-                </h3>
-              </div>
-              {filteredQStock.length === 0 ? (
-                <div className="p-6 text-center text-gray-400">수입검사 대기 품목이 없습니다.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-left text-xs text-gray-500 border-b bg-gray-50">
-                      <th className="px-4 py-2">상태</th><th className="py-2">Material</th><th className="py-2">품명</th>
-                      <th className="py-2">Bin</th><th className="py-2 text-right">검사수량</th><th className="py-2 text-right">창고재고</th>
-                      <th className="py-2 text-right pr-4">입고일</th>
-                    </tr></thead>
-                    <tbody>{filteredQStock.sort((a,b) => {
-                      const da = a.grDate || ''; const db = b.grDate || '';
-                      return da < db ? -1 : da > db ? 1 : 0;
-                    }).map((item, i) => {
-                      const grDate = item.grDate ? new Date(item.grDate) : null;
-                      const daysElapsed = grDate ? Math.floor((koNow - grDate) / 86400000) : null;
-                      const statusColor = daysElapsed === null ? 'gray' : daysElapsed > 10 ? 'red' : daysElapsed > 7 ? 'amber' : 'green';
-                      const inv = inventoryData.find(it => String(it.material) === String(item.material));
-                      const stock = inv ? (parseFloat(inv.unrestricted) || 0) : 0;
-                      return (
-                        <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-1.5">
-                            <span className={`inline-block w-2.5 h-2.5 rounded-full bg-${statusColor}-500`}></span>
-                            {daysElapsed !== null && <span className="text-xs ml-1 text-gray-500">{daysElapsed}일</span>}
-                          </td>
-                          <td className="py-1.5 font-mono text-xs">{item.material}</td>
-                          <td className="py-1.5 text-xs max-w-[200px] truncate">{item.description || ''}</td>
-                          <td className="py-1.5 text-xs">{item.bin || ''}</td>
-                          <td className="py-1.5 text-xs font-bold text-right">{item.qty || 0} EA</td>
-                          <td className="py-1.5 text-xs text-right">{stock > 0 ? <span className="text-blue-600">{stock}</span> : '-'}</td>
-                          <td className="py-1.5 text-xs text-right pr-4">{item.grDate ? item.grDate.slice(0,10) : '-'}</td>
+            {/* 🔍 수입검사 대기 리스트 (Q Stock) - 오버뷰와 동일 기능 */}
+            {(() => {
+              const qItems = filteredQStock.map(item => {
+                const grDate = item.grDate ? new Date(item.grDate) : null;
+                const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((koNow - grDate) / (1000 * 60 * 60 * 24)) : null;
+                const grDateTs = grDate && !isNaN(grDate.getTime()) ? grDate.getTime() : 0;
+                return { ...item, daysElapsed, grDateTs };
+              }).sort((a, b) => {
+                const dir = qStockSortDir === 'asc' ? 1 : -1;
+                if (qStockSortKey === 'grDate') {
+                  return dir * ((a.grDateTs || 0) - (b.grDateTs || 0));
+                }
+                if (qStockSortKey === 'warehouseStock') {
+                  const aTotal = inventoryData.filter(i => i.material === a.material).reduce((s, i) => s + (i.stock || 0), 0);
+                  const bTotal = inventoryData.filter(i => i.material === b.material).reduce((s, i) => s + (i.stock || 0), 0);
+                  const aWh = aTotal - (qStockByMaterial[a.material] || 0);
+                  const bWh = bTotal - (qStockByMaterial[b.material] || 0);
+                  return dir * (aWh - bWh);
+                }
+                return dir * ((a.daysElapsed || 0) - (b.daysElapsed || 0));
+              });
+              const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
+              const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
+              const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
+              const totalQty = filteredQStock.reduce((s, i) => s + (i.stock || 0), 0);
+              const displayItems = qItems.filter(item => {
+                if (qStockStatusFilter !== 'all') {
+                  if (qStockStatusFilter === 'green' && !(item.daysElapsed !== null && item.daysElapsed < 7)) return false;
+                  if (qStockStatusFilter === 'amber' && !(item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10)) return false;
+                  if (qStockStatusFilter === 'red' && !(item.daysElapsed !== null && item.daysElapsed > 10)) return false;
+                }
+                if (qStockSearch.trim()) {
+                  const s = qStockSearch.trim().toLowerCase();
+                  return (item.material || '').toLowerCase().includes(s) ||
+                         (item.description || '').toLowerCase().includes(s) ||
+                         (item.bin || '').toLowerCase().includes(s);
+                }
+                return true;
+              });
+              return (
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      🔍 수입검사 대기 리스트
+                    </h3>
+                    <span className="text-xs text-gray-500 mt-1 sm:mt-0">
+                      총 {filteredQStock.length}건 | {totalQty.toLocaleString()} EA
+                      {qStockData.length !== filteredQStock.length && <span className="ml-1 text-gray-400">(F1/S1 제외 {qStockData.length - filteredQStock.length}건)</span>}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'green' ? 'bg-emerald-200 border-emerald-400 ring-2 ring-emerald-400' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'green' ? 'all' : 'green')}>
+                      <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
+                      <p className="text-xs text-emerald-600">정상 (&lt;7일)</p>
+                    </div>
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'amber' ? 'bg-amber-200 border-amber-400 ring-2 ring-amber-400' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'amber' ? 'all' : 'amber')}>
+                      <p className="text-2xl font-bold text-amber-600">{amberCount}</p>
+                      <p className="text-xs text-amber-600">주의 (7~10일)</p>
+                    </div>
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'red' ? 'bg-red-200 border-red-400 ring-2 ring-red-400' : 'bg-red-50 border-red-200 hover:bg-red-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'red' ? 'all' : 'red')}>
+                      <p className="text-2xl font-bold text-red-600">{redCount}</p>
+                      <p className="text-xs text-red-600">초과 (&gt;10일)</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                      <Search className="w-4 h-4 text-gray-400" />
+                      <input type="text" placeholder="자재코드, 품명, 위치 검색..." className="border rounded-lg px-3 py-1.5 text-sm w-full"
+                        value={qStockSearch} onChange={e => setQStockSearch(e.target.value)} />
+                    </div>
+                    {(qStockSearch || qStockStatusFilter !== 'all') && (
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>{displayItems.length}건 표시</span>
+                        <button onClick={() => { setQStockSearch(''); setQStockStatusFilter('all'); }}
+                          className="text-indigo-600 hover:text-indigo-800 font-medium">필터 초기화</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto max-h-[1200px] border rounded-lg overflow-y-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">상태</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">검사대기수량</th>
+                          <th className={`px-2 py-2 text-center text-xs font-medium cursor-pointer hover:text-indigo-600 select-none ${qStockSortKey === 'grDate' ? 'text-indigo-600' : 'text-gray-500'}`}
+                            onClick={() => { if (qStockSortKey === 'grDate') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('grDate'); setQStockSortDir('desc'); } }}>
+                            입고일 {qStockSortKey === 'grDate' ? (qStockSortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          </th>
+                          <th className={`px-2 py-2 text-right text-xs font-medium cursor-pointer hover:text-indigo-600 select-none ${qStockSortKey === 'warehouseStock' ? 'text-indigo-600' : 'text-gray-500'}`}
+                            onClick={() => { if (qStockSortKey === 'warehouseStock') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('warehouseStock'); setQStockSortDir('asc'); } }}>
+                            창고 재고 {qStockSortKey === 'warehouseStock' ? (qStockSortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          </th>
+                          <th className={`px-3 py-2 text-center text-xs font-medium cursor-pointer hover:text-indigo-600 select-none ${qStockSortKey === 'daysElapsed' ? 'text-indigo-600' : 'text-gray-500'}`}
+                            onClick={() => { if (qStockSortKey === 'daysElapsed') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('daysElapsed'); setQStockSortDir('desc'); } }}>
+                            경과일 {qStockSortKey === 'daysElapsed' ? (qStockSortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          </th>
                         </tr>
-                      );
-                    })}</tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {displayItems.map((item, idx) => {
+                          const isRed = item.daysElapsed !== null && item.daysElapsed > 10;
+                          const isAmber = item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10;
+                          const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
+                          const textCol = isRed ? 'text-red-600 font-bold' : isAmber ? 'text-amber-600 font-bold' : item.daysElapsed !== null ? 'text-emerald-600' : 'text-gray-400';
+                          return (
+                            <tr key={idx} className={isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                              <td className="px-3 py-2"><span className={`w-2.5 h-2.5 rounded-full inline-block ${dotColor}`} /></td>
+                              <td className="px-3 py-2 font-mono text-xs font-semibold">{item.material}</td>
+                              <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
+                              <td className="px-3 py-2 text-xs">{item.bin}</td>
+                              <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
+                              <td className="px-2 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
+                              <td className="px-2 py-2 text-right text-xs font-medium">
+                                {(() => {
+                                  const totalStock = inventoryData.filter(i => i.material === item.material).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const totalQ = qStockByMaterial[item.material] || 0;
+                                  const warehouseStock = totalStock - totalQ;
+                                  return <span className={warehouseStock <= 0 ? 'text-red-500 font-bold' : 'text-blue-600'}>{warehouseStock.toLocaleString()} {item.unit}</span>;
+                                })()}
+                              </td>
+                              <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
+                                {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {displayItems.length === 0 && (
+                          <tr><td colSpan="8" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-3">
+                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.
+                  </p>
                 </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
           );
         })()}
