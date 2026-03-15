@@ -11709,28 +11709,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           if (!ghToken) { showToast('GitHub 토큰이 없습니다. 콘솔에서 localStorage.setItem("pbk_gh_token","토큰")을 실행해주세요.', 'error'); return; }
                           const today = new Date().toISOString().slice(0, 10);
                           const toEmail = 'jimin.jung@promega.com'; // 테스트용 (실사용: jiwon.hwang@promega.com)
-                          let bodyHtml = `<div style="font-family:'Malgun Gothic',Arial,sans-serif;max-width:800px;">`;
-                          bodyHtml += `<p>안녕하세요, 정지민입니다.</p>`;
-                          bodyHtml += `<p>아래 PO 건에 대해 납기 지연이 확인되어 검토 요청드립니다.<br/>Order close 또는 납품 예정 여부 확인 부탁드립니다.</p>`;
-                          bodyHtml += `<br/><p><b>📋 납기 지연 리스트 - ${today} (${selectedItems.length}건)</b></p>`;
-                          bodyHtml += `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;width:100%;">`;
-                          bodyHtml += `<tr style="background:#f3f4f6;"><th style="border:1px solid #e5e7eb;padding:8px;">No</th><th style="border:1px solid #e5e7eb;padding:8px;">PO</th><th style="border:1px solid #e5e7eb;padding:8px;">Material</th><th style="border:1px solid #e5e7eb;padding:8px;">Description</th><th style="border:1px solid #e5e7eb;padding:8px;">공급업체</th><th style="border:1px solid #e5e7eb;padding:8px;">납기일</th><th style="border:1px solid #e5e7eb;padding:8px;">미입고</th><th style="border:1px solid #e5e7eb;padding:8px;">현재재고</th></tr>`;
-                          selectedItems.forEach((d, idx) => {
+                          const items = selectedItems.map(d => {
                             const inv = inventoryData.find(it => String(it.material) === d.material);
-                            const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
-                            bodyHtml += `<tr><td style="border:1px solid #e5e7eb;padding:8px;text-align:center;">${idx+1}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo}</td><td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.description}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier}</td><td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty} ${d.unit}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${stock > 0 ? stock + ' EA' : '-'}</td></tr>`;
+                            return { poNo: d.poNo, material: d.material, description: d.description, supplier: d.supplier, deliveryDate: d.deliveryDate, qty: d.qty, unit: d.unit, stock: inv ? (parseFloat(inv.stock) || 0) : 0 };
                           });
-                          bodyHtml += `</table><br/><p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`;
-                          bodyHtml += `<br/><p style="color:#999;font-size:11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p></div>`;
-                          const subject = `[납기 지연 검토 요청] ${selectedItems.length}건 (${today})`;
+                          const subject = `[납기 지연 검토 요청] ${items.length}건 (${today})`;
                           try {
                             showToast('📧 메일 발송 중...', 'info');
-                            const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/actions/workflows/overdue-email.yml/dispatches', {
+                            const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/dispatches', {
                               method: 'POST',
                               headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ ref: 'main', inputs: { to_email: toEmail, subject, body_html: bodyHtml, cc_email: 'jimin.jung@promega.com' } })
+                              body: JSON.stringify({ event_type: 'send-overdue-email', client_payload: { to_email: toEmail, cc_email: 'jimin.jung@promega.com', subject, date: today, items } })
                             });
-                            if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 완료! (${selectedItems.length}건 → ${toEmail})`, 'success');
+                            if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 요청 완료! (${items.length}건 → ${toEmail}) 1~2분 내 도착`, 'success');
                             else { const err = await resp.json().catch(() => ({})); throw new Error(err.message || `발송 실패 (${resp.status})`); }
                           } catch (e) { showToast(`❌ 메일 발송 실패: ${e.message}`, 'error'); }
                         }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
@@ -11743,28 +11734,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       if (!ghToken) { showToast('GitHub 토큰이 없습니다. 콘솔에서 localStorage.setItem("pbk_gh_token","토큰")을 실행해주세요.', 'error'); return; }
                       const today = new Date().toISOString().slice(0, 10);
                       const toEmail = 'jimin.jung@promega.com'; // 테스트용 (실사용: jiwon.hwang@promega.com)
-                      let bodyHtml = `<div style="font-family:'Malgun Gothic',Arial,sans-serif;max-width:800px;">`;
-                      bodyHtml += `<p>안녕하세요, 정지민입니다.</p>`;
-                      bodyHtml += `<p>아래 PO 건에 대해 납기 지연이 확인되어 검토 요청드립니다.<br/>Order close 또는 납품 예정 여부 확인 부탁드립니다.</p>`;
-                      bodyHtml += `<br/><p><b>📋 납기 지연 리스트 - ${today} (${overdueDeliveries.length}건)</b></p>`;
-                      bodyHtml += `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;width:100%;">`;
-                      bodyHtml += `<tr style="background:#f3f4f6;"><th style="border:1px solid #e5e7eb;padding:8px;">No</th><th style="border:1px solid #e5e7eb;padding:8px;">PO</th><th style="border:1px solid #e5e7eb;padding:8px;">Material</th><th style="border:1px solid #e5e7eb;padding:8px;">Description</th><th style="border:1px solid #e5e7eb;padding:8px;">공급업체</th><th style="border:1px solid #e5e7eb;padding:8px;">납기일</th><th style="border:1px solid #e5e7eb;padding:8px;">미입고</th><th style="border:1px solid #e5e7eb;padding:8px;">현재재고</th></tr>`;
-                      overdueDeliveries.forEach((d, idx) => {
+                      const items = overdueDeliveries.map(d => {
                         const inv = inventoryData.find(it => String(it.material) === d.material);
-                        const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
-                        bodyHtml += `<tr><td style="border:1px solid #e5e7eb;padding:8px;text-align:center;">${idx+1}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo}</td><td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.description}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier}</td><td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty} ${d.unit}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${stock > 0 ? stock + ' EA' : '-'}</td></tr>`;
+                        return { poNo: d.poNo, material: d.material, description: d.description, supplier: d.supplier, deliveryDate: d.deliveryDate, qty: d.qty, unit: d.unit, stock: inv ? (parseFloat(inv.stock) || 0) : 0 };
                       });
-                      bodyHtml += `</table><br/><p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`;
-                      bodyHtml += `<br/><p style="color:#999;font-size:11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p></div>`;
-                      const subject = `[납기 지연 검토 요청] ${overdueDeliveries.length}건 (${today})`;
+                      const subject = `[납기 지연 검토 요청] ${items.length}건 (${today})`;
                       try {
                         showToast('📧 메일 발송 중...', 'info');
-                        const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/actions/workflows/overdue-email.yml/dispatches', {
+                        const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/dispatches', {
                           method: 'POST',
                           headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ ref: 'main', inputs: { to_email: toEmail, subject, body_html: bodyHtml, cc_email: 'jimin.jung@promega.com' } })
+                          body: JSON.stringify({ event_type: 'send-overdue-email', client_payload: { to_email: toEmail, cc_email: 'jimin.jung@promega.com', subject, date: today, items } })
                         });
-                        if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 완료! (${overdueDeliveries.length}건 → ${toEmail})`, 'success');
+                        if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 요청 완료! (${items.length}건 → ${toEmail}) 1~2분 내 도착`, 'success');
                         else { const err = await resp.json().catch(() => ({})); throw new Error(err.message || `발송 실패 (${resp.status})`); }
                       } catch (e) { showToast(`❌ 메일 발송 실패: ${e.message}`, 'error'); }
                     }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 flex items-center gap-1">

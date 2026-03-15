@@ -1,31 +1,61 @@
 name: Overdue Delivery Review Email
 
 on:
-  workflow_dispatch:
-    inputs:
-      to_email:
-        description: '받는 사람 이메일'
-        required: true
-        type: string
-      subject:
-        description: '메일 제목'
-        required: true
-        type: string
-      body_html:
-        description: '메일 본문 (HTML)'
-        required: true
-        type: string
-      cc_email:
-        description: '참조 이메일 (선택)'
-        required: false
-        type: string
-        default: ''
+  repository_dispatch:
+    types: [send-overdue-email]
 
 jobs:
   send-email:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Overdue Review Email
+      - name: Build Email HTML
+        id: build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const payload = context.payload.client_payload;
+            const items = payload.items || [];
+            const today = payload.date || new Date().toISOString().split('T')[0];
+
+            let html = `<div style="font-family:'Malgun Gothic',Arial,sans-serif;max-width:800px;margin:0 auto;">`;
+            html += `<p>안녕하세요, 정지민입니다.</p>`;
+            html += `<p>아래 PO 건에 대해 납기 지연이 확인되어 검토 요청드립니다.<br/>Order close 또는 납품 예정 여부 확인 부탁드립니다.</p>`;
+            html += `<br/><p style="font-size:14px;"><b>📋 납기 지연 리스트 - ${today} (${items.length}건)</b></p>`;
+            html += `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;width:100%;">`;
+            html += `<tr style="background:#f3f4f6;">`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">No</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">PO</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">Material</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">Description</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">공급업체</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">납기일</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">미입고</th>`;
+            html += `<th style="border:1px solid #e5e7eb;padding:8px;">현재재고</th>`;
+            html += `</tr>`;
+
+            items.forEach((d, idx) => {
+              html += `<tr>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:center;">${idx+1}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.description}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty} ${d.unit}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${d.stock > 0 ? d.stock + ' EA' : '-'}</td>`;
+              html += `</tr>`;
+            });
+
+            html += `</table>`;
+            html += `<br/><p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`;
+            html += `<br/><p style="color:#999;font-size:11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p></div>`;
+
+            core.setOutput('html_body', html);
+            core.setOutput('subject', payload.subject);
+            core.setOutput('to_email', payload.to_email);
+            core.setOutput('cc_email', payload.cc_email || '');
+
+      - name: Send Email
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.office365.com
@@ -33,8 +63,8 @@ jobs:
           secure: false
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: ${{ inputs.subject }}
-          html_body: ${{ inputs.body_html }}
+          subject: ${{ steps.build.outputs.subject }}
+          html_body: ${{ steps.build.outputs.html_body }}
           from: jimin.jung@promega.com
-          to: ${{ inputs.to_email }}
-          cc: ${{ inputs.cc_email }}
+          to: ${{ steps.build.outputs.to_email }}
+          cc: ${{ steps.build.outputs.cc_email }}
