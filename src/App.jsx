@@ -1,7 +1,33 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 
 const APP_VERSION = 'v19.5';
-import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck, MessageSquare, Send, Bot } from 'lucide-react';
+
+// 모바일 감지
+const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+// Error Boundary: 모바일 크래시 시 복구 화면 표시
+export class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error('App crash:', error, info); }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', {
+        style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f8f9fa', fontFamily: 'system-ui', padding: '20px', textAlign: 'center' }
+      },
+        React.createElement('div', { style: { fontSize: '48px', marginBottom: '16px' } }, '⚠️'),
+        React.createElement('h2', { style: { color: '#374151', marginBottom: '8px' } }, '앱에 문제가 발생했습니다'),
+        React.createElement('p', { style: { color: '#6b7280', marginBottom: '24px', fontSize: '14px' } }, '메모리 부족 또는 일시적 오류일 수 있습니다'),
+        React.createElement('button', {
+          onClick: () => window.location.reload(),
+          style: { padding: '12px 32px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', cursor: 'pointer' }
+        }, '🔄 새로고침')
+      );
+    }
+    return this.props.children;
+  }
+}
+import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck, MessageSquare, Send, Bot, Mail } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
@@ -1911,6 +1937,11 @@ export default function PBKWarehouseSystem() {
   const [deliveryLastUpdated, setDeliveryLastUpdated] = useState(() => {
     return safeStorage.getItem('pbk_delivery_updated') || null;
   });
+  // 납기 지연 선택/숨김 관리
+  const [overdueSelected, setOverdueSelected] = useState(new Set());
+  const [overdueDismissed, setOverdueDismissed] = useState(() => {
+    try { const s = safeStorage.getItem('pbk_overdue_dismissed'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
 
   // BOM 데이터 (사용자 업로드 가능)
   const [customBomData, setCustomBomData] = useState(() => {
@@ -2136,7 +2167,7 @@ export default function PBKWarehouseSystem() {
   // 랙 배치도 에디터 HTML (외부 파일에서 동적 로드)
   const [layoutEditorHtml, setLayoutEditorHtml] = useState('');
   useEffect(() => {
-    if (activeTab !== 'layout') return;
+    if (activeTab !== 'layout' || isMobileDevice) return;
     if (layoutEditorHtml) return;
     fetch(`${import.meta.env.BASE_URL}layout-editor.html`)
       .then(r => r.text())
@@ -2305,6 +2336,15 @@ export default function PBKWarehouseSystem() {
 
       console.log('[DashSync] Loaded from GitHub, keys:', Object.keys(stateObj).length);
 
+      // 로컬 타임스탬프 vs GitHub 타임스탬프 비교
+      const localTs = parseInt(safeStorage.getItem('pbk_sync_local_ts') || '0', 10);
+      const remoteTs = stateObj._syncTimestamp || 0;
+      if (localTs > remoteTs) {
+        console.log(`[DashSync] 로컬이 더 최신 (local=${localTs}, remote=${remoteTs}), GitHub 데이터 무시`);
+        // 로드 후 현재 해시 저장 (불필요한 업로드 방지하지 않음 - 로컬이 더 최신이므로 업로드 필요)
+        return;
+      }
+
       // setState 매핑
       const setterMap = {
         pbk_receive_cycles: setReceiveCycles,
@@ -2360,6 +2400,8 @@ export default function PBKWarehouseSystem() {
         try { stateObj[key] = JSON.parse(raw); } catch { stateObj[key] = raw; }
       }
     }
+    // 타임스탬프 포함 (로컬 vs 리모트 비교용)
+    stateObj._syncTimestamp = Date.now();
 
     // 변경 감지
     const currentHash = simpleHash(JSON.stringify(stateObj));
@@ -2428,7 +2470,7 @@ export default function PBKWarehouseSystem() {
   // 3D 뷰 렌더링
   const view3dKeyRef = React.useRef(null);
   useEffect(() => {
-    if(activeTab !== 'view3d' || !layoutData || !view3dCanvasRef.current) return;
+    if(activeTab !== 'view3d' || !layoutData || !view3dCanvasRef.current || isMobileDevice) return;
     if(view3dSceneRef.current) { view3dSceneRef.current.renderer.dispose(); view3dSceneRef.current = null; }
     if(view3dKeyRef.current) { if(view3dKeyRef.current.down){window.removeEventListener('keydown',view3dKeyRef.current.down);window.removeEventListener('keyup',view3dKeyRef.current.up);}else{window.removeEventListener('keydown',view3dKeyRef.current);}view3dKeyRef.current=null; }
     const loadAndInit = () => {
@@ -3386,6 +3428,7 @@ export default function PBKWarehouseSystem() {
   // safeStorage에 저장
   useEffect(() => {
     safeStorage.setItem('pbk_pick_cycles', JSON.stringify(pickCycles));
+    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
   }, [pickCycles]);
 
   // 마운트 시 완료된 pickCycles의 cycleMin을 영업시간 기준으로 재계산
@@ -3428,16 +3471,19 @@ export default function PBKWarehouseSystem() {
 
   useEffect(() => {
     safeStorage.setItem('pbk_receive_cycles', JSON.stringify(receiveCycles));
+    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
   }, [receiveCycles]);
 
   useEffect(() => {
     safeStorage.setItem('pbk_kitting_data', JSON.stringify(kittingData));
+    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
   }, [kittingData]);
 
   // LT 재계산은 useState 초기화에서 처리됨
 
   useEffect(() => {
     safeStorage.setItem('pbk_todo_list', JSON.stringify(todoList));
+    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
   }, [todoList]);
 
   // v15: 다크모드 저장
@@ -3710,10 +3756,18 @@ export default function PBKWarehouseSystem() {
         const unit = String(row['Order Unit'] || 'EA').trim();
         const poNo = String(row['Purchasing Document'] || '').trim();
         const supplier = String(row['Supplier/Supplying Plant'] || row['Name of Vendor'] || row['Name 1'] || '').trim();
+        const netPrice = parseFloat(row['Net Price'] || row['Net Order Price'] || 0) || 0;
+        const priceUnit = parseFloat(row['Price Unit'] || 1) || 1;
+        const currency = String(row['Currency'] || row['Crcy'] || 'KRW').trim();
+        const unitPrice = priceUnit > 0 ? netPrice / priceUnit : netPrice; // 개당 단가
         if (material) {
-          rawItems.push({ material, description, qty, unit, poNo, supplier });
-          if (!poByMaterial[material]) poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [] };
+          rawItems.push({ material, description, qty, unit, poNo, supplier, unitPrice, currency });
+          if (!poByMaterial[material]) poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [], unitPrice, currency };
           poByMaterial[material].totalQty += qty;
+          if (unitPrice > 0 && (!poByMaterial[material].unitPrice || poByMaterial[material].unitPrice === 0)) {
+            poByMaterial[material].unitPrice = unitPrice;
+            poByMaterial[material].currency = currency;
+          }
           if (poNo && !poByMaterial[material].poNumbers.includes(poNo)) poByMaterial[material].poNumbers.push(poNo);
         }
       });
@@ -3988,13 +4042,26 @@ export default function PBKWarehouseSystem() {
     initLoad();
   }, []);
 
-  // ──── Debounced 자동 동기화 (30초 디바운스) ────
+  // ──── 페이지 종료/새로고침 시 즉시 동기화 (beacon) ────
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // sendBeacon으로 즉시 업로드 시도 (비동기 fetch는 취소될 수 있음)
+      const TOKEN = safeStorage.getItem('pbk_gh_token');
+      if (!TOKEN) return;
+      // localStorage는 이미 최신 → 타임스탬프만 최신화
+      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // ──── Debounced 자동 동기화 (5초 디바운스) ────
   useEffect(() => {
     if (!syncReady) return; // 초기 로드 중에는 업로드 방지
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       uploadDashboardState();
-    }, 30000);
+    }, 5000); // 5초 디바운스 (30초→5초로 단축, 데이터 유실 방지)
     return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
   }, [syncReady, receiveCycles, pickCycles, kittingData, todoList, kpiData,
       tempHumidityData, tempHumidityRecorder, weightData,
@@ -6707,36 +6774,56 @@ ${tableRows}
   const buildWarehouseContext = (userMsg) => {
     const today = new Date().toISOString().slice(0, 10);
     const lines = [`[창고 데이터 현황 - ${today}]`];
+    const inv = Array.isArray(inventoryData) ? inventoryData : [];
+    const po = Array.isArray(openPORawItems) ? openPORawItems : [];
+    const del = Array.isArray(deliveryData) ? deliveryData : [];
+    const qs = Array.isArray(qStockData) ? qStockData : [];
 
     // 1. 재고 요약
-    if (inventoryData.length > 0) {
-      const totalStock = inventoryData.reduce((s, i) => s + (parseFloat(i.stock) || 0), 0);
-      lines.push(`\n[재고] 총 ${inventoryData.length}개 품목, 총 재고 ${totalStock.toLocaleString()} EA`);
-      // 사용자가 특정 자재코드 언급 시 해당 자재 상세
-      const mentionedMats = inventoryData.filter(i => userMsg.includes(String(i.material)));
+    if (inv.length > 0) {
+      const totalStock = inv.reduce((s, i) => s + (parseFloat(i.stock) || 0), 0);
+      lines.push(`\n[재고] 총 ${inv.length}개 품목, 총 재고 ${totalStock.toLocaleString()} EA`);
+      const mentionedMats = inv.filter(i => userMsg.includes(String(i.material)));
       if (mentionedMats.length > 0) {
         lines.push('검색된 자재 상세:');
-        mentionedMats.forEach(i => lines.push(`  ${i.material} | ${i.description} | 재고: ${i.stock} ${i.unit} | 위치: ${i.bin}`));
+        mentionedMats.forEach(i => {
+          let line = `  ${i.material} | ${i.description} | 재고: ${i.stock} ${i.unit} | 위치: ${i.bin}`;
+          // Open PO에서 단가 매칭
+          const poMatch = po.find(p => String(p.material) === String(i.material) && p.unitPrice > 0);
+          if (poMatch) line += ` | 단가: ${poMatch.unitPrice.toLocaleString()} ${poMatch.currency || 'KRW'}`;
+          lines.push(line);
+        });
       }
-      // 상위 30개 (재고 많은 순)
-      const top = [...inventoryData].sort((a, b) => (b.stock || 0) - (a.stock || 0)).slice(0, 30);
+      const top = [...inv].sort((a, b) => (b.stock || 0) - (a.stock || 0)).slice(0, 15);
       lines.push('주요 재고 품목 (상위 30):');
       top.forEach(i => lines.push(`  ${i.material} | ${i.description} | ${i.stock} ${i.unit} | ${i.bin}`));
     }
 
-    // 2. Open PO (미입고)
-    if (openPORawItems.length > 0) {
-      const totalQty = openPORawItems.reduce((s, i) => s + (i.qty || 0), 0);
-      lines.push(`\n[Open PO] ${openPORawItems.length}건, 미입고 총 ${totalQty.toLocaleString()} EA`);
-      openPORawItems.slice(0, 20).forEach(i =>
-        lines.push(`  PO:${i.poNo} | ${i.material} ${i.description} | ${i.qty} ${i.unit} | ${i.supplier}`)
-      );
+    // 2. Open PO (미입고) + 단가 정보
+    if (po.length > 0) {
+      const totalQty = po.reduce((s, i) => s + (i.qty || 0), 0);
+      lines.push(`\n[Open PO] ${po.length}건, 미입고 총 ${totalQty.toLocaleString()} EA`);
+      // 사용자가 가격/단가를 물어봤으면 단가 포함
+      const askingPrice = /가격|단가|금액|얼마|price|cost|원/.test(userMsg);
+      po.slice(0, 20).forEach(i => {
+        let line = `  PO:${i.poNo} | ${i.material} ${i.description} | ${i.qty} ${i.unit} | ${i.supplier}`;
+        if (askingPrice && i.unitPrice > 0) line += ` | 단가: ${i.unitPrice.toLocaleString()} ${i.currency || 'KRW'}`;
+        lines.push(line);
+      });
+      // 검색된 자재의 가격 정보
+      if (askingPrice) {
+        const mentionedPO = po.filter(i => userMsg.includes(String(i.material)) || userMsg.toLowerCase().includes((i.description || '').toLowerCase().split(',')[0]));
+        if (mentionedPO.length > 0) {
+          lines.push('검색된 자재 가격:');
+          mentionedPO.forEach(i => lines.push(`  ${i.material} | ${i.description} | 단가: ${(i.unitPrice || 0).toLocaleString()} ${i.currency || 'KRW'} | PO: ${i.poNo}`));
+        }
+      }
     }
 
     // 3. 납품 예정 + 지연
-    if (deliveryData.length > 0) {
-      const poWithDates = openPORawItems.map(item => {
-        const dMatch = deliveryData.find(d => d.poNo === item.poNo && d.material === item.material);
+    if (del.length > 0 && po.length > 0) {
+      const poWithDates = po.map(item => {
+        const dMatch = del.find(d => d.poNo === item.poNo && d.material === item.material);
         return { ...item, deliveryDate: dMatch ? dMatch.deliveryDate : null };
       });
       const overdue = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < today);
@@ -6755,9 +6842,9 @@ ${tableRows}
     }
 
     // 4. Q-Stock (수입검사 대기)
-    if (qStockData.length > 0) {
+    if (qs.length > 0) {
       const koNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-      const items = qStockData.filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'));
+      const items = qs.filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'));
       const withDays = items.map(i => {
         const gr = i.grDate ? new Date(i.grDate) : null;
         const days = gr ? Math.floor((koNow - gr) / 86400000) : null;
@@ -6771,16 +6858,16 @@ ${tableRows}
     }
 
     // 5. 생산 가능 대수 (BOM 기반)
-    if (customBomData && Object.keys(customBomData).length > 0) {
+    if (customBomData && typeof customBomData === 'object' && Object.keys(customBomData).length > 0) {
       lines.push('\n[생산 가능 대수]');
       Object.entries(customBomData).forEach(([model, bom]) => {
-        if (!bom || bom.length === 0) return;
+        if (!Array.isArray(bom) || bom.length === 0) return;
         let minUnits = Infinity;
         let bottleneck = '';
         bom.forEach(part => {
-          const inv = inventoryData.find(i => String(i.material) === String(part.material));
-          const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
-          const qStock = qStockData.filter(q => String(q.material) === String(part.material)).reduce((s, q) => s + (q.stock || 0), 0);
+          const invItem = inv.find(i => String(i.material) === String(part.material));
+          const stock = invItem ? (parseFloat(invItem.stock) || 0) : 0;
+          const qStock = qs.filter(q => String(q.material) === String(part.material)).reduce((s, q) => s + (q.stock || 0), 0);
           const available = stock - qStock;
           const possible = part.quantity > 0 ? Math.floor(available / part.quantity) : Infinity;
           if (possible < minUnits) { minUnits = possible; bottleneck = part.material; }
@@ -6818,7 +6905,7 @@ ${tableRows}
 ${context}`;
 
       const messages = [
-        ...chatMessages.filter(m => m.role !== 'system').slice(-10), // 최근 10개 대화 유지
+        ...chatMessages.filter(m => m.role !== 'system').slice(-6),
         { role: 'user', content: userMessage }
       ];
 
@@ -6832,7 +6919,8 @@ ${context}`;
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 1024,
+          max_tokens: 800,
+          stream: true,
           system: systemPrompt,
           messages: messages
         })
@@ -6843,11 +6931,52 @@ ${context}`;
         throw new Error(err.error?.message || `API 오류 (${resp.status})`);
       }
 
-      const data = await resp.json();
-      const reply = data.content?.[0]?.text || '응답을 받지 못했습니다.';
-      setChatMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      // 스트리밍: 빈 assistant 메시지 추가 후 실시간 업데이트
+      setChatMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      setChatLoading(false); // 로딩 인디케이터 끄고 텍스트가 타이핑되게
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const evt = JSON.parse(jsonStr);
+            if (evt.type === 'content_block_delta' && evt.delta?.text) {
+              setChatMessages(prev => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last?.role === 'assistant') {
+                  updated[updated.length - 1] = { ...last, content: last.content + evt.delta.text };
+                }
+                return updated;
+              });
+            }
+          } catch {}
+        }
+      }
     } catch (e) {
-      setChatMessages(prev => [...prev, { role: 'assistant', content: `❌ 오류: ${e.message}` }]);
+      setChatLoading(false);
+      setChatMessages(prev => {
+        // 빈 assistant 메시지가 이미 추가됐으면 그걸 에러로 교체
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant' && !last.content) {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: 'assistant', content: `❌ 오류: ${e.message}` };
+          return updated;
+        }
+        return [...prev, { role: 'assistant', content: `❌ 오류: ${e.message}` }];
+      });
     } finally {
       setChatLoading(false);
     }
@@ -7830,15 +7959,22 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
       {/* 🤖 AI 챗봇 플로팅 UI */}
       {!chatOpen && (
-        <button onClick={() => setChatOpen(true)}
-          className="fixed bottom-6 right-6 z-[80] w-14 h-14 bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center group"
-          title="AI 창고 어시스턴트">
-          <Bot className="w-7 h-7" />
-          <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full animate-pulse" />
-        </button>
+        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[80] flex flex-col items-end gap-2">
+          <div className={`hidden md:block ${darkMode ? 'bg-gray-800 text-gray-200 border-gray-700' : 'bg-white text-gray-700 border-gray-200'} px-3 py-2 rounded-xl shadow-lg text-xs font-medium border`}
+            style={{animation: 'chatFloat 3s ease-in-out infinite'}}>
+            💡 궁금한 게 있으면 물어보세요!
+            <style>{`@keyframes chatFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}`}</style>
+          </div>
+          <button onClick={() => setChatOpen(true)}
+            className="w-12 h-12 md:w-14 md:h-14 bg-gradient-to-br from-indigo-600 to-purple-600 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all flex items-center justify-center"
+            title="AI 창고 어시스턴트">
+            <Bot className="w-6 h-6 md:w-7 md:h-7" />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full animate-pulse" />
+          </button>
+        </div>
       )}
       {chatOpen && (
-        <div className={`fixed bottom-6 right-6 z-[80] w-[400px] h-[540px] ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border rounded-2xl shadow-2xl flex flex-col overflow-hidden`}>
+        <div className={`fixed inset-4 md:inset-auto md:bottom-6 md:right-6 z-[80] md:w-[400px] md:h-[540px] ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border rounded-2xl shadow-2xl flex flex-col overflow-hidden`}>
           {/* 헤더 */}
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-2">
@@ -7921,7 +8057,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
       {/* Header */}
       <header className={`${darkMode ? 'bg-gradient-to-r from-gray-800 to-gray-900' : 'bg-gradient-to-r from-indigo-700 to-indigo-900'} text-white shadow-lg`}>
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="max-w-[1400px] mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="bg-amber-400 text-gray-900 px-3 py-2 rounded-lg font-bold text-sm">
@@ -8073,7 +8209,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
       {/* PC용 Nav - 상단 */}
       <nav className={`hidden md:block ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-b'} shadow-sm sticky top-0 z-10`}>
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="max-w-[1400px] mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto">
             {[
               { id: 'dashboard', label: 'Production', icon: BarChart3 },
@@ -8164,7 +8300,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           <div className="bg-white w-full rounded-t-2xl p-4 pb-8" onClick={e => e.stopPropagation()}>
             <div className="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4"></div>
             <h3 className="font-semibold text-lg mb-4">메뉴</h3>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
                 { id: 'dashboard', label: 'Production', icon: BarChart3 },
                 { id: 'delivery', label: 'Delivery', icon: Truck },
@@ -8173,6 +8309,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 { id: 'pick', label: 'Cycle', icon: Clock },
                 { id: 'kpi', label: 'KPI', icon: TrendingUp },
                 { id: 'analysis', label: 'Analysis', icon: BarChart3 },
+                { id: 'locator', label: 'Locator', icon: Search },
+                { id: 'climate', label: 'Climate', icon: Thermometer },
                 ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
               ].map(tab => (
                 <button
@@ -8202,7 +8340,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       )}
 
       {/* Main */}
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-24 md:pb-6">
+      <main className="max-w-[1400px] mx-auto px-6 py-6 pb-24 md:pb-6">
 
         {/* No Data Message */}
         {inventoryData.length === 0 && activeTab !== 'pick' && activeTab !== 'receive' && activeTab !== 'todo' && activeTab !== 'kitting' && activeTab !== 'kpi' && (
@@ -8434,7 +8572,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   {showSapSchedule ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
                 </div>
                 {showSapSchedule && (
-                  <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2">
+                  <div className="mt-3 grid grid-cols-2 md:grid-cols-5 xl:grid-cols-6 gap-2">
                     <div className="bg-white rounded-lg p-2.5 border border-emerald-200">
                       <p className="text-[10px] text-emerald-600 font-bold mb-1">ZBIN (Stock)</p>
                       <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:20 / 14:00</p>
@@ -8482,10 +8620,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <p className="text-xs text-gray-400">SAP data syncing from GitHub</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-3">
                   {[1,2,3,4].map(i => <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse"></div>)}
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
                   {[1,2,3].map(i => <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse"></div>)}
                 </div>
               </div>
@@ -8539,8 +8677,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 const shortageStock = modelStatus.filter(m => m.status === 'shortage');
 
                 return (
-                  <div className="grid grid-cols-4 gap-3 mb-4">
-                    <div 
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <div
                       className="bg-purple-50 border border-purple-200 rounded-lg p-3 cursor-pointer hover:bg-purple-100 transition"
                       onClick={() => setShowModelDetailModal('excess')}
                     >
@@ -8595,7 +8733,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <h4 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-purple-100 rounded text-xs">Maxwell 16 시리즈</span>
                   </h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                     {Object.entries(MODEL_WEIGHTS).filter(([_, info]) => info.series === '16').map(([model, info]) => {
                       const prodInfo = producibleUnits[model] || { units: 0, coverage: '0' };
                       const TARGET = { RSC16: { min: 10, max: 30 }, CSC16: { min: 5, max: 10 }, FSC16: { min: 2, max: 2 } };
@@ -8707,7 +8845,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-blue-100 rounded text-xs">Maxwell 48 시리즈</span>
                   </h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                     {Object.entries(MODEL_WEIGHTS).filter(([_, info]) => info.series === '48').map(([model, info]) => {
                       const prodInfo = producibleUnits[model] || { units: 0, coverage: '0' };
                       const TARGET = { RSC48: { min: 10, max: 20 }, CSC48: { min: 3, max: 10 } };
@@ -8819,7 +8957,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <h4 className="text-sm font-semibold text-orange-600 mb-3 flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-orange-100 rounded text-xs">HSM 시리즈</span>
                   </h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                     {Object.entries(MODEL_WEIGHTS).filter(([_, info]) => info.series === 'HSM').map(([model, info]) => {
                       const prodInfo = producibleUnits[model] || { units: 0, coverage: '0' };
                       const range = { min: 1, max: 5 };
@@ -8964,7 +9102,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   const shortageStock = subComStatus.filter(m => m.status === 'shortage');
 
                   return (
-                    <div className="grid grid-cols-4 gap-3 mb-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                       <div 
                         className="bg-purple-50 border border-purple-200 rounded-lg p-3 cursor-pointer hover:bg-purple-100 transition"
                         onClick={() => setShowSubcomDetailModal('excess')}
@@ -9028,7 +9166,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <h4 className="text-sm font-semibold text-purple-700 mb-3 flex items-center gap-2">
                         <span className="px-2 py-0.5 bg-purple-100 rounded text-xs">Maxwell 16 시리즈</span>
                       </h4>
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                         {filtered16.map(([subComName, info]) => {
                           const currentStock = inventoryData.filter(i => i.material === subComName).reduce((sum, i) => sum + (i.stock || 0), 0);
                           const range = SUBCOM_SAFETY;
@@ -9139,7 +9277,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <h4 className="text-sm font-semibold text-blue-700 mb-3 flex items-center gap-2">
                         <span className="px-2 py-0.5 bg-blue-100 rounded text-xs">Maxwell 48 시리즈</span>
                       </h4>
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                         {filtered48.map(([subComName, info]) => {
                           const currentStock = inventoryData.filter(i => i.material === subComName).reduce((sum, i) => sum + (i.stock || 0), 0);
                           const range = subComName === 'KB0770' ? SUBCOM_SAFETY_KB0770 : SUBCOM_SAFETY;
@@ -9313,7 +9451,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 return (
                   <div className="space-y-4">
                     {/* 요약 카드 */}
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-5 gap-3">
                       <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center cursor-pointer hover:shadow-md transition" onClick={() => setShowShortageDetailModal('critical')}>
                         <p className="text-2xl font-bold text-red-600">{criticalCount}</p>
                         <p className="text-xs text-red-600">생산불가 (0대)</p>
@@ -9821,7 +9959,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           <div className="space-y-6">
 
 {/* 총 현황 요약 */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
               <div className="bg-white rounded-xl shadow-sm p-5 border-l-4 border-indigo-500">
                 <p className="text-sm text-gray-500">총 품목</p>
                 <p className="text-2xl font-bold">{totals.items.toLocaleString()}개</p>
@@ -10135,7 +10273,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
 
               {/* 랙 타입별 요약 */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-4 mb-4">
                 {(() => {
                   const allRacks = Object.values(RACK_SPEC).flat();
                   const heavyRacks = allRacks.filter(r => r.type === '중량랙');
@@ -10173,7 +10311,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               {/* 박스 타입별 현황 - 실제 박스 개수로 계산 */}
               <div className="bg-white/5 rounded-lg p-4">
                 <p className="text-sm font-medium mb-3">📦 박스 타입별 사용 현황 <span className="text-xs text-slate-400">(재고 ÷ Qty/Box = 박스 수)</span></p>
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                <div className="grid grid-cols-3 md:grid-cols-6 xl:grid-cols-8 gap-2">
                   {['PLASTIC-XL', 'PLASTIC-M', 'PLASTIC-S', 'PCB BOX-L', 'PCB BOX-M', 'PAPER-L'].map(code => {
                     const box = BOX_TYPES[code] || { name: code, width: 0, depth: 0 };
                     // 해당 박스 타입을 사용하는 Material의 실제 박스 개수 합계
@@ -10216,7 +10354,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2">
                   {fullBins.slice(0, 8).map((item, idx) => (
                     <div key={idx} className="bg-white/20 rounded px-3 py-2 text-sm flex items-center justify-between">
                       <span className="font-medium">{item.rack} - {item.bin}</span>
@@ -10583,9 +10721,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* 불출 통계 카드 */}
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-6 gap-4">
               {(() => {
-                const monthPicks = pickCycles.filter(p => 
+                const monthPicks = pickCycles.filter(p =>
                   p.completed?.startsWith(pickFilterMonth) || p.basicStartDate?.startsWith(pickFilterMonth)
                 );
                 const completedPicks = monthPicks.filter(p => p.status === 'completed');
@@ -10767,7 +10905,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-5 gap-4">
               {/* Maxwell 48 (RSC48 + CSC48) */}
               {(() => {
                 const picks = pickCycles.filter(p => ['RSC48', 'CSC48'].includes(p.model) && p.cycleMin);
@@ -11103,7 +11241,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* Kitting 통계 카드 */}
-            <div className="grid grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-6 gap-4">
               {(() => {
                 const monthKittings = filteredSortedKittings;
                 const completedKittings = monthKittings.filter(k => k.status === 'completed');
@@ -11498,8 +11636,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           });
           const sortedDates = Object.keys(byDate).sort();
 
-          // 납기 지연 (납기일이 오늘 이전 + 미입고 수량 > 0)
-          const overdueDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
+          // 납기 지연 (납기일이 오늘 이전 + 미입고 수량 > 0, dismissed 제외)
+          const allOverdueDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
+          const overdueDeliveries = allOverdueDeliveries.filter(d => !overdueDismissed.includes(`${d.poNo}_${d.material}`));
 
           // 수입검사 대기 (Q-Stock, F1/S1 제외)
           const filteredQStock = qStockData.filter(item => {
@@ -11546,11 +11685,101 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {/* 납기 지연 (있을 때만) */}
             {overdueDeliveries.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <h3 className="font-bold text-red-800 mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)</h3>
+                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                  <h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
+                    {overdueDismissed.length > 0 && <button onClick={() => { setOverdueDismissed([]); safeStorage.removeItem('pbk_overdue_dismissed'); }} className="text-[10px] font-normal text-gray-400 hover:text-red-500 ml-2">(숨김 {overdueDismissed.length}건 복원)</button>}
+                  </h3>
+                  <div className="flex gap-2">
+                    {overdueSelected.size > 0 && (
+                      <>
+                        <button onClick={() => {
+                          const selectedKeys = [...overdueSelected];
+                          const newDismissed = [...overdueDismissed, ...selectedKeys];
+                          setOverdueDismissed(newDismissed);
+                          safeStorage.setItem('pbk_overdue_dismissed', JSON.stringify(newDismissed));
+                          setOverdueSelected(new Set());
+                          showToast && showToast(`${selectedKeys.length}건 숨김 처리됨`, 'success');
+                        }} className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600 flex items-center gap-1">
+                          <X className="w-3 h-3" /> 선택 숨김 ({overdueSelected.size})
+                        </button>
+                        <button onClick={async () => {
+                          const selectedItems = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
+                          if (selectedItems.length === 0) return;
+                          const ghToken = safeStorage.getItem('pbk_gh_token');
+                          if (!ghToken) { showToast('GitHub 토큰이 없습니다. 콘솔에서 localStorage.setItem("pbk_gh_token","토큰")을 실행해주세요.', 'error'); return; }
+                          const today = new Date().toISOString().slice(0, 10);
+                          const toEmail = 'jimin.jung@promega.com'; // 테스트용 (실사용: jiwon.hwang@promega.com)
+                          let bodyHtml = `<div style="font-family:'Malgun Gothic',Arial,sans-serif;max-width:800px;">`;
+                          bodyHtml += `<p>안녕하세요, 정지민입니다.</p>`;
+                          bodyHtml += `<p>아래 PO 건에 대해 납기 지연이 확인되어 검토 요청드립니다.<br/>Order close 또는 납품 예정 여부 확인 부탁드립니다.</p>`;
+                          bodyHtml += `<br/><p><b>📋 납기 지연 리스트 - ${today} (${selectedItems.length}건)</b></p>`;
+                          bodyHtml += `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;width:100%;">`;
+                          bodyHtml += `<tr style="background:#f3f4f6;"><th style="border:1px solid #e5e7eb;padding:8px;">No</th><th style="border:1px solid #e5e7eb;padding:8px;">PO</th><th style="border:1px solid #e5e7eb;padding:8px;">Material</th><th style="border:1px solid #e5e7eb;padding:8px;">Description</th><th style="border:1px solid #e5e7eb;padding:8px;">공급업체</th><th style="border:1px solid #e5e7eb;padding:8px;">납기일</th><th style="border:1px solid #e5e7eb;padding:8px;">미입고</th><th style="border:1px solid #e5e7eb;padding:8px;">현재재고</th></tr>`;
+                          selectedItems.forEach((d, idx) => {
+                            const inv = inventoryData.find(it => String(it.material) === d.material);
+                            const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
+                            bodyHtml += `<tr><td style="border:1px solid #e5e7eb;padding:8px;text-align:center;">${idx+1}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo}</td><td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.description}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier}</td><td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty} ${d.unit}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${stock > 0 ? stock + ' EA' : '-'}</td></tr>`;
+                          });
+                          bodyHtml += `</table><br/><p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`;
+                          bodyHtml += `<br/><p style="color:#999;font-size:11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p></div>`;
+                          const subject = `[납기 지연 검토 요청] ${selectedItems.length}건 (${today})`;
+                          try {
+                            showToast('📧 메일 발송 중...', 'info');
+                            const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/actions/workflows/overdue-email.yml/dispatches', {
+                              method: 'POST',
+                              headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ ref: 'main', inputs: { to_email: toEmail, subject, body_html: bodyHtml, cc_email: 'jimin.jung@promega.com' } })
+                            });
+                            if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 완료! (${selectedItems.length}건 → ${toEmail})`, 'success');
+                            else { const err = await resp.json().catch(() => ({})); throw new Error(err.message || `발송 실패 (${resp.status})`); }
+                          } catch (e) { showToast(`❌ 메일 발송 실패: ${e.message}`, 'error'); }
+                        }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
+                          <Mail className="w-3 h-3" /> 선택 검토메일 ({overdueSelected.size})
+                        </button>
+                      </>
+                    )}
+                    <button onClick={async () => {
+                      const ghToken = safeStorage.getItem('pbk_gh_token');
+                      if (!ghToken) { showToast('GitHub 토큰이 없습니다. 콘솔에서 localStorage.setItem("pbk_gh_token","토큰")을 실행해주세요.', 'error'); return; }
+                      const today = new Date().toISOString().slice(0, 10);
+                      const toEmail = 'jimin.jung@promega.com'; // 테스트용 (실사용: jiwon.hwang@promega.com)
+                      let bodyHtml = `<div style="font-family:'Malgun Gothic',Arial,sans-serif;max-width:800px;">`;
+                      bodyHtml += `<p>안녕하세요, 정지민입니다.</p>`;
+                      bodyHtml += `<p>아래 PO 건에 대해 납기 지연이 확인되어 검토 요청드립니다.<br/>Order close 또는 납품 예정 여부 확인 부탁드립니다.</p>`;
+                      bodyHtml += `<br/><p><b>📋 납기 지연 리스트 - ${today} (${overdueDeliveries.length}건)</b></p>`;
+                      bodyHtml += `<table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:13px;width:100%;">`;
+                      bodyHtml += `<tr style="background:#f3f4f6;"><th style="border:1px solid #e5e7eb;padding:8px;">No</th><th style="border:1px solid #e5e7eb;padding:8px;">PO</th><th style="border:1px solid #e5e7eb;padding:8px;">Material</th><th style="border:1px solid #e5e7eb;padding:8px;">Description</th><th style="border:1px solid #e5e7eb;padding:8px;">공급업체</th><th style="border:1px solid #e5e7eb;padding:8px;">납기일</th><th style="border:1px solid #e5e7eb;padding:8px;">미입고</th><th style="border:1px solid #e5e7eb;padding:8px;">현재재고</th></tr>`;
+                      overdueDeliveries.forEach((d, idx) => {
+                        const inv = inventoryData.find(it => String(it.material) === d.material);
+                        const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
+                        bodyHtml += `<tr><td style="border:1px solid #e5e7eb;padding:8px;text-align:center;">${idx+1}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo}</td><td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.description}</td><td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier}</td><td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty} ${d.unit}</td><td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${stock > 0 ? stock + ' EA' : '-'}</td></tr>`;
+                      });
+                      bodyHtml += `</table><br/><p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`;
+                      bodyHtml += `<br/><p style="color:#999;font-size:11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p></div>`;
+                      const subject = `[납기 지연 검토 요청] ${overdueDeliveries.length}건 (${today})`;
+                      try {
+                        showToast('📧 메일 발송 중...', 'info');
+                        const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/actions/workflows/overdue-email.yml/dispatches', {
+                          method: 'POST',
+                          headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ ref: 'main', inputs: { to_email: toEmail, subject, body_html: bodyHtml, cc_email: 'jimin.jung@promega.com' } })
+                        });
+                        if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 완료! (${overdueDeliveries.length}건 → ${toEmail})`, 'success');
+                        else { const err = await resp.json().catch(() => ({})); throw new Error(err.message || `발송 실패 (${resp.status})`); }
+                      } catch (e) { showToast(`❌ 메일 발송 실패: ${e.message}`, 'error'); }
+                    }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 flex items-center gap-1">
+                      <Mail className="w-3 h-3" /> 전체 검토메일
+                    </button>
+                  </div>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead><tr className="text-left text-xs text-red-600 border-b border-red-200">
-                      <th className="pb-2 pl-3 whitespace-nowrap" style={{width:'90px'}}>PO</th>
+                      <th className="pb-2 pl-2 w-8"><input type="checkbox" className="rounded" checked={overdueSelected.size === overdueDeliveries.length && overdueDeliveries.length > 0} onChange={e => {
+                        if (e.target.checked) setOverdueSelected(new Set(overdueDeliveries.map(d => `${d.poNo}_${d.material}`)));
+                        else setOverdueSelected(new Set());
+                      }} /></th>
+                      <th className="pb-2 whitespace-nowrap" style={{width:'90px'}}>PO</th>
                       <th className="pb-2 whitespace-nowrap" style={{width:'65px'}}>Material</th>
                       <th className="pb-2" style={{width:'30%'}}>Description</th>
                       <th className="pb-2" style={{width:'20%'}}>공급업체</th>
@@ -11561,9 +11790,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <tbody>{overdueDeliveries.slice(0, 20).map((d, i) => {
                       const inv = inventoryData.find(it => String(it.material) === d.material);
                       const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
+                      const key = `${d.poNo}_${d.material}`;
                       return (
-                        <tr key={i} className="border-b border-red-100 hover:bg-red-100/50">
-                          <td className="py-1.5 text-xs pl-3 whitespace-nowrap">{d.poNo}</td>
+                        <tr key={i} className={`border-b border-red-100 hover:bg-red-100/50 ${overdueSelected.has(key) ? 'bg-red-100' : ''}`}>
+                          <td className="py-1.5 pl-2"><input type="checkbox" className="rounded" checked={overdueSelected.has(key)} onChange={e => {
+                            const next = new Set(overdueSelected);
+                            if (e.target.checked) next.add(key); else next.delete(key);
+                            setOverdueSelected(next);
+                          }} /></td>
+                          <td className="py-1.5 text-xs whitespace-nowrap">{d.poNo}</td>
                           <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
                           <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
                           <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
@@ -15800,7 +16035,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* 랙 요약 */}
-            <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div className="bg-slate-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-500">품목 수</p>
                 <p className="text-xl font-bold text-indigo-600">{selectedRackDetail.items}개</p>

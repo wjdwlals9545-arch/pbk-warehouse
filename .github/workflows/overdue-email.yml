@@ -1,0 +1,40 @@
+name: Overdue Delivery Review Email
+
+on:
+  workflow_dispatch:
+    inputs:
+      to_email:
+        description: '받는 사람 이메일'
+        required: true
+        type: string
+      subject:
+        description: '메일 제목'
+        required: true
+        type: string
+      body_html:
+        description: '메일 본문 (HTML)'
+        required: true
+        type: string
+      cc_email:
+        description: '참조 이메일 (선택)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Overdue Review Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          secure: false
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: ${{ inputs.subject }}
+          html_body: ${{ inputs.body_html }}
+          from: jimin.jung@promega.com
+          to: ${{ inputs.to_email }}
+          cc: ${{ inputs.cc_email }}
