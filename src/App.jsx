@@ -1939,6 +1939,7 @@ export default function PBKWarehouseSystem() {
   });
   // 납기 지연 선택/숨김 관리
   const [overdueSelected, setOverdueSelected] = useState(new Set());
+  const [deliveryCardExpand, setDeliveryCardExpand] = useState(null);
   const [overdueDismissed, setOverdueDismissed] = useState(() => {
     try { const s = safeStorage.getItem('pbk_overdue_dismissed'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
@@ -11649,6 +11650,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             return !bin.startsWith('F1') && !bin.startsWith('S1');
           });
 
+          const thisFriday = new Date(new Date(thisMonday).setDate(thisMonday.getDate()+4)).toISOString().slice(0,10);
+          const thisWeekItems = upcomingDeliveries.filter(d => d.deliveryDate <= thisFriday);
+          const nextWeekItems = upcomingDeliveries.filter(d => d.deliveryDate > thisFriday);
+
           return (
           <div className="space-y-6">
             {/* 헤더 */}
@@ -11667,23 +11672,121 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
             {/* 요약 카드 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-white rounded-xl p-4 border shadow-sm">
+              <div onClick={() => setDeliveryCardExpand(prev => prev === 'thisWeek' ? null : 'thisWeek')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'thisWeek' ? 'ring-2 ring-blue-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">이번주 납품</p>
-                <p className="text-2xl font-bold text-blue-600">{upcomingDeliveries.filter(d => d.deliveryDate <= new Date(new Date(thisMonday).setDate(thisMonday.getDate()+4)).toISOString().slice(0,10)).length}<span className="text-sm font-normal ml-1">건</span></p>
+                <p className="text-2xl font-bold text-blue-600">{thisWeekItems.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
-              <div className="bg-white rounded-xl p-4 border shadow-sm">
+              <div onClick={() => setDeliveryCardExpand(prev => prev === 'nextWeek' ? null : 'nextWeek')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'nextWeek' ? 'ring-2 ring-indigo-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">다음주 납품</p>
-                <p className="text-2xl font-bold text-indigo-600">{upcomingDeliveries.filter(d => d.deliveryDate > new Date(new Date(thisMonday).setDate(thisMonday.getDate()+4)).toISOString().slice(0,10)).length}<span className="text-sm font-normal ml-1">건</span></p>
+                <p className="text-2xl font-bold text-indigo-600">{nextWeekItems.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
-              <div className="bg-white rounded-xl p-4 border shadow-sm">
+              <div onClick={() => setDeliveryCardExpand(prev => prev === 'overdue' ? null : 'overdue')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'overdue' ? 'ring-2 ring-red-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">납기 지연</p>
                 <p className="text-2xl font-bold text-red-600">{overdueDeliveries.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
-              <div className="bg-white rounded-xl p-4 border shadow-sm">
+              <div onClick={() => setDeliveryCardExpand(prev => prev === 'qstock' ? null : 'qstock')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'qstock' ? 'ring-2 ring-amber-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">수입검사 대기</p>
                 <p className="text-2xl font-bold text-amber-600">{filteredQStock.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
             </div>
+
+            {/* 카드 클릭 시 상세 리스트 */}
+            {deliveryCardExpand && (
+              <div className={`rounded-xl border p-4 ${
+                deliveryCardExpand === 'thisWeek' ? 'bg-blue-50 border-blue-200' :
+                deliveryCardExpand === 'nextWeek' ? 'bg-indigo-50 border-indigo-200' :
+                deliveryCardExpand === 'overdue' ? 'bg-red-50 border-red-200' :
+                'bg-amber-50 border-amber-200'
+              }`}>
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className={`font-bold text-sm ${
+                    deliveryCardExpand === 'thisWeek' ? 'text-blue-800' :
+                    deliveryCardExpand === 'nextWeek' ? 'text-indigo-800' :
+                    deliveryCardExpand === 'overdue' ? 'text-red-800' :
+                    'text-amber-800'
+                  }`}>
+                    {deliveryCardExpand === 'thisWeek' ? `📦 이번주 납품 (${thisWeekItems.length}건)` :
+                     deliveryCardExpand === 'nextWeek' ? `📦 다음주 납품 (${nextWeekItems.length}건)` :
+                     deliveryCardExpand === 'overdue' ? `⚠️ 납기 지연 (${overdueDeliveries.length}건)` :
+                     `🔍 수입검사 대기 (${filteredQStock.length}건)`}
+                  </h3>
+                  <button onClick={() => setDeliveryCardExpand(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="max-h-[320px] overflow-y-auto rounded-lg border bg-white">
+                  {deliveryCardExpand !== 'qstock' ? (
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-gray-50 z-10">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">PO</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">자재코드</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">품명</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">공급업체</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">납기일</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">미입고</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">현재재고</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(deliveryCardExpand === 'thisWeek' ? thisWeekItems :
+                          deliveryCardExpand === 'nextWeek' ? nextWeekItems :
+                          overdueDeliveries
+                        ).map((d, i) => {
+                          const inv = inventoryData.find(it => String(it.material) === String(d.material));
+                          return (
+                            <tr key={i} className="border-b last:border-b-0 hover:bg-gray-50">
+                              <td className="px-3 py-2 text-gray-700">{d.poNo}</td>
+                              <td className="px-3 py-2 font-mono font-bold text-gray-800">{d.material}</td>
+                              <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{d.description || '-'}</td>
+                              <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{d.supplier || '-'}</td>
+                              <td className={`px-3 py-2 text-center font-medium ${deliveryCardExpand === 'overdue' ? 'text-red-600' : 'text-gray-700'}`}>{d.deliveryDate}</td>
+                              <td className="px-3 py-2 text-right font-bold text-gray-800">{d.qty} {d.unit || 'EA'}</td>
+                              <td className="px-3 py-2 text-right text-gray-500">{inv ? `${inv.stock} ${inv.unit || 'EA'}` : '-'}</td>
+                            </tr>
+                          );
+                        })}
+                        {(deliveryCardExpand === 'thisWeek' ? thisWeekItems :
+                          deliveryCardExpand === 'nextWeek' ? nextWeekItems :
+                          overdueDeliveries
+                        ).length === 0 && (
+                          <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">데이터가 없습니다</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-gray-50 z-10">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">자재코드</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">품명</th>
+                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">위치</th>
+                          <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">수량</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">입고일</th>
+                          <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">경과일</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredQStock.map((item, i) => {
+                          const days = item.grDate ? Math.floor((now - new Date(item.grDate)) / (1000*60*60*24)) : '-';
+                          return (
+                            <tr key={i} className="border-b last:border-b-0 hover:bg-gray-50">
+                              <td className="px-3 py-2 font-mono font-bold text-gray-800">{item.material}</td>
+                              <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{item.description || '-'}</td>
+                              <td className="px-3 py-2 text-gray-700">{item.bin || '-'}</td>
+                              <td className="px-3 py-2 text-right font-bold text-gray-800">{item.stock} {item.unit || 'EA'}</td>
+                              <td className="px-3 py-2 text-center text-gray-700">{item.grDate || '-'}</td>
+                              <td className={`px-3 py-2 text-center font-bold ${days > 10 ? 'text-red-600' : days >= 7 ? 'text-amber-600' : 'text-green-600'}`}>{days}일</td>
+                            </tr>
+                          );
+                        })}
+                        {filteredQStock.length === 0 && (
+                          <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">데이터가 없습니다</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* 납기 지연 (있을 때만) */}
             {overdueDeliveries.length > 0 && (
