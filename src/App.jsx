@@ -18117,6 +18117,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           'Maxwell 16': ['RSC16', 'CSC16', 'FSC16'],
           'HSM': ['HSM'],
         };
+        // getModelGroup: {group, subComParts} 반환
         const getModelGroup = (matCode) => {
           const mc = String(matCode);
           // 1. 메인 BOM에서 직접 찾기
@@ -18127,36 +18128,39 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const found = Array.isArray(bom)
                 ? bom.some(b => String(b.material) === mc)
                 : Object.keys(bom).includes(mc);
-              if (found) return group;
+              if (found) return { group, subComParts: null };
             }
           }
-          // 2. Sub-component BOM에서 찾기 (KB 자재의 하위 원자재)
+          // 2. Sub-component BOM에서 찾기 → 어떤 KB에 들어가는지 전부 수집
+          const foundKBs = [];
           if (subComponentBomData && typeof subComponentBomData === 'object') {
             for (const [subName, subBom] of Object.entries(subComponentBomData)) {
               if (!subBom || typeof subBom !== 'object') continue;
               const subFound = Array.isArray(subBom)
                 ? subBom.some(b => String(b.material) === mc)
                 : Object.keys(subBom).includes(mc);
-              if (subFound) {
-                // SUBCOM_INFO로 시리즈 판별
-                const seriesInfo = SUBCOM_INFO[subName];
-                if (seriesInfo) {
-                  if (seriesInfo.includes('48')) return 'Maxwell 48';
-                  if (seriesInfo.includes('16')) return 'Maxwell 16';
-                }
-                // sub-component 이름으로 추정
-                if (subName.toLowerCase().includes('hsm') || subName.toLowerCase().includes('ares')) return 'HSM';
-                return 'Maxwell 48'; // 기본값
+              if (subFound) foundKBs.push(subName);
+            }
+          }
+          if (foundKBs.length > 0) {
+            // SUBCOM_INFO로 시리즈 판별 (첫 KB 기준)
+            let group = 'Others';
+            for (const kb of foundKBs) {
+              const si = SUBCOM_INFO[kb];
+              if (si) {
+                if (si.includes('48')) { group = 'Maxwell 48'; break; }
+                if (si.includes('16')) { group = 'Maxwell 16'; break; }
               }
             }
+            return { group, subComParts: foundKBs };
           }
           // 3. SUBCOM_INFO에서 KB 자재 자체 확인
           if (SUBCOM_INFO[mc]) {
             const si = SUBCOM_INFO[mc];
-            if (si.includes('48')) return 'Maxwell 48';
-            if (si.includes('16')) return 'Maxwell 16';
+            if (si.includes('48')) return { group: 'Maxwell 48', subComParts: null };
+            if (si.includes('16')) return { group: 'Maxwell 16', subComParts: null };
           }
-          return null;
+          return { group: null, subComParts: null };
         };
 
         // 각 랙(A1, A2, B1...) 안에서 현재 자재 목록 + 모델그룹 + 무게 분석
@@ -18192,19 +18196,25 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           if (!rackAnalysis[rackId]) rackAnalysis[rackId] = [];
           const matStr = String(item.material);
           const isFixed = FIXED_MATERIALS.has(matStr);
-          const group = getModelGroup(matStr);
+          const { group, subComParts } = getModelGroup(matStr);
           const wd = weightData[matStr] || DEFAULT_WEIGHT_DATA?.[matStr];
           const weightPerEA = wd ? wd.w : 0;
+          // 박스당 수량 → 점유 Bin 수 계산
+          const qtyPerBox = MATERIAL_QTY_PER_BOX?.[matStr] || null;
+          const stock = item.stock || 0;
+          const binsOccupied = qtyPerBox ? Math.max(1, Math.ceil(stock / qtyPerBox)) : 1;
 
           rackAnalysis[rackId].push({
             material: matStr,
             description: item.description || '',
             bin: item.bin,
-            stock: item.stock || 0,
+            stock,
             group: group || 'Others',
+            subComParts,
             weightPerEA,
-            totalWeight: weightPerEA * (item.stock || 0),
+            totalWeight: weightPerEA * stock,
             isFixed,
+            binsOccupied,
           });
         });
 
@@ -18249,15 +18259,21 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           // 현재 movable 아이템들의 Bin 목록 (정렬)
           const currentBins = movableItems.map(i => i.bin).sort();
 
-          // 최적 배치에 Bin 할당
+          // 최적 배치에 Bin 할당 (binsOccupied 고려)
           const suggestions = [];
-          optimalOrder.forEach((item, idx) => {
-            const suggestedBin = idx < availableBins.length ? availableBins[idx] : item.bin;
+          let binIdx = 0;
+          optimalOrder.forEach((item) => {
+            const startBinIdx = binIdx;
+            const endBinIdx = Math.min(binIdx + item.binsOccupied - 1, availableBins.length - 1);
+            const suggestedBin = startBinIdx < availableBins.length ? availableBins[startBinIdx] : item.bin;
+            const suggestedBinEnd = item.binsOccupied > 1 && endBinIdx < availableBins.length ? availableBins[endBinIdx] : null;
+            binIdx += item.binsOccupied;
             if (suggestedBin !== item.bin) {
               suggestions.push({
                 ...item,
                 currentBin: item.bin,
                 suggestedBin,
+                suggestedBinEnd,
               });
               totalMoved++;
             }
@@ -18400,13 +18416,30 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             const gc = groupColors[s.group] || groupColors['Others'];
                             const currentNum = parseInt(s.currentBin.split('-')[1]) || 0;
                             const suggestNum = parseInt(s.suggestedBin.split('-')[1]) || 0;
-                            const reason = currentNum !== suggestNum
-                              ? (s.group !== 'Others' ? '모델 그룹핑 + 중량 배치' : '중량 배치')
-                              : '모델 그룹핑';
+                            const hasMoved = currentNum !== suggestNum;
+                            // 사유: 어떤 그룹 기준으로 그룹핑 되었는지 표시
+                            const groupLabel = s.subComParts && s.subComParts.length > 0
+                              ? s.subComParts.join(', ')
+                              : s.group;
+                            const reason = hasMoved
+                              ? (s.group !== 'Others' ? `${groupLabel} 그룹핑 + 중량 배치` : '중량 배치')
+                              : `${groupLabel} 그룹핑`;
+                            // Model 컬럼: sub-component면 KB 품번 표시
+                            const modelDisplay = s.subComParts && s.subComParts.length > 0
+                              ? s.subComParts.slice(0, 3).join(', ') + (s.subComParts.length > 3 ? '...' : '')
+                              : s.group;
+                            const suggestedBinDisplay = s.suggestedBinEnd && s.suggestedBinEnd !== s.suggestedBin
+                              ? `${s.suggestedBin}~${s.suggestedBinEnd.split('-')[1]}`
+                              : s.suggestedBin;
                             return (
                               <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700/50' : 'border-gray-100 hover:bg-purple-50/50'}`}>
                                 <td className="px-3 py-1.5">
-                                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? gc.darkBg + ' ' + gc.darkText : gc.bg + ' ' + gc.text}`}>{s.group}</span>
+                                  {s.subComParts && s.subComParts.length > 0 ? (
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-purple-900/40 text-purple-300' : 'bg-purple-100 text-purple-700'}`}
+                                      title={s.subComParts.join(', ')}>{modelDisplay}</span>
+                                  ) : (
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? gc.darkBg + ' ' + gc.darkText : gc.bg + ' ' + gc.text}`}>{modelDisplay}</span>
+                                  )}
                                 </td>
                                 <td className="px-3 py-1.5 font-mono text-xs font-bold">{s.material}</td>
                                 <td className={`px-3 py-1.5 text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 30)}</td>
@@ -18415,10 +18448,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 </td>
                                 <td className="px-3 py-1.5 text-center">
                                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>{s.currentBin}</span>
+                                  {s.binsOccupied > 1 && <span className={`ml-1 text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>({s.binsOccupied}칸)</span>}
                                 </td>
                                 <td className="px-3 py-1.5 text-center text-gray-400 text-xs">→</td>
                                 <td className="px-3 py-1.5 text-center">
-                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>{s.suggestedBin}</span>
+                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>{suggestedBinDisplay}</span>
+                                  {s.binsOccupied > 1 && <span className={`ml-1 text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>({s.binsOccupied}칸)</span>}
                                 </td>
                                 <td className={`px-3 py-1.5 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{reason}</td>
                               </tr>
