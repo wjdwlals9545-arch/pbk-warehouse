@@ -62,41 +62,15 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_TO=${toEmail}\n`);
             fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_CC=${ccEmail}\n`);
 
-      - name: Build Email JSON payload
-        run: |
-          python3 << 'PYEOF'
-          import json, os
-
-          subject = os.environ.get('EMAIL_SUBJECT', 'Overdue Delivery Alert')
-
-          with open('email_body.html', 'r') as f:
-              html_body = f.read()
-
-          # Resend 무료 플랜: 가입 이메일로만 발송 가능
-          payload = {
-              "from": "PBK Warehouse <onboarding@resend.dev>",
-              "to": ["wjdwlals9545@gmail.com"],
-              "subject": subject,
-              "html": html_body
-          }
-
-          with open('email_payload.json', 'w') as f:
-              json.dump(payload, f, ensure_ascii=False)
-          print(f"Payload written ({len(json.dumps(payload))} bytes)")
-          PYEOF
-
-      - name: Send Email via Resend
-        run: |
-          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" \
-            -X POST https://api.resend.com/emails \
-            -H "Authorization: Bearer ${{ secrets.RESEND_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -H "User-Agent: PBK-Warehouse/1.0" \
-            -d @email_payload.json)
-
-          echo "Response ($HTTP_CODE): $(cat response.json)"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Email sending failed with status $HTTP_CODE"
-            exit 1
-          fi
-          echo "✅ Email sent successfully!"
+      - name: Send Email via Gmail SMTP
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: ${{ env.EMAIL_SUBJECT }}
+          html_body: file://email_body.html
+          from: PBK Warehouse <pbkwarehouse1@gmail.com>
+          to: jiwon.hwang@promega.com
+          cc: jimin.jung@promega.com

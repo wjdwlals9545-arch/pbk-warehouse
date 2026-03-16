@@ -181,60 +181,30 @@ jobs:
               console.log('Test mode - skipping GitHub Issue');
             }
 
-      - name: Build Email JSON payload
+      - name: Build Email Subject
         if: steps.check.outputs.should_send == 'true' && steps.weekday_check.outputs.skip != 'true'
-        env:
-          IS_TEST: ${{ steps.check.outputs.is_test }}
-          URGENT_COUNT: ${{ steps.check.outputs.urgent_count }}
-          WARNING_COUNT: ${{ steps.check.outputs.warning_count }}
-          DATE_STR: ${{ steps.check.outputs.date_str }}
+        id: subject
         run: |
-          python3 << 'PYEOF'
-          import json, os
-
-          is_test = os.environ.get('IS_TEST') == 'true'
-          urgent = os.environ.get('URGENT_COUNT', '0')
-          warning = os.environ.get('WARNING_COUNT', '0')
-          date_str = os.environ.get('DATE_STR', '')
-
-          with open('qstock_email.html', 'r') as f:
-              html_body = f.read()
-
-          if is_test:
-              subject = f"[테스트] [수입검사 알림] 긴급 {urgent}건, 주의 {warning}건 ({date_str})"
-              payload = {
-                  "from": "PBK Warehouse <onboarding@resend.dev>",
-                  "to": ["wjdwlals9545@gmail.com"],
-                  "subject": subject,
-                  "html": html_body
-              }
-          else:
-              subject = f"[수입검사 알림] 긴급 {urgent}건, 주의 {warning}건 ({date_str})"
-              payload = {
-                  "from": "PBK Warehouse <onboarding@resend.dev>",
-                  "to": ["wjdwlals9545@gmail.com"],
-                  "subject": subject,
-                  "html": html_body
-              }
-
-          with open('email_payload.json', 'w') as f:
-              json.dump(payload, f, ensure_ascii=False)
-          print(f"Payload written ({len(json.dumps(payload))} bytes)")
-          PYEOF
-
-      - name: Send Email Alert via Resend
-        if: steps.check.outputs.should_send == 'true' && steps.weekday_check.outputs.skip != 'true'
-        run: |
-          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" \
-            -X POST https://api.resend.com/emails \
-            -H "Authorization: Bearer ${{ secrets.RESEND_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -H "User-Agent: PBK-Warehouse/1.0" \
-            -d @email_payload.json)
-
-          echo "Response ($HTTP_CODE): $(cat response.json)"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Email sending failed with status $HTTP_CODE"
-            exit 1
+          IS_TEST="${{ steps.check.outputs.is_test }}"
+          URGENT="${{ steps.check.outputs.urgent_count }}"
+          WARNING="${{ steps.check.outputs.warning_count }}"
+          DATE_STR="${{ steps.check.outputs.date_str }}"
+          if [ "$IS_TEST" = "true" ]; then
+            echo "value=[테스트] [수입검사 알림] 긴급 ${URGENT}건, 주의 ${WARNING}건 (${DATE_STR})" >> $GITHUB_OUTPUT
+          else
+            echo "value=[수입검사 알림] 긴급 ${URGENT}건, 주의 ${WARNING}건 (${DATE_STR})" >> $GITHUB_OUTPUT
           fi
-          echo "✅ Email sent successfully!"
+
+      - name: Send Email Alert via Gmail SMTP
+        if: steps.check.outputs.should_send == 'true' && steps.weekday_check.outputs.skip != 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.GMAIL_USERNAME }}
+          password: ${{ secrets.GMAIL_PASSWORD }}
+          subject: ${{ steps.subject.outputs.value }}
+          html_body: file://qstock_email.html
+          from: PBK Warehouse <pbkwarehouse1@gmail.com>
+          to: ${{ steps.check.outputs.is_test == 'true' && 'wjdwlals9545@gmail.com' || 'heejae.kim@promega.com,changyeol.yoo@promega.com' }}
+          cc: ${{ steps.check.outputs.is_test == 'true' && '' || 'jimin.jung@promega.com,kwangsub.ahn@promega.com' }}
