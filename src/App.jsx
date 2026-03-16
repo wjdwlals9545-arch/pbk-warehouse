@@ -18111,10 +18111,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         // 제외 Area
         const EXCLUDED_AREAS = new Set(['D2', 'E3', 'S1', 'F1', 'LABEL']);
 
-        // 모델 그룹 (48시리즈 / 16시리즈 / HSM)
+        // 모델 그룹 (Maxwell 48 / Maxwell 16 / HSM)
         const MODEL_GROUPS = {
-          '48시리즈': ['RSC48', 'CSC48'],
-          '16시리즈': ['RSC16', 'CSC16', 'FSC16'],
+          'Maxwell 48': ['RSC48', 'CSC48'],
+          'Maxwell 16': ['RSC16', 'CSC16', 'FSC16'],
           'HSM': ['HSM'],
         };
         const getModelGroup = (matCode) => {
@@ -18174,7 +18174,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             description: item.description || '',
             bin: item.bin,
             stock: item.stock || 0,
-            group: group || '기타',
+            group: group || 'Others',
             weightPerEA,
             totalWeight: weightPerEA * (item.stock || 0),
             isFixed,
@@ -18197,7 +18197,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           if (movableItems.length < 2) return;
 
           // 최적 배치: 모델그룹별로 묶고, 그룹 내 중량순 정렬
-          const groupOrder = ['48시리즈', '16시리즈', 'HSM', '기타'];
+          const groupOrder = ['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'];
           const grouped = {};
           movableItems.forEach(item => {
             if (!grouped[item.group]) grouped[item.group] = [];
@@ -18254,10 +18254,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         const score = totalOptimizable > 0 ? Math.round(((totalOptimizable - totalMoved) / totalOptimizable) * 100) : 100;
 
         const groupColors = {
-          '48시리즈': { bg: 'bg-emerald-100', text: 'text-emerald-700', darkBg: 'bg-emerald-900/40', darkText: 'text-emerald-300', dot: 'bg-emerald-500' },
-          '16시리즈': { bg: 'bg-blue-100', text: 'text-blue-700', darkBg: 'bg-blue-900/40', darkText: 'text-blue-300', dot: 'bg-blue-500' },
+          'Maxwell 48': { bg: 'bg-emerald-100', text: 'text-emerald-700', darkBg: 'bg-emerald-900/40', darkText: 'text-emerald-300', dot: 'bg-emerald-500' },
+          'Maxwell 16': { bg: 'bg-blue-100', text: 'text-blue-700', darkBg: 'bg-blue-900/40', darkText: 'text-blue-300', dot: 'bg-blue-500' },
           'HSM': { bg: 'bg-orange-100', text: 'text-orange-700', darkBg: 'bg-orange-900/40', darkText: 'text-orange-300', dot: 'bg-orange-500' },
-          '기타': { bg: 'bg-gray-100', text: 'text-gray-700', darkBg: 'bg-gray-700', darkText: 'text-gray-300', dot: 'bg-gray-500' },
+          'Others': { bg: 'bg-gray-100', text: 'text-gray-700', darkBg: 'bg-gray-700', darkText: 'text-gray-300', dot: 'bg-gray-500' },
         };
 
         return (
@@ -18311,7 +18311,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 ))}
                 <span className="flex items-center gap-1">
                   <span className="w-3 h-3 rounded bg-pink-500" />
-                  <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>고정(단프라)</span>
+                  <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>Fixed (PCBA)</span>
                 </span>
               </div>
 
@@ -18330,13 +18330,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <div className="flex items-center gap-2">
                         <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>📦 {rackId}</span>
                         <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {data.total}개 자재 | 이동 제안 {data.suggestions.length}건
-                          {data.fixed > 0 && ` | 고정 ${data.fixed}개`}
+                          {data.total} Items | Suggestions: {data.suggestions.length}
+                          {data.fixed > 0 && ` | Fixed: ${data.fixed}`}
                         </span>
                       </div>
                       {/* 모델 분포 미니 바 */}
                       <div className="flex h-3 w-32 rounded-full overflow-hidden">
-                        {['48시리즈', '16시리즈', 'HSM', '기타'].map(g => {
+                        {['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].map(g => {
                           const cnt = data.grouped[g]?.length || 0;
                           if (cnt === 0) return null;
                           return <div key={g} className={groupColors[g].dot} style={{ width: `${(cnt / data.movable) * 100}%` }} />;
@@ -18348,24 +18348,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <table className="w-full text-sm">
                         <thead className={`${darkMode ? 'bg-gray-750' : 'bg-gray-50/50'}`}>
                           <tr>
-                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>모델</th>
-                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>자재번호</th>
-                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>품명</th>
-                            <th className={`px-3 py-1.5 text-right text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>EA당 중량</th>
-                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>현재 Bin</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Model</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Part No.</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Description</th>
+                            <th className={`px-3 py-1.5 text-right text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Weight/EA</th>
+                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Current Bin</th>
                             <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>→</th>
-                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>제안 Bin</th>
-                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>사유</th>
+                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Suggested Bin</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Reason</th>
                           </tr>
                         </thead>
                         <tbody>
                           {data.suggestions.map((s, i) => {
-                            const gc = groupColors[s.group] || groupColors['기타'];
+                            const gc = groupColors[s.group] || groupColors['Others'];
                             const currentNum = parseInt(s.currentBin.split('-')[1]) || 0;
                             const suggestNum = parseInt(s.suggestedBin.split('-')[1]) || 0;
                             const reason = currentNum !== suggestNum
-                              ? (s.group !== '기타' ? '모델 그룹핑 + 중량 배치' : '중량 배치')
-                              : '모델 그룹핑';
+                              ? (s.group !== 'Others' ? 'Model Grouping + Weight' : 'Weight Arrangement')
+                              : 'Model Grouping';
                             return (
                               <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700/50' : 'border-gray-100 hover:bg-purple-50/50'}`}>
                                 <td className="px-3 py-1.5">
