@@ -18118,16 +18118,43 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           'HSM': ['HSM'],
         };
         const getModelGroup = (matCode) => {
+          const mc = String(matCode);
+          // 1. 메인 BOM에서 직접 찾기
           for (const [group, models] of Object.entries(MODEL_GROUPS)) {
             for (const model of models) {
               const bom = activeBom[model];
               if (!bom) continue;
-              const entries = Array.isArray(bom) ? bom : Object.entries(bom);
               const found = Array.isArray(bom)
-                ? bom.some(b => String(b.material) === String(matCode))
-                : Object.keys(bom).includes(String(matCode));
+                ? bom.some(b => String(b.material) === mc)
+                : Object.keys(bom).includes(mc);
               if (found) return group;
             }
+          }
+          // 2. Sub-component BOM에서 찾기 (KB 자재의 하위 원자재)
+          if (subComponentBomData && typeof subComponentBomData === 'object') {
+            for (const [subName, subBom] of Object.entries(subComponentBomData)) {
+              if (!subBom || typeof subBom !== 'object') continue;
+              const subFound = Array.isArray(subBom)
+                ? subBom.some(b => String(b.material) === mc)
+                : Object.keys(subBom).includes(mc);
+              if (subFound) {
+                // SUBCOM_INFO로 시리즈 판별
+                const seriesInfo = SUBCOM_INFO[subName];
+                if (seriesInfo) {
+                  if (seriesInfo.includes('48')) return 'Maxwell 48';
+                  if (seriesInfo.includes('16')) return 'Maxwell 16';
+                }
+                // sub-component 이름으로 추정
+                if (subName.toLowerCase().includes('hsm') || subName.toLowerCase().includes('ares')) return 'HSM';
+                return 'Maxwell 48'; // 기본값
+              }
+            }
+          }
+          // 3. SUBCOM_INFO에서 KB 자재 자체 확인
+          if (SUBCOM_INFO[mc]) {
+            const si = SUBCOM_INFO[mc];
+            if (si.includes('48')) return 'Maxwell 48';
+            if (si.includes('16')) return 'Maxwell 16';
           }
           return null;
         };
@@ -18345,7 +18372,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                     {/* 이동 제안 테이블 */}
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full text-sm table-fixed">
+                        <colgroup>
+                          <col style={{width:'11%'}} />
+                          <col style={{width:'10%'}} />
+                          <col style={{width:'25%'}} />
+                          <col style={{width:'10%'}} />
+                          <col style={{width:'11%'}} />
+                          <col style={{width:'3%'}} />
+                          <col style={{width:'12%'}} />
+                          <col style={{width:'18%'}} />
+                        </colgroup>
                         <thead className={`${darkMode ? 'bg-gray-750' : 'bg-gray-50/50'}`}>
                           <tr>
                             <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Model</th>
@@ -18364,15 +18401,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             const currentNum = parseInt(s.currentBin.split('-')[1]) || 0;
                             const suggestNum = parseInt(s.suggestedBin.split('-')[1]) || 0;
                             const reason = currentNum !== suggestNum
-                              ? (s.group !== 'Others' ? 'Model Grouping + Weight' : 'Weight Arrangement')
-                              : 'Model Grouping';
+                              ? (s.group !== 'Others' ? '모델 그룹핑 + 중량 배치' : '중량 배치')
+                              : '모델 그룹핑';
                             return (
                               <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700/50' : 'border-gray-100 hover:bg-purple-50/50'}`}>
                                 <td className="px-3 py-1.5">
                                   <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? gc.darkBg + ' ' + gc.darkText : gc.bg + ' ' + gc.text}`}>{s.group}</span>
                                 </td>
                                 <td className="px-3 py-1.5 font-mono text-xs font-bold">{s.material}</td>
-                                <td className={`px-3 py-1.5 text-xs truncate max-w-[180px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 30)}</td>
+                                <td className={`px-3 py-1.5 text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 30)}</td>
                                 <td className={`px-3 py-1.5 text-right text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                                   {s.weightPerEA > 0 ? `${(s.weightPerEA * 1000).toFixed(1)}g` : '-'}
                                 </td>
