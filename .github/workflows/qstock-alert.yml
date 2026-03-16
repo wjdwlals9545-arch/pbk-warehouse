@@ -204,7 +204,7 @@ jobs:
               subject = f"[테스트] [수입검사 알림] 긴급 {urgent}건, 주의 {warning}건 ({date_str})"
               payload = {
                   "from": "PBK Warehouse <onboarding@resend.dev>",
-                  "to": ["jimin.jung@promega.com"],
+                  "to": ["wjdwlals9545@gmail.com"],
                   "subject": subject,
                   "html": html_body
               }
