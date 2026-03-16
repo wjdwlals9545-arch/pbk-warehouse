@@ -62,16 +62,36 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_TO=${toEmail}\n`);
             fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_CC=${ccEmail}\n`);
 
-      - name: Send Email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.office365.com
-          server_port: 587
-          secure: false
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: ${{ env.EMAIL_SUBJECT }}
-          html_body: file://email_body.html
-          from: jimin.jung@promega.com
-          to: ${{ env.EMAIL_TO }}
-          cc: ${{ env.EMAIL_CC }}
+      - name: Send Email via Resend
+        run: |
+          # TO를 JSON 배열로 변환
+          TO_JSON=$(echo "$EMAIL_TO" | sed 's/ //g' | awk -F',' '{printf "["; for(i=1;i<=NF;i++){printf "\"%s\"", $i; if(i<NF) printf ","} printf "]"}')
+
+          # CC 처리
+          CC_FIELD=""
+          if [ -n "$EMAIL_CC" ]; then
+            CC_JSON=$(echo "$EMAIL_CC" | sed 's/ //g' | awk -F',' '{printf "["; for(i=1;i<=NF;i++){printf "\"%s\"", $i; if(i<NF) printf ","} printf "]"}')
+            CC_FIELD="\"cc\": $CC_JSON,"
+          fi
+
+          # HTML을 JSON-safe로 변환
+          EMAIL_HTML=$(python3 -c "import sys,json; print(json.dumps(open('email_body.html').read()))")
+
+          # Resend API 호출
+          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer ${{ secrets.RESEND_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"from\": \"PBK Warehouse <onboarding@resend.dev>\",
+              \"to\": $TO_JSON,
+              $CC_FIELD
+              \"subject\": $(python3 -c "import json; print(json.dumps('$EMAIL_SUBJECT'))"),
+              \"html\": $EMAIL_HTML
+            }")
+
+          echo "Response ($HTTP_CODE): $(cat response.json)"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Email sending failed with status $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ Email sent successfully!"
