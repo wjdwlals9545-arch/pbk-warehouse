@@ -18106,84 +18106,163 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         const activeBom = customBomData || MODEL_BOM_DATA;
         if (!activeBom || typeof activeBom !== 'object') return null;
 
-        // 1. 각 모델별 BOM 자재의 현재 Bin 위치 분석
-        const modelAnalysis = {};
-        const allBomMaterials = new Set();
-        Object.entries(activeBom).forEach(([model, bom]) => {
-          const bomEntries = Array.isArray(bom) ? bom.map(b => ({ mat: b.material, qty: b.quantity })) : Object.entries(bom).map(([m, q]) => ({ mat: m, qty: q }));
-          const matBins = [];
-          bomEntries.forEach(({ mat, qty }) => {
-            allBomMaterials.add(mat);
-            const invItem = inv.find(i => String(i.material) === String(mat));
-            if (invItem && invItem.bin) {
-              const area = invItem.bin.split('-')[0];
-              matBins.push({ material: mat, description: invItem.description || '', bin: invItem.bin, area, stock: invItem.stock || 0, qty });
+        // 고정 자재 (단프라 박스 등 - 이동 제안 제외)
+        const FIXED_MATERIALS = new Set(['9800-830', 'KB0746', 'KB0838', '9800-880', 'KB0782', 'KB0783', 'KB0785', 'KB0786', 'KB0837']);
+        // 제외 Area
+        const EXCLUDED_AREAS = new Set(['D2', 'E3', 'S1', 'F1', 'LABEL']);
+
+        // 모델 그룹 (48시리즈 / 16시리즈 / HSM)
+        const MODEL_GROUPS = {
+          '48시리즈': ['RSC48', 'CSC48'],
+          '16시리즈': ['RSC16', 'CSC16', 'FSC16'],
+          'HSM': ['HSM'],
+        };
+        const getModelGroup = (matCode) => {
+          for (const [group, models] of Object.entries(MODEL_GROUPS)) {
+            for (const model of models) {
+              const bom = activeBom[model];
+              if (!bom) continue;
+              const entries = Array.isArray(bom) ? bom : Object.entries(bom);
+              const found = Array.isArray(bom)
+                ? bom.some(b => String(b.material) === String(matCode))
+                : Object.keys(bom).includes(String(matCode));
+              if (found) return group;
+            }
+          }
+          return null;
+        };
+
+        // 각 랙(A1, A2, B1...) 안에서 현재 자재 목록 + 모델그룹 + 무게 분석
+        const rackAnalysis = {};
+        const weightData = (() => {
+          try { return JSON.parse(safeStorage.getItem('pbk_weight_data') || '{}'); } catch { return {}; }
+        })();
+
+        // RACK_SPEC에서 각 랙별 Bin 범위와 단수 정보 추출
+        const rackBinInfo = {};
+        Object.entries(RACK_SPEC).forEach(([rackId, racks]) => {
+          if (EXCLUDED_AREAS.has(rackId)) return;
+          const allBins = new Set();
+          let maxLevel = 0;
+          racks.forEach(r => {
+            const startNum = parseInt(r.binStart.split('-')[1]) || 0;
+            const endNum = parseInt(r.binEnd.split('-')[1]) || 0;
+            if (r.levels > maxLevel) maxLevel = r.levels;
+            for (let n = startNum; n <= endNum; n++) {
+              allBins.add(`${rackId}-${String(n).padStart(2, '0')}`);
             }
           });
-          if (matBins.length > 0) {
-            const areas = {};
-            matBins.forEach(m => { areas[m.area] = (areas[m.area] || 0) + 1; });
-            const sortedAreas = Object.entries(areas).sort((a, b) => b[1] - a[1]);
-            const mainArea = sortedAreas[0]?.[0]?.charAt(0) || '?';
-            const scatterScore = sortedAreas.length;
-            modelAnalysis[model] = { matBins, areas, sortedAreas, mainArea, scatterScore, total: matBins.length };
+          rackBinInfo[rackId] = { bins: [...allBins].sort(), maxLevel, isMultiLevel: maxLevel > 1 };
+        });
+
+        // 각 랙별 현재 자재 분석
+        inv.forEach(item => {
+          if (!item.bin || !item.material) return;
+          const rackId = item.bin.split('-')[0];
+          if (EXCLUDED_AREAS.has(rackId)) return;
+          if (!rackId.match(/^[ABC]/)) return;
+
+          if (!rackAnalysis[rackId]) rackAnalysis[rackId] = [];
+          const matStr = String(item.material);
+          const isFixed = FIXED_MATERIALS.has(matStr);
+          const group = getModelGroup(matStr);
+          const wd = weightData[matStr] || DEFAULT_WEIGHT_DATA?.[matStr];
+          const weightPerEA = wd ? wd.w : 0;
+
+          rackAnalysis[rackId].push({
+            material: matStr,
+            description: item.description || '',
+            bin: item.bin,
+            stock: item.stock || 0,
+            group: group || '기타',
+            weightPerEA,
+            totalWeight: weightPerEA * (item.stock || 0),
+            isFixed,
+          });
+        });
+
+        // 각 랙 안에서 최적 배치 제안 생성
+        const rackResults = {};
+        let totalMoved = 0;
+        let totalOptimizable = 0;
+
+        Object.entries(rackAnalysis).forEach(([rackId, items]) => {
+          if (items.length < 2) return;
+          const info = rackBinInfo[rackId];
+          if (!info) return;
+
+          // 현재 사용중인 Bin 목록 (고정 자재 Bin 포함)
+          const fixedItems = items.filter(i => i.isFixed);
+          const movableItems = items.filter(i => !i.isFixed);
+          if (movableItems.length < 2) return;
+
+          // 최적 배치: 모델그룹별로 묶고, 그룹 내 중량순 정렬
+          const groupOrder = ['48시리즈', '16시리즈', 'HSM', '기타'];
+          const grouped = {};
+          movableItems.forEach(item => {
+            if (!grouped[item.group]) grouped[item.group] = [];
+            grouped[item.group].push(item);
+          });
+
+          // 각 그룹 내에서 중량 정렬 (가벼운→작은번호=상단, 무거운→큰번호=하단)
+          Object.values(grouped).forEach(grp => {
+            grp.sort((a, b) => a.weightPerEA - b.weightPerEA);
+          });
+
+          // 최적 순서: 그룹별로 연결, 각 그룹 내 중량순
+          const optimalOrder = [];
+          groupOrder.forEach(g => {
+            if (grouped[g]) optimalOrder.push(...grouped[g]);
+          });
+
+          // 사용 가능한 Bin (고정 자재가 차지한 Bin 제외)
+          const fixedBins = new Set(fixedItems.map(i => i.bin));
+          const availableBins = info.bins.filter(b => !fixedBins.has(b)).sort();
+
+          // 현재 movable 아이템들의 Bin 목록 (정렬)
+          const currentBins = movableItems.map(i => i.bin).sort();
+
+          // 최적 배치에 Bin 할당
+          const suggestions = [];
+          optimalOrder.forEach((item, idx) => {
+            const suggestedBin = idx < availableBins.length ? availableBins[idx] : item.bin;
+            if (suggestedBin !== item.bin) {
+              suggestions.push({
+                ...item,
+                currentBin: item.bin,
+                suggestedBin,
+              });
+              totalMoved++;
+            }
+            totalOptimizable++;
+          });
+
+          if (suggestions.length > 0) {
+            rackResults[rackId] = {
+              total: items.length,
+              fixed: fixedItems.length,
+              movable: movableItems.length,
+              suggestions,
+              grouped,
+              optimalOrder,
+              isMultiLevel: info.isMultiLevel,
+            };
           }
         });
 
-        // 2. 동일 모델 자재인데 다른 Area(A,B,C)에 흩어진 것 분석
-        const suggestions = [];
-        Object.entries(modelAnalysis).forEach(([model, data]) => {
-          // A, B, C 대분류로 그룹핑
-          const majorAreas = {};
-          data.matBins.forEach(m => {
-            const major = m.area.charAt(0); // A, B, C
-            if (!['A', 'B', 'C'].includes(major)) return;
-            if (!majorAreas[major]) majorAreas[major] = [];
-            majorAreas[major].push(m);
-          });
+        // 집중도 점수 = 이미 최적 위치에 있는 비율
+        const score = totalOptimizable > 0 ? Math.round(((totalOptimizable - totalMoved) / totalOptimizable) * 100) : 100;
 
-          const majorKeys = Object.keys(majorAreas);
-          if (majorKeys.length <= 1) return; // 이미 한 Area에 모여있음
-
-          // 가장 많은 자재가 있는 주 Area 결정
-          const primaryMajor = majorKeys.sort((a, b) => majorAreas[b].length - majorAreas[a].length)[0];
-          const primaryCount = majorAreas[primaryMajor].length;
-          const totalABC = majorKeys.reduce((s, k) => s + majorAreas[k].length, 0);
-
-          // 다른 Area에 있는 자재들 = 이동 제안 대상
-          majorKeys.forEach(major => {
-            if (major === primaryMajor) return;
-            majorAreas[major].forEach(m => {
-              suggestions.push({
-                model, material: m.material, description: m.description,
-                currentBin: m.bin, currentArea: m.area, currentMajor: major,
-                suggestedMajor: primaryMajor, stock: m.stock, qty: m.qty,
-              });
-            });
-          });
-        });
-
-        // 3. 현재 분산도 점수 계산 (100점 만점 = 완벽 집중)
-        let totalItems = 0, inPrimaryCount = 0;
-        Object.values(modelAnalysis).forEach(data => {
-          const majorAreas = {};
-          data.matBins.forEach(m => {
-            const major = m.area.charAt(0);
-            if (!['A', 'B', 'C'].includes(major)) return;
-            if (!majorAreas[major]) majorAreas[major] = [];
-            majorAreas[major].push(m);
-          });
-          const majorKeys = Object.keys(majorAreas);
-          if (majorKeys.length === 0) return;
-          const primaryMajor = majorKeys.sort((a, b) => majorAreas[b].length - majorAreas[a].length)[0];
-          totalItems += Object.values(majorAreas).reduce((s, arr) => s + arr.length, 0);
-          inPrimaryCount += majorAreas[primaryMajor].length;
-        });
-        const concentrationScore = totalItems > 0 ? Math.round((inPrimaryCount / totalItems) * 100) : 100;
+        const groupColors = {
+          '48시리즈': { bg: 'bg-emerald-100', text: 'text-emerald-700', darkBg: 'bg-emerald-900/40', darkText: 'text-emerald-300', dot: 'bg-emerald-500' },
+          '16시리즈': { bg: 'bg-blue-100', text: 'text-blue-700', darkBg: 'bg-blue-900/40', darkText: 'text-blue-300', dot: 'bg-blue-500' },
+          'HSM': { bg: 'bg-orange-100', text: 'text-orange-700', darkBg: 'bg-orange-900/40', darkText: 'text-orange-300', dot: 'bg-orange-500' },
+          '기타': { bg: 'bg-gray-100', text: 'text-gray-700', darkBg: 'bg-gray-700', darkText: 'text-gray-300', dot: 'bg-gray-500' },
+        };
 
         return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowBinOptimizationModal(false)}>
-          <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-xl shadow-xl w-full max-w-4xl flex flex-col`}
+          <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-xl shadow-xl w-full max-w-5xl flex flex-col`}
             style={{ maxHeight: 'calc(100vh - 2rem)' }} onClick={e => e.stopPropagation()}>
             {/* 헤더 */}
             <div className={`flex-shrink-0 flex justify-between items-center p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -18197,125 +18276,122 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
             {/* 스크롤 가능한 컨텐츠 */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ minHeight: 0 }}>
-              {/* 집중도 점수 */}
+              {/* 설명 */}
+              <div className={`rounded-xl p-3 text-xs ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-purple-50 text-purple-800'}`}>
+                <p className="font-medium mb-1">📋 분석 기준</p>
+                <p>• 각 랙(A1, B1, C3...) 안에서 <b>같은 모델(48/16/HSM) 자재끼리 인접 Bin</b>에 모이도록 제안</p>
+                <p>• 각 그룹 내에서 <b>무거운 자재 → 하단(큰 번호)</b>, 가벼운 자재 → 상단(작은 번호)</p>
+                <p>• 단프라 박스 자재(PCBA 등) {FIXED_MATERIALS.size}개는 현재 위치 고정</p>
+              </div>
+
+              {/* 최적화 점수 */}
               <div className={`rounded-xl p-4 ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-r from-purple-50 to-indigo-50'}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>BOM 자재 집중도</span>
-                  <span className={`text-2xl font-bold ${concentrationScore >= 80 ? 'text-emerald-500' : concentrationScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
-                    {concentrationScore}점
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>현재 배치 최적도</span>
+                  <span className={`text-2xl font-bold ${score >= 80 ? 'text-emerald-500' : score >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+                    {score}점
                   </span>
                 </div>
                 <div className={`h-3 rounded-full ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`}>
-                  <div className={`h-full rounded-full transition-all ${concentrationScore >= 80 ? 'bg-emerald-500' : concentrationScore >= 60 ? 'bg-amber-400' : 'bg-red-500'}`}
-                    style={{ width: `${concentrationScore}%` }} />
+                  <div className={`h-full rounded-full transition-all ${score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-400' : 'bg-red-500'}`}
+                    style={{ width: `${score}%` }} />
                 </div>
                 <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  동일 모델 BOM 자재가 같은 Area(A/B/C)에 모여있을수록 100점에 가깝습니다.
-                  {suggestions.length > 0 && ` (${suggestions.length}건 이동 제안)`}
+                  전체 {totalOptimizable}개 자재 중 {totalOptimizable - totalMoved}개가 최적 위치 | 이동 제안: {totalMoved}건
                 </p>
               </div>
 
-              {/* 모델별 현황 */}
-              <div>
-                <h4 className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>📊 모델별 Area 분포</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {Object.entries(modelAnalysis).map(([model, data]) => {
-                    const majorAreas = {};
-                    data.matBins.forEach(m => {
-                      const major = m.area.charAt(0);
-                      if (['A', 'B', 'C'].includes(major)) {
-                        majorAreas[major] = (majorAreas[major] || 0) + 1;
-                      }
-                    });
-                    const abcTotal = Object.values(majorAreas).reduce((s, v) => s + v, 0);
-                    const majorColors = { A: 'bg-blue-500', B: 'bg-emerald-500', C: 'bg-amber-500' };
-                    return (
-                      <div key={model} className={`rounded-lg p-3 border ${darkMode ? 'border-gray-600 bg-gray-750' : 'border-gray-200'}`}>
-                        <div className="flex justify-between items-center mb-2">
-                          <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{model}</span>
-                          <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{data.total}개 자재</span>
-                        </div>
-                        {/* 바 차트 */}
-                        <div className="flex h-4 rounded-full overflow-hidden mb-1.5">
-                          {['A', 'B', 'C'].map(major => {
-                            const cnt = majorAreas[major] || 0;
-                            if (cnt === 0) return null;
-                            return (
-                              <div key={major} className={`${majorColors[major]} flex items-center justify-center`}
-                                style={{ width: `${(cnt / abcTotal) * 100}%` }}>
-                                <span className="text-[10px] text-white font-bold">{major}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="flex gap-3 text-xs">
-                          {['A', 'B', 'C'].filter(m => majorAreas[m]).map(major => (
-                            <span key={major} className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              <span className={`inline-block w-2 h-2 rounded-full ${majorColors[major]} mr-1`} />
-                              {major}: {majorAreas[major]}개
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              {/* 범례 */}
+              <div className="flex flex-wrap gap-3 text-xs">
+                {Object.entries(groupColors).map(([g, c]) => (
+                  <span key={g} className="flex items-center gap-1">
+                    <span className={`w-3 h-3 rounded ${c.dot}`} />
+                    <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>{g}</span>
+                  </span>
+                ))}
+                <span className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded bg-pink-500" />
+                  <span className={darkMode ? 'text-gray-300' : 'text-gray-600'}>고정(단프라)</span>
+                </span>
               </div>
 
-              {/* 이동 제안 목록 */}
-              {suggestions.length > 0 && (
-                <div>
-                  <h4 className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    🔄 Bin 이동 제안 ({suggestions.length}건)
-                  </h4>
-                  <p className={`text-xs mb-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                    동일 모델의 다른 자재들이 주로 위치한 Area로 이동하면 피킹 동선이 단축됩니다. (A: 대형/중량, B: 중형, C: 소형/경량)
-                  </p>
-                  <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                    <div className="overflow-x-auto" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {/* 랙별 분석 결과 */}
+              {Object.keys(rackResults).length === 0 ? (
+                <div className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <Check className="w-12 h-12 mx-auto mb-2 text-emerald-500" />
+                  <p className="font-medium">모든 랙의 Bin 배치가 최적 상태입니다!</p>
+                  <p className="text-xs mt-1">같은 모델 자재끼리 잘 모여있고 중량 배치도 적절합니다.</p>
+                </div>
+              ) : (
+                Object.entries(rackResults).sort(([a], [b]) => a.localeCompare(b)).map(([rackId, data]) => (
+                  <div key={rackId} className={`rounded-xl border ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                    {/* 랙 헤더 */}
+                    <div className={`px-4 py-2.5 flex items-center justify-between ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-t-xl`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>📦 {rackId}</span>
+                        <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {data.total}개 자재 | 이동 제안 {data.suggestions.length}건
+                          {data.fixed > 0 && ` | 고정 ${data.fixed}개`}
+                        </span>
+                      </div>
+                      {/* 모델 분포 미니 바 */}
+                      <div className="flex h-3 w-32 rounded-full overflow-hidden">
+                        {['48시리즈', '16시리즈', 'HSM', '기타'].map(g => {
+                          const cnt = data.grouped[g]?.length || 0;
+                          if (cnt === 0) return null;
+                          return <div key={g} className={groupColors[g].dot} style={{ width: `${(cnt / data.movable) * 100}%` }} />;
+                        })}
+                      </div>
+                    </div>
+                    {/* 이동 제안 테이블 */}
+                    <div className="overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className={`sticky top-0 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                        <thead className={`${darkMode ? 'bg-gray-750' : 'bg-gray-50/50'}`}>
                           <tr>
-                            <th className="px-3 py-2 text-left text-xs">모델</th>
-                            <th className="px-3 py-2 text-left text-xs">자재</th>
-                            <th className="px-3 py-2 text-left text-xs">Description</th>
-                            <th className="px-3 py-2 text-center text-xs">현재 Bin</th>
-                            <th className="px-3 py-2 text-center text-xs">→</th>
-                            <th className="px-3 py-2 text-center text-xs">제안 Area</th>
-                            <th className="px-3 py-2 text-right text-xs">재고</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>모델</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>자재번호</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>품명</th>
+                            <th className={`px-3 py-1.5 text-right text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>EA당 중량</th>
+                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>현재 Bin</th>
+                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>→</th>
+                            <th className={`px-3 py-1.5 text-center text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>제안 Bin</th>
+                            <th className={`px-3 py-1.5 text-left text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>사유</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {suggestions.sort((a, b) => a.model.localeCompare(b.model) || a.currentBin.localeCompare(b.currentBin)).map((s, i) => (
-                            <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-100 hover:bg-purple-50'}`}>
-                              <td className={`px-3 py-2 text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{s.model}</td>
-                              <td className="px-3 py-2 font-mono text-xs font-bold">{s.material}</td>
-                              <td className={`px-3 py-2 text-xs truncate max-w-[200px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 35)}</td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>{s.currentBin}</span>
-                              </td>
-                              <td className="px-3 py-2 text-center text-gray-400">→</td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                                  s.suggestedMajor === 'A' ? 'bg-blue-100 text-blue-700' : s.suggestedMajor === 'B' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                                }`}>{s.suggestedMajor} Area</span>
-                              </td>
-                              <td className={`px-3 py-2 text-right text-xs font-medium ${darkMode ? 'text-gray-300' : ''}`}>{(s.stock || 0).toLocaleString()}</td>
-                            </tr>
-                          ))}
+                          {data.suggestions.map((s, i) => {
+                            const gc = groupColors[s.group] || groupColors['기타'];
+                            const currentNum = parseInt(s.currentBin.split('-')[1]) || 0;
+                            const suggestNum = parseInt(s.suggestedBin.split('-')[1]) || 0;
+                            const reason = currentNum !== suggestNum
+                              ? (s.group !== '기타' ? '모델 그룹핑 + 중량 배치' : '중량 배치')
+                              : '모델 그룹핑';
+                            return (
+                              <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700/50' : 'border-gray-100 hover:bg-purple-50/50'}`}>
+                                <td className="px-3 py-1.5">
+                                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? gc.darkBg + ' ' + gc.darkText : gc.bg + ' ' + gc.text}`}>{s.group}</span>
+                                </td>
+                                <td className="px-3 py-1.5 font-mono text-xs font-bold">{s.material}</td>
+                                <td className={`px-3 py-1.5 text-xs truncate max-w-[180px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 30)}</td>
+                                <td className={`px-3 py-1.5 text-right text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                  {s.weightPerEA > 0 ? `${(s.weightPerEA * 1000).toFixed(1)}g` : '-'}
+                                </td>
+                                <td className="px-3 py-1.5 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>{s.currentBin}</span>
+                                </td>
+                                <td className="px-3 py-1.5 text-center text-gray-400 text-xs">→</td>
+                                <td className="px-3 py-1.5 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>{s.suggestedBin}</span>
+                                </td>
+                                <td className={`px-3 py-1.5 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{reason}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {suggestions.length === 0 && (
-                <div className={`text-center py-6 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  <Check className="w-12 h-12 mx-auto mb-2 text-emerald-500" />
-                  <p className="font-medium">모든 BOM 자재가 최적 위치에 있습니다!</p>
-                  <p className="text-xs mt-1">동일 모델 자재들이 같은 Area에 잘 집중되어 있습니다.</p>
-                </div>
+                ))
               )}
             </div>
 
