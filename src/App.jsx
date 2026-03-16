@@ -5877,7 +5877,8 @@ ${tableRows}
           if (m === 'AS6000') return 'CSC16';
           if (m === 'A2715') return 'HSM3.0';
           if(SUBCOM_INFO[materialNum])return 'Sub-com.';
-          if(SUBCOM_INFO[materialNum])return 'Sub-com.';
+          // RSC16 주요 부품 (KB 자재)
+          if (['KB0737','KB0749','KB0724','KB0731'].includes(materialNum)) return 'RSC16';
           return 'Spare Parts';
         };
 
@@ -6571,6 +6572,8 @@ ${tableRows}
           if (m === 'AS4600') return 'FSC16';
           if (m === 'AS6000') return 'CSC16';
           if (m === 'A2715') return 'HSM3.0';
+          // RSC16 주요 부품 (KB 자재)
+          if (['KB0737','KB0749','KB0724','KB0731'].includes(materialNum)) return 'RSC16';
           return 'Spare Parts';
         };
 
