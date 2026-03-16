@@ -607,11 +607,10 @@ const MATERIAL_QTY_PER_BOX = {
   '710409': 20,
   '710410': 20,
   '710411': 20,
-  '710330': 3000,
   '710360': 4,
-  '710364': 12,
-  '710366': 18,
-  '710365': 5,
+  '710364': 4,
+  '710366': 4,
+  '710365': 4,
   '711201': 200,
   '9000-375': 200,
   '716152': 200,
@@ -688,8 +687,8 @@ const MATERIAL_QTY_PER_BOX = {
   '710404': 100,
   '710406': 100,
   '710412': 100,
-  '710357': 100,
-  '710413': 100,
+  '710357': 1000,
+  '710413': 400,
   '710439': 100,
   '710358': 100,
   '710438': 100,
@@ -698,7 +697,29 @@ const MATERIAL_QTY_PER_BOX = {
   'KB0381': 100,
   'KB0379': 100,
   'KB0436': 100,
-  'KB0402': 100,
+  'KB0402': 1000,
+  'KB0700': 1000,
+  'KB0670': 1000,
+  'KB0073': 1000,
+  '711156': 100,
+  '712952': 100,
+  '712625': 50,
+  '713090': 50,
+  '064-0420': 50,
+  '714352': 500,
+  '714350': 500,
+  '714378': 500,
+  '714356': 500,
+  '714355': 500,
+  '714373': 500,
+  '714377': 500,
+  '714372': 500,
+  '714375': 500,
+  '714370': 500,
+  '714376': 500,
+  '714371': 500,
+  '714351': 500,
+  '714353': 500,
   '9FB134': 100,
   '017785': 100,
   '710317': 100,
@@ -2387,30 +2408,11 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
   const [walkHudVisible, setWalkHudVisible] = useState(false);// 카메라/기능 제어용
   
   useEffect(() => {
-    // 초기 로드: localStorage → GitHub fallback
-    const loadLayout = async () => {
-      try {
-        const saved = safeStorage.getItem('pbk_layout_data');
-        if (saved) {
-          setLayoutData(JSON.parse(saved));
-          return;
-        }
-      } catch(ex) {}
-      // localStorage에 없으면 GitHub에서 가져오기
-      try {
-        const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/layout.json?t=${Date.now()}`);
-        if (resp.ok) {
-          const data = await resp.json();
-          if (data && data.R && data.R.length > 0) {
-            const jsonStr = JSON.stringify(data);
-            safeStorage.setItem('pbk_layout_data', jsonStr);
-            setLayoutData(data);
-            console.log('[Layout] GitHub에서 레이아웃 로드 완료, 랙 수:', data.R.length);
-          }
-        }
-      } catch(ex) { console.log('[Layout] GitHub fallback 실패:', ex.message); }
-    };
-    loadLayout();
+    // 초기 로드: 저장된 데이터가 있으면 파싱
+    try {
+      const saved = safeStorage.getItem('pbk_layout_data');
+      if (saved) setLayoutData(JSON.parse(saved));
+    } catch(ex) {}
   }, []);
 
   useEffect(() => {
@@ -2429,30 +2431,13 @@ if("move"===mode){var i=s.closest(".rk");if(i){var l=+i.dataset.ri,d=R[l];if(e.s
         } catch(ex) { console.error('[Layout] 저장 처리 오류:', ex); }
       }
       if (e.data.type === 'layoutReady') {
-        const sendToIframe = (jsonStr) => {
-          try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.R && parsed.R.length > 0 && layoutIframeRef.current) {
-              layoutIframeRef.current.contentWindow.postMessage({ type: 'layoutLoad', data: jsonStr }, '*');
-            }
-          } catch(ex) {}
-        };
         try {
           const saved = safeStorage.getItem('pbk_layout_data');
-          if (saved) {
-            sendToIframe(saved);
-          } else {
-            // localStorage 비어있으면 GitHub에서 가져와서 iframe에 전달
-            fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/layout.json?t=${Date.now()}`)
-              .then(r => r.ok ? r.text() : null)
-              .then(text => {
-                if (text) {
-                  safeStorage.setItem('pbk_layout_data', text);
-                  setLayoutData(JSON.parse(text));
-                  sendToIframe(text);
-                  console.log('[Layout] layoutReady: GitHub에서 로드 후 iframe 전달');
-                }
-              }).catch(ex => console.log('[Layout] layoutReady GitHub fallback 실패:', ex.message));
+          if (saved && layoutIframeRef.current) {
+            const parsed = JSON.parse(saved);
+            if (parsed.R && parsed.R.length > 0) {
+              layoutIframeRef.current.contentWindow.postMessage({ type: 'layoutLoad', data: saved }, '*');
+            }
           }
         } catch(ex) {}
       }
@@ -8279,8 +8264,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               return null;
             })()}
 
-            {/* SAP 자동 업데이트 스케줄 (접기/펼치기) - 모든 사용자에게 표시 */}
-            {(
+            {/* SAP 자동 업데이트 스케줄 (접기/펼치기) */}
+            {isAdmin && (
               <div className="bg-gradient-to-r from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-4">
                 <div className="flex items-center justify-between cursor-pointer select-none" onClick={() => setShowSapSchedule(prev => !prev)}>
                   <div className="flex items-center gap-3">
@@ -8547,8 +8532,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                             {(() => {
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              const qItems = qStockData.filter(q => q.material in (customBomData || MODEL_BOM_DATA)[model]);
-                              if (!qItems.length || qExU === prodInfo.units) return null;
+                              if (!qStockData.length || qExU === prodInfo.units) return null;
                               return (
                                 <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
                                   <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
@@ -8579,12 +8563,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </div>
                             </div>
                             {(() => {
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              if (!qStockData.length || qExU === prodInfo.units) return null;
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
-                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              const modelQItems = qStockData.filter(q => q.material in modelBom);
-                              if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
-                              // 병목 자재 찾기: Q stock 있는 BOM 자재 중 (Ava-Q)/소요량 가장 낮은 것
                               let bottleneck = null;
                               let minUnits = Infinity;
                               Object.entries(modelBom).forEach(([mat, reqQty]) => {
@@ -8593,17 +8575,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 const qQty = qStockByMaterial[mat] || 0;
                                 if (qQty <= 0) return;
                                 const units = Math.floor((avail - qQty) / reqQty);
-                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                                if (units < minUnits) {
+                                  minUnits = units;
+                                  bottleneck = { material: mat, avail, qQty, reqQty };
+                                }
                               });
                               if (!bottleneck) return null;
-                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
-                              const avaExQ = bottleneck.avail - bottleneck.qQty;
+                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || qStockData.find(q => q.material === bottleneck.material)?.description || '';
                               return (
                                 <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
                                   <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
                                   <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
                                   <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                    <span className="text-blue-600">Ava: {bottleneck.avail} EA</span>
                                     <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
                                   </div>
                                 </div>
@@ -8661,8 +8645,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                             {(() => {
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              const qItems = qStockData.filter(q => q.material in (customBomData || MODEL_BOM_DATA)[model]);
-                              if (!qItems.length || qExU === prodInfo.units) return null;
+                              if (!qStockData.length || qExU === prodInfo.units) return null;
                               return (
                                 <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
                                   <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
@@ -8693,12 +8676,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </div>
                             </div>
                             {(() => {
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              if (!qStockData.length || qExU === prodInfo.units) return null;
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
-                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              const modelQItems = qStockData.filter(q => q.material in modelBom);
-                              if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
-                              // 병목 자재 찾기: Q stock 있는 BOM 자재 중 (Ava-Q)/소요량 가장 낮은 것
                               let bottleneck = null;
                               let minUnits = Infinity;
                               Object.entries(modelBom).forEach(([mat, reqQty]) => {
@@ -8707,17 +8688,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 const qQty = qStockByMaterial[mat] || 0;
                                 if (qQty <= 0) return;
                                 const units = Math.floor((avail - qQty) / reqQty);
-                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                                if (units < minUnits) {
+                                  minUnits = units;
+                                  bottleneck = { material: mat, avail, qQty, reqQty };
+                                }
                               });
                               if (!bottleneck) return null;
-                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
-                              const avaExQ = bottleneck.avail - bottleneck.qQty;
+                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || qStockData.find(q => q.material === bottleneck.material)?.description || '';
                               return (
                                 <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
                                   <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
                                   <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
                                   <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                    <span className="text-blue-600">Ava: {bottleneck.avail} EA</span>
                                     <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
                                   </div>
                                 </div>
@@ -8778,8 +8761,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                             {(() => {
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              const qItems = qStockData.filter(q => q.material in (customBomData || MODEL_BOM_DATA)[model]);
-                              if (!qItems.length || qExU === prodInfo.units) return null;
+                              if (!qStockData.length || qExU === prodInfo.units) return null;
                               return (
                                 <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
                                   <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
@@ -8810,12 +8792,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </div>
                             </div>
                             {(() => {
+                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              if (!qStockData.length || qExU === prodInfo.units) return null;
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
-                              const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              const modelQItems = qStockData.filter(q => q.material in modelBom);
-                              if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
-                              // 병목 자재 찾기: Q stock 있는 BOM 자재 중 (Ava-Q)/소요량 가장 낮은 것
                               let bottleneck = null;
                               let minUnits = Infinity;
                               Object.entries(modelBom).forEach(([mat, reqQty]) => {
@@ -8824,17 +8804,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 const qQty = qStockByMaterial[mat] || 0;
                                 if (qQty <= 0) return;
                                 const units = Math.floor((avail - qQty) / reqQty);
-                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                                if (units < minUnits) {
+                                  minUnits = units;
+                                  bottleneck = { material: mat, avail, qQty, reqQty };
+                                }
                               });
                               if (!bottleneck) return null;
-                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
-                              const avaExQ = bottleneck.avail - bottleneck.qQty;
+                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || qStockData.find(q => q.material === bottleneck.material)?.description || '';
                               return (
                                 <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
                                   <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
                                   <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
                                   <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                    <span className="text-blue-600">Ava: {bottleneck.avail} EA</span>
                                     <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
                                   </div>
                                 </div>
@@ -8992,8 +8974,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 </div>
                                 {(() => {
                                   const qExU = subComponentUnitsExQ[subComName]?.units ?? info.units;
-                                  const totalQ = qStockByMaterial[subComName] || 0;
-                                  if (!totalQ || qExU === info.units) return null;
+                                  if (!qStockData.length || qExU === info.units) return null;
                                   return (
                                     <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
                                       <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
@@ -9025,14 +9006,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 </div>
                                 {(() => {
                                   const qExU = subComponentUnitsExQ[subComName]?.units ?? info.units;
-                                  const totalQ = qStockByMaterial[subComName] || 0;
-                                  if (!totalQ || qExU === info.units) return null;
-                                  const avaExQ = currentStock - totalQ;
+                                  if (!qStockData.length || qExU === info.units) return null;
+                                  const subQItems = qStockData.filter(q => q.material === subComName);
+                                  if (subQItems.length === 0) return null;
+                                  const totalQ = subQItems.reduce((s, q) => s + (q.stock || 0), 0);
                                   return (
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
                                       <p className="text-[10px] text-orange-600 font-bold mb-0.5">Q Stock 영향</p>
                                       <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                        <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                        <span className="text-blue-600">Ava: {currentStock} EA</span>
                                         <span className="text-orange-600 font-bold">Q: {totalQ} EA</span>
                                       </div>
                                     </div>
@@ -9107,8 +9089,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 </div>
                                 {(() => {
                                   const qExU = subComponentUnitsExQ[subComName]?.units ?? info.units;
-                                  const totalQ = qStockByMaterial[subComName] || 0;
-                                  if (!totalQ || qExU === info.units) return null;
+                                  if (!qStockData.length || qExU === info.units) return null;
                                   return (
                                     <div className="flex justify-between items-center border-t border-dashed border-gray-300 pt-1 mt-1">
                                       <span className="text-xs text-orange-500 font-bold">Q Stock 제외</span>
@@ -9140,14 +9121,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 </div>
                                 {(() => {
                                   const qExU = subComponentUnitsExQ[subComName]?.units ?? info.units;
-                                  const totalQ = qStockByMaterial[subComName] || 0;
-                                  if (!totalQ || qExU === info.units) return null;
-                                  const avaExQ = currentStock - totalQ;
+                                  if (!qStockData.length || qExU === info.units) return null;
+                                  const subQItems = qStockData.filter(q => q.material === subComName);
+                                  if (subQItems.length === 0) return null;
+                                  const totalQ = subQItems.reduce((s, q) => s + (q.stock || 0), 0);
                                   return (
                                     <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
                                       <p className="text-[10px] text-orange-600 font-bold mb-0.5">Q Stock 영향</p>
                                       <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                        <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
+                                        <span className="text-blue-600">Ava: {currentStock} EA</span>
                                         <span className="text-orange-600 font-bold">Q: {totalQ} EA</span>
                                       </div>
                                     </div>
@@ -9261,12 +9243,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">자재코드</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">품명</th>
                           <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">위치</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">검사대기수량</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">수량</th>
                           <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
                             onClick={() => { if (qStockSortKey === 'grDate') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('grDate'); setQStockSortDir('desc'); } }}>
                             입고일 {qStockSortKey === 'grDate' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
                           </th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">Q제외 잔여재고</th>
                           <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 cursor-pointer hover:text-indigo-600 select-none"
                             onClick={() => { if (qStockSortKey === 'daysElapsed') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('daysElapsed'); setQStockSortDir('desc'); } }}>
                             경과일 {qStockSortKey === 'daysElapsed' ? (qStockSortDir === 'asc' ? '↑' : '↓') : ''}
@@ -9287,14 +9268,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <td className="px-3 py-2 text-xs">{item.bin}</td>
                               <td className="px-3 py-2 text-right text-xs font-medium">{(item.stock || 0).toLocaleString()} {item.unit}</td>
                               <td className="px-3 py-2 text-center text-xs text-gray-500">{item.grDate || '-'}</td>
-                              <td className="px-3 py-2 text-right text-xs font-medium">
-                                {(() => {
-                                  const totalStock = inventoryData.filter(i => i.material === item.material).reduce((s, i) => s + (i.stock || 0), 0);
-                                  const totalQ = qStockByMaterial[item.material] || 0;
-                                  const avaExQ = totalStock - totalQ;
-                                  return <span className={avaExQ <= 0 ? 'text-red-500 font-bold' : 'text-blue-600'}>{avaExQ.toLocaleString()} {item.unit}</span>;
-                                })()}
-                              </td>
                               <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
                                 {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
                               </td>
@@ -9302,7 +9275,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           );
                         })}
                         {displayItems.length === 0 && (
-                          <tr><td colSpan="8" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
+                          <tr><td colSpan="7" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -15055,21 +15028,36 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">시작 시간</label>
                     <input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm"
-                      value={editingPick.startTime ? (() => { const d=new Date(editingPick.startTime); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); })() : ''} 
-                      onChange={e => setEditingPick({...editingPick, startTime: e.target.value ? new Date(e.target.value).toISOString() : null})} />
+                      value={editingPick.startTime ? (() => { const d=new Date(editingPick.startTime); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); })() : ''}
+                      onChange={e => {
+                        const startTime = e.target.value ? new Date(e.target.value).toISOString() : null;
+                        let cycleMin = editingPick.cycleMin;
+                        if (startTime && editingPick.completed) {
+                          cycleMin = calculateWorkingMinutes(startTime, new Date(editingPick.completed.replace(' ', 'T')).toISOString());
+                        }
+                        setEditingPick({...editingPick, startTime, cycleMin});
+                      }} />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">완료 시간</label>
                     <input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm"
-                      value={editingPick.completed ? editingPick.completed.replace(' ', 'T') : ''} 
-                      onChange={e => setEditingPick({...editingPick, completed: e.target.value ? e.target.value.replace('T', ' ') : null})} />
+                      value={editingPick.completed ? editingPick.completed.replace(' ', 'T') : ''}
+                      onChange={e => {
+                        const completed = e.target.value ? e.target.value.replace('T', ' ') : null;
+                        let cycleMin = editingPick.cycleMin;
+                        if (editingPick.startTime && completed) {
+                          cycleMin = calculateWorkingMinutes(editingPick.startTime, new Date(e.target.value).toISOString());
+                        }
+                        setEditingPick({...editingPick, completed, cycleMin, status: completed ? 'completed' : editingPick.status});
+                      }} />
                   </div>
                 </div>
                 <div className="mt-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cycle Time (분)</label>
-                  <input type="number" className="w-full border rounded-lg px-3 py-2"
-                    value={editingPick.cycleMin || ''} 
-                    onChange={e => setEditingPick({...editingPick, cycleMin: e.target.value ? parseInt(e.target.value) : null})} />
+                  <input type="number" className="w-full border rounded-lg px-3 py-2 bg-gray-50"
+                    value={editingPick.cycleMin || ''}
+                    readOnly />
+                  {editingPick.cycleMin && <p className="text-xs text-gray-400 mt-1">시작/완료 시간 변경 시 자동 계산</p>}
                 </div>
               </div>
               <div>
@@ -15113,8 +15101,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">납품 시각</label>
                 <input type="datetime-local" className="w-full border rounded-lg px-3 py-2"
-                  value={editingReceive.delivery ? (() => { const m=editingReceive.delivery.match(/(\d{4})-(\d{2})-(\d{2})[\s\-T](\d{2}):(\d{2})/); return m ? m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5] : ''; })() : ''} 
-                  onChange={e => { const v=e.target.value.replace('T',' '); setEditingReceive({...editingReceive, delivery: v, startTime: e.target.value ? new Date(e.target.value).toISOString() : null}); }} />
+                  value={editingReceive.delivery ? (() => { const m=editingReceive.delivery.match(/(\d{4})-(\d{2})-(\d{2})[\s\-T](\d{2}):(\d{2})/); return m ? m[1]+'-'+m[2]+'-'+m[3]+'T'+m[4]+':'+m[5] : ''; })() : ''}
+                  onChange={e => {
+                    const v = e.target.value.replace('T',' ');
+                    const startTime = e.target.value ? new Date(e.target.value).toISOString() : null;
+                    let cycleMin = editingReceive.cycleMin;
+                    if (startTime && editingReceive.migo) {
+                      cycleMin = calculateWorkingMinutes(startTime, new Date(editingReceive.migo.replace(' ', 'T')).toISOString());
+                    }
+                    setEditingReceive({...editingReceive, delivery: v, startTime, cycleMin});
+                  }} />
               </div>
               <div className="border-t pt-4">
                 <p className="text-sm font-medium text-gray-500 mb-3">⏱️ 타이머 정보</p>
@@ -15122,15 +15118,23 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">MIGO 완료</label>
                     <input type="datetime-local" className="w-full border rounded-lg px-3 py-2 text-sm"
-                      value={editingReceive.migo ? editingReceive.migo.replace(' ', 'T') : ''} 
-                      onChange={e => setEditingReceive({...editingReceive, migo: e.target.value ? e.target.value.replace('T', ' ') : null})} />
+                      value={editingReceive.migo ? editingReceive.migo.replace(' ', 'T') : ''}
+                      onChange={e => {
+                        const migo = e.target.value ? e.target.value.replace('T', ' ') : null;
+                        let cycleMin = editingReceive.cycleMin;
+                        if (editingReceive.startTime && e.target.value) {
+                          cycleMin = calculateWorkingMinutes(editingReceive.startTime, new Date(e.target.value).toISOString());
+                        }
+                        setEditingReceive({...editingReceive, migo, cycleMin, status: migo ? 'completed' : editingReceive.status});
+                      }} />
                   </div>
                 </div>
                 <div className="mt-3">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Cycle Time (분)</label>
-                  <input type="number" className="w-full border rounded-lg px-3 py-2"
-                    value={editingReceive.cycleMin || ''} 
-                    onChange={e => setEditingReceive({...editingReceive, cycleMin: e.target.value ? parseInt(e.target.value) : null})} />
+                  <input type="number" className="w-full border rounded-lg px-3 py-2 bg-gray-50"
+                    value={editingReceive.cycleMin || ''}
+                    readOnly />
+                  {editingReceive.cycleMin && <p className="text-xs text-gray-400 mt-1">납품/MIGO 시간 변경 시 자동 계산</p>}
                 </div>
               </div>
               <div>
@@ -16573,29 +16577,50 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">시작예정일</label>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   className="w-full border rounded-lg px-3 py-2"
                   value={editingKitting.basicStartDate || ''}
-                  onChange={e => setEditingKitting({...editingKitting, basicStartDate: e.target.value})}
+                  onChange={e => {
+                    const basicStartDate = e.target.value;
+                    let leadTimeDays = editingKitting.leadTimeDays;
+                    if (editingKitting.completedAt && !editingKitting.startedAt && basicStartDate) {
+                      leadTimeDays = getBusinessDays(new Date(basicStartDate + 'T08:00:00+09:00'), new Date(editingKitting.completedAt + 'T17:00:00+09:00'));
+                    }
+                    setEditingKitting({...editingKitting, basicStartDate, leadTimeDays});
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">시작시간</label>
+                <input
+                  type="datetime-local"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={editingKitting.startedAt ? (() => { const d=new Date(editingKitting.startedAt); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+'T'+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); })() : ''}
+                  onChange={e => {
+                    const startedAt = e.target.value ? new Date(e.target.value).toISOString() : null;
+                    let leadTimeDays = editingKitting.leadTimeDays;
+                    if (editingKitting.completedAt && startedAt) {
+                      leadTimeDays = getBusinessDays(new Date(startedAt), new Date(editingKitting.completedAt + 'T17:00:00+09:00'));
+                    }
+                    setEditingKitting({...editingKitting, startedAt, leadTimeDays});
+                  }}
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">완료일</label>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   className="w-full border rounded-lg px-3 py-2"
                   value={editingKitting.completedAt || ''}
                   onChange={e => {
                     const completedAt = e.target.value;
                     let leadTimeDays = null;
                     if (completedAt) {
-                      const endDate = new Date(completedAt + 'T17:00:00+09:00'); // 완료일 17시(한국시간)
+                      const endDate = new Date(completedAt + 'T17:00:00+09:00');
                       if (editingKitting.startedAt) {
-                        // 실제 시작시간 기준 영업일 계산
                         leadTimeDays = getBusinessDays(new Date(editingKitting.startedAt), endDate);
                       } else if (editingKitting.basicStartDate) {
-                        // startedAt 없으면 시작예정일 기준 fallback
                         leadTimeDays = getBusinessDays(new Date(editingKitting.basicStartDate + 'T08:00:00+09:00'), endDate);
                       }
                     }
@@ -16608,6 +16633,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   }}
                 />
               </div>
+              {editingKitting.leadTimeDays != null && (
+                <div className="bg-blue-50 rounded-lg p-2 text-center">
+                  <span className="text-sm text-blue-700 font-medium">Lead Time: {editingKitting.leadTimeDays}일</span>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">상태</label>
                 <select 
