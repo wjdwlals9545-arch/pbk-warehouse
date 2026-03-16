@@ -1007,7 +1007,7 @@ const BIN_RACK_INFO = {
   'C3-24': { rackType: '경량랙', rackCount: 2 },
   'C3-25': { rackType: '경량랙', rackCount: 2 },
   'D2': { rackType: '볼트랙', rackCount: 1 },
-  'E3': { rackType: '경량랙', rackCount: 4 },
+  'E3': { rackType: '경량랙', rackCount: 4, maxBoxes: 48 },  // 4랙 × 4단 × 3박스
   'S1': { rackType: '중량랙', rackCount: 6, maxBoxes: 72 },  // 6랙×3단×8개=144, 50%적용(제품별 분리보관)
 };
 
@@ -2013,6 +2013,15 @@ export default function PBKWarehouseSystem() {
         safeStorage.removeItem('pbk_weight_data');
         return DEFAULT_WEIGHT_DATA;
       }
+      // v19.7: 코드 기본값에서 수정된 무게를 localStorage에도 동기화
+      let needSync = false;
+      Object.entries(DEFAULT_WEIGHT_DATA).forEach(([mat, def]) => {
+        if (parsed[mat] && Math.abs(parsed[mat].w - def.w) > 0.0001 && def.w < parsed[mat].w * 0.1) {
+          parsed[mat].w = def.w;
+          needSync = true;
+        }
+      });
+      if (needSync) safeStorage.setItem('pbk_weight_data', JSON.stringify(parsed));
       return parsed;
     }
     return DEFAULT_WEIGHT_DATA;
@@ -8845,6 +8854,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              // Total 0대일 때 전체 BOM 병목 표시
+                              if (prodInfo.units === 0 && Object.keys(modelBom).length > 0) {
+                                let bottleneck = null;
+                                let minUnits = Infinity;
+                                Object.entries(modelBom).forEach(([mat, reqQty]) => {
+                                  if (reqQty <= 0) return;
+                                  const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const units = Math.floor(avail / reqQty);
+                                  if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, reqQty, units }; }
+                                });
+                                if (bottleneck) {
+                                  const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || '';
+                                  return (
+                                    <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
+                                      <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
+                                      <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                      <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                        <span className="text-red-600 font-bold">재고: {bottleneck.avail} EA</span>
+                                        <span className="text-gray-500">필요: {bottleneck.reqQty} EA/대</span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                              }
+                              // Q Stock 영향 병목 표시
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
                               if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
                               let bottleneck = null;
@@ -8957,6 +8991,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              // Total 0대일 때 전체 BOM 병목 표시
+                              if (prodInfo.units === 0 && Object.keys(modelBom).length > 0) {
+                                let bottleneck = null;
+                                let minUnits = Infinity;
+                                Object.entries(modelBom).forEach(([mat, reqQty]) => {
+                                  if (reqQty <= 0) return;
+                                  const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const units = Math.floor(avail / reqQty);
+                                  if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, reqQty, units }; }
+                                });
+                                if (bottleneck) {
+                                  const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || '';
+                                  return (
+                                    <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
+                                      <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
+                                      <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                      <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                        <span className="text-red-600 font-bold">재고: {bottleneck.avail} EA</span>
+                                        <span className="text-gray-500">필요: {bottleneck.reqQty} EA/대</span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                              }
+                              // Q Stock 영향 병목 표시
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
                               if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
                               let bottleneck = null;
@@ -9068,6 +9127,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
+                              // Total 0대일 때 전체 BOM 병목 표시
+                              if (prodInfo.units === 0 && Object.keys(modelBom).length > 0) {
+                                let bottleneck = null;
+                                let minUnits = Infinity;
+                                Object.entries(modelBom).forEach(([mat, reqQty]) => {
+                                  if (reqQty <= 0) return;
+                                  const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
+                                  const units = Math.floor(avail / reqQty);
+                                  if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, reqQty, units }; }
+                                });
+                                if (bottleneck) {
+                                  const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || '';
+                                  return (
+                                    <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
+                                      <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
+                                      <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                      <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                        <span className="text-red-600 font-bold">재고: {bottleneck.avail} EA</span>
+                                        <span className="text-gray-500">필요: {bottleneck.reqQty} EA/대</span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                              }
+                              // Q Stock 영향 병목 표시
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
                               if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
                               let bottleneck = null;
