@@ -11690,100 +11690,104 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             </div>
 
-            {/* 카드 클릭 시 상세 리스트 */}
+            {/* 카드 클릭 시 모달 팝업 */}
             {deliveryCardExpand && (
-              <div className={`rounded-xl border p-4 ${
-                deliveryCardExpand === 'thisWeek' ? 'bg-blue-50 border-blue-200' :
-                deliveryCardExpand === 'nextWeek' ? 'bg-indigo-50 border-indigo-200' :
-                deliveryCardExpand === 'overdue' ? 'bg-red-50 border-red-200' :
-                'bg-amber-50 border-amber-200'
-              }`}>
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className={`font-bold text-sm ${
-                    deliveryCardExpand === 'thisWeek' ? 'text-blue-800' :
-                    deliveryCardExpand === 'nextWeek' ? 'text-indigo-800' :
-                    deliveryCardExpand === 'overdue' ? 'text-red-800' :
-                    'text-amber-800'
+              <div className="fixed inset-0 bg-black/40 z-[90] flex items-center justify-center p-4" onClick={() => setDeliveryCardExpand(null)}>
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[800px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                  {/* 모달 헤더 */}
+                  <div className={`flex justify-between items-center px-6 py-4 rounded-t-2xl ${
+                    deliveryCardExpand === 'thisWeek' ? 'bg-blue-50 border-b border-blue-200' :
+                    deliveryCardExpand === 'nextWeek' ? 'bg-indigo-50 border-b border-indigo-200' :
+                    deliveryCardExpand === 'overdue' ? 'bg-red-50 border-b border-red-200' :
+                    'bg-amber-50 border-b border-amber-200'
                   }`}>
-                    {deliveryCardExpand === 'thisWeek' ? `📦 이번주 납품 (${thisWeekItems.length}건)` :
-                     deliveryCardExpand === 'nextWeek' ? `📦 다음주 납품 (${nextWeekItems.length}건)` :
-                     deliveryCardExpand === 'overdue' ? `⚠️ 납기 지연 (${overdueDeliveries.length}건)` :
-                     `🔍 수입검사 대기 (${filteredQStock.length}건)`}
-                  </h3>
-                  <button onClick={() => setDeliveryCardExpand(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
-                </div>
-                <div className="max-h-[320px] overflow-y-auto rounded-lg border bg-white">
-                  {deliveryCardExpand !== 'qstock' ? (
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-gray-50 z-10">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">PO</th>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">자재코드</th>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">품명</th>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">공급업체</th>
-                          <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">납기일</th>
-                          <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">미입고</th>
-                          <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">현재재고</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(deliveryCardExpand === 'thisWeek' ? thisWeekItems :
-                          deliveryCardExpand === 'nextWeek' ? nextWeekItems :
-                          overdueDeliveries
-                        ).map((d, i) => {
-                          const inv = inventoryData.find(it => String(it.material) === String(d.material));
-                          return (
-                            <tr key={i} className="border-b last:border-b-0 hover:bg-gray-50">
-                              <td className="px-3 py-2 text-gray-700">{d.poNo}</td>
-                              <td className="px-3 py-2 font-mono font-bold text-gray-800">{d.material}</td>
-                              <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{d.description || '-'}</td>
-                              <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{d.supplier || '-'}</td>
-                              <td className={`px-3 py-2 text-center font-medium ${deliveryCardExpand === 'overdue' ? 'text-red-600' : 'text-gray-700'}`}>{d.deliveryDate}</td>
-                              <td className="px-3 py-2 text-right font-bold text-gray-800">{d.qty} {d.unit || 'EA'}</td>
-                              <td className="px-3 py-2 text-right text-gray-500">{inv ? `${inv.stock} ${inv.unit || 'EA'}` : '-'}</td>
-                            </tr>
-                          );
-                        })}
-                        {(deliveryCardExpand === 'thisWeek' ? thisWeekItems :
-                          deliveryCardExpand === 'nextWeek' ? nextWeekItems :
-                          overdueDeliveries
-                        ).length === 0 && (
-                          <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">데이터가 없습니다</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <table className="w-full text-xs">
-                      <thead className="sticky top-0 bg-gray-50 z-10">
-                        <tr>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">자재코드</th>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">품명</th>
-                          <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">위치</th>
-                          <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">수량</th>
-                          <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">입고일</th>
-                          <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">경과일</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredQStock.map((item, i) => {
-                          const days = item.grDate ? Math.floor((now - new Date(item.grDate)) / (1000*60*60*24)) : '-';
-                          return (
-                            <tr key={i} className="border-b last:border-b-0 hover:bg-gray-50">
-                              <td className="px-3 py-2 font-mono font-bold text-gray-800">{item.material}</td>
-                              <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{item.description || '-'}</td>
-                              <td className="px-3 py-2 text-gray-700">{item.bin || '-'}</td>
-                              <td className="px-3 py-2 text-right font-bold text-gray-800">{item.stock} {item.unit || 'EA'}</td>
-                              <td className="px-3 py-2 text-center text-gray-700">{item.grDate || '-'}</td>
-                              <td className={`px-3 py-2 text-center font-bold ${days > 10 ? 'text-red-600' : days >= 7 ? 'text-amber-600' : 'text-green-600'}`}>{days}일</td>
-                            </tr>
-                          );
-                        })}
-                        {filteredQStock.length === 0 && (
-                          <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">데이터가 없습니다</td></tr>
-                        )}
-                      </tbody>
-                    </table>
-                  )}
+                    <h3 className={`font-bold text-base ${
+                      deliveryCardExpand === 'thisWeek' ? 'text-blue-800' :
+                      deliveryCardExpand === 'nextWeek' ? 'text-indigo-800' :
+                      deliveryCardExpand === 'overdue' ? 'text-red-800' :
+                      'text-amber-800'
+                    }`}>
+                      {deliveryCardExpand === 'thisWeek' ? `📦 이번주 납품 (${thisWeekItems.length}건)` :
+                       deliveryCardExpand === 'nextWeek' ? `📦 다음주 납품 (${nextWeekItems.length}건)` :
+                       deliveryCardExpand === 'overdue' ? `⚠️ 납기 지연 (${overdueDeliveries.length}건)` :
+                       `🔍 수입검사 대기 (${filteredQStock.length}건)`}
+                    </h3>
+                    <button onClick={() => setDeliveryCardExpand(null)} className="text-gray-400 hover:text-gray-600 p-1"><X className="w-5 h-5" /></button>
+                  </div>
+                  {/* 모달 본문 - 스크롤 */}
+                  <div className="overflow-y-auto flex-1 p-4">
+                    {deliveryCardExpand !== 'qstock' ? (
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-50 z-10">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">PO</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">자재코드</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">품명</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">공급업체</th>
+                            <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">납기일</th>
+                            <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">미입고</th>
+                            <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">현재재고</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(deliveryCardExpand === 'thisWeek' ? thisWeekItems :
+                            deliveryCardExpand === 'nextWeek' ? nextWeekItems :
+                            overdueDeliveries
+                          ).map((d, i) => {
+                            const inv = inventoryData.find(it => String(it.material) === String(d.material));
+                            return (
+                              <tr key={i} className="border-b last:border-b-0 hover:bg-gray-50">
+                                <td className="px-3 py-2 text-gray-700">{d.poNo}</td>
+                                <td className="px-3 py-2 font-mono font-bold text-gray-800">{d.material}</td>
+                                <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{d.description || '-'}</td>
+                                <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{d.supplier || '-'}</td>
+                                <td className={`px-3 py-2 text-center font-medium ${deliveryCardExpand === 'overdue' ? 'text-red-600' : 'text-gray-700'}`}>{d.deliveryDate}</td>
+                                <td className="px-3 py-2 text-right font-bold text-gray-800">{d.qty} {d.unit || 'EA'}</td>
+                                <td className="px-3 py-2 text-right text-gray-500">{inv ? `${inv.stock} ${inv.unit || 'EA'}` : '-'}</td>
+                              </tr>
+                            );
+                          })}
+                          {(deliveryCardExpand === 'thisWeek' ? thisWeekItems :
+                            deliveryCardExpand === 'nextWeek' ? nextWeekItems :
+                            overdueDeliveries
+                          ).length === 0 && (
+                            <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">데이터가 없습니다</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead className="sticky top-0 bg-gray-50 z-10">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">자재코드</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">품명</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600 border-b">위치</th>
+                            <th className="px-3 py-2 text-right font-semibold text-gray-600 border-b">수량</th>
+                            <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">입고일</th>
+                            <th className="px-3 py-2 text-center font-semibold text-gray-600 border-b">경과일</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredQStock.map((item, i) => {
+                            const days = item.grDate ? Math.floor((now - new Date(item.grDate)) / (1000*60*60*24)) : '-';
+                            return (
+                              <tr key={i} className="border-b last:border-b-0 hover:bg-gray-50">
+                                <td className="px-3 py-2 font-mono font-bold text-gray-800">{item.material}</td>
+                                <td className="px-3 py-2 text-gray-600 truncate max-w-[200px]">{item.description || '-'}</td>
+                                <td className="px-3 py-2 text-gray-700">{item.bin || '-'}</td>
+                                <td className="px-3 py-2 text-right font-bold text-gray-800">{item.stock} {item.unit || 'EA'}</td>
+                                <td className="px-3 py-2 text-center text-gray-700">{item.grDate || '-'}</td>
+                                <td className={`px-3 py-2 text-center font-bold ${days > 10 ? 'text-red-600' : days >= 7 ? 'text-amber-600' : 'text-green-600'}`}>{days}일</td>
+                              </tr>
+                            );
+                          })}
+                          {filteredQStock.length === 0 && (
+                            <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">데이터가 없습니다</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
