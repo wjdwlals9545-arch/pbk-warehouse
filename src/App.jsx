@@ -66,7 +66,11 @@ const SYNC_KEYS = [
   'pbk_todo_list', 'pbk_kpi_data', 'pbk_temp_humidity_data',
   'pbk_temp_humidity_recorder', 'pbk_weight_data',
   'pbk_custom_bom', 'pbk_subcom_bom', 'pbk_bom_updated',
-  'pbk_notifications', 'pbk_previous_stats'
+  'pbk_notifications', 'pbk_previous_stats',
+  // v19.8: Stock, Open PO, Delivery 동기화 추가
+  'pbk_inventory', 'pbk_last_updated',
+  'pbk_open_po', 'pbk_open_po_raw', 'pbk_open_po_updated',
+  'pbk_delivery_data', 'pbk_delivery_updated',
 ];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
@@ -2408,7 +2412,15 @@ export default function PBKWarehouseSystem() {
         pbk_subcom_bom: setSubComponentBomData,
         pbk_bom_updated: setBomLastUpdated,
         pbk_notifications: setNotifications,
-        pbk_previous_stats: setPreviousStats
+        pbk_previous_stats: setPreviousStats,
+        // v19.8: Stock, Open PO, Delivery
+        pbk_inventory: setInventoryData,
+        pbk_last_updated: setLastUpdated,
+        pbk_open_po: setOpenPOData,
+        pbk_open_po_raw: setOpenPORawItems,
+        pbk_open_po_updated: setOpenPOLastUpdated,
+        pbk_delivery_data: setDeliveryData,
+        pbk_delivery_updated: (val) => safeStorage.setItem('pbk_delivery_updated', val),
       };
 
       for (const key of SYNC_KEYS) {
