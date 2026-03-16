@@ -9357,6 +9357,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   </div>
                                 </div>
                                 {(() => {
+                                  // Total 0대일 때 병목 자재 표시
+                                  if (info.units === 0 && info.bottleneck) {
+                                    const desc = inventoryData.find(i => i.material === info.bottleneck.material)?.description || '';
+                                    return (
+                                      <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
+                                        <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
+                                        <p className="text-[10px] text-gray-700 truncate">{info.bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                        <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                          <span className="text-red-600 font-bold">재고: {info.bottleneck.currentStock} EA</span>
+                                          <span className="text-gray-500">필요: {info.bottleneck.requiredQty} EA/대</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
                                   const subQItems = qStockData.filter(q => q.material === subComName);
                                   if (subQItems.length === 0) return null;
                                   const totalQ = subQItems.reduce((s, q) => s + (q.stock || 0), 0);
@@ -9471,6 +9485,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   </div>
                                 </div>
                                 {(() => {
+                                  // Total 0대일 때 병목 자재 표시
+                                  if (info.units === 0 && info.bottleneck) {
+                                    const desc = inventoryData.find(i => i.material === info.bottleneck.material)?.description || '';
+                                    return (
+                                      <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
+                                        <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
+                                        <p className="text-[10px] text-gray-700 truncate">{info.bottleneck.material} <span className="text-gray-400">{desc}</span></p>
+                                        <div className="flex justify-between items-center text-[10px] mt-0.5">
+                                          <span className="text-red-600 font-bold">재고: {info.bottleneck.currentStock} EA</span>
+                                          <span className="text-gray-500">필요: {info.bottleneck.requiredQty} EA/대</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  }
                                   const subQItems = qStockData.filter(q => q.material === subComName);
                                   if (subQItems.length === 0) return null;
                                   const totalQ = subQItems.reduce((s, q) => s + (q.stock || 0), 0);
