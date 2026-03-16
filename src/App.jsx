@@ -8480,14 +8480,28 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const weekStartStr = weekStart.toISOString().split('T')[0];
           const weekEndStr = weekEnd.toISOString().split('T')[0];
 
-          // 납품 계산
+          // 납품 계산 (Delivery 탭과 동일한 consumed tracking 방식)
+          const deliveryUsed = new Array(del.length).fill(false);
           const poWithDates = po.map(item => {
-            const dMatch = del.find(d => d.poNo === item.poNo && d.material === item.material);
-            return { ...item, deliveryDate: dMatch ? dMatch.deliveryDate : null };
+            let bestMatch = null;
+            for (let di = 0; di < del.length; di++) {
+              if (deliveryUsed[di]) continue;
+              const d = del[di];
+              if (d.poNo === item.poNo && d.material === item.material) {
+                bestMatch = d;
+                deliveryUsed[di] = true;
+                break;
+              }
+            }
+            return {
+              ...item,
+              deliveryDate: bestMatch ? bestMatch.deliveryDate : null,
+              supplier: item.supplier || (bestMatch ? bestMatch.supplier : ''),
+            };
           });
-          const todayDeliveries = poWithDates.filter(d => d.deliveryDate === todayStr);
-          const weekDeliveries = poWithDates.filter(d => d.deliveryDate >= weekStartStr && d.deliveryDate <= weekEndStr);
-          const overdueItems = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr);
+          const todayDeliveries = poWithDates.filter(d => d.deliveryDate === todayStr && d.qty > 0);
+          const weekDeliveries = poWithDates.filter(d => d.deliveryDate >= weekStartStr && d.deliveryDate <= weekEndStr && d.qty > 0);
+          const overdueItems = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
 
           // Q-Stock
           const qItems = qs.filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'));
@@ -8537,7 +8551,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             const dateStr = dt.toISOString().split('T')[0];
             const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
             const dayLabel = dayNames[dt.getDay()];
-            const dayDeliveries = poWithDates.filter(p => p.deliveryDate === dateStr);
+            const dayDeliveries = poWithDates.filter(p => p.deliveryDate === dateStr && p.qty > 0);
             weekDays.push({ date: dateStr, label: `${dayLabel}(${dateStr.slice(5)})`, deliveries: dayDeliveries, isToday: dateStr === todayStr });
           }
 
