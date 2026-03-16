@@ -6018,12 +6018,12 @@ ${tableRows}
               received: now,
               basicStartDate: normalizeDate(startDate),
               worker: worker,  // 담당자 자동 매핑
-              startTime: null,
+              startTime: now,
               completed: null,
               cycleMin: null,
               totalPausedMs: 0,
               pausedAt: null,
-              status: 'waiting'
+              status: 'in-progress'
             });
             existingPickOrders.add(order);
           }
