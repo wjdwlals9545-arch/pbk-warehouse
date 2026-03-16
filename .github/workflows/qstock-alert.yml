@@ -183,41 +183,61 @@ jobs:
 
       - name: Send Email Alert via Resend
         if: steps.check.outputs.should_send == 'true' && steps.weekday_check.outputs.skip != 'true'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          IS_TEST: ${{ steps.check.outputs.is_test }}
+          URGENT_COUNT: ${{ steps.check.outputs.urgent_count }}
+          WARNING_COUNT: ${{ steps.check.outputs.warning_count }}
+          DATE_STR: ${{ steps.check.outputs.date_str }}
         run: |
-          IS_TEST="${{ steps.check.outputs.is_test }}"
-          URGENT="${{ steps.check.outputs.urgent_count }}"
-          WARNING="${{ steps.check.outputs.warning_count }}"
-          DATE_STR="${{ steps.check.outputs.date_str }}"
+          python3 << 'PYEOF'
+          import json, os, urllib.request, urllib.error
 
-          # 제목 구성
-          if [ "$IS_TEST" = "true" ]; then
-            SUBJECT="[테스트] [수입검사 알림] 긴급 ${URGENT}건, 주의 ${WARNING}건 (${DATE_STR})"
-            TO_JSON='["jimin.jung@promega.com"]'
-            CC_FIELD=""
-          else
-            SUBJECT="[수입검사 알림] 긴급 ${URGENT}건, 주의 ${WARNING}건 (${DATE_STR})"
-            TO_JSON='["heejae.kim@promega.com", "changyeol.yoo@promega.com"]'
-            CC_FIELD='"cc": ["jimin.jung@promega.com", "kwangsub.ahn@promega.com"],'
-          fi
+          is_test = os.environ.get('IS_TEST') == 'true'
+          urgent = os.environ.get('URGENT_COUNT', '0')
+          warning = os.environ.get('WARNING_COUNT', '0')
+          date_str = os.environ.get('DATE_STR', '')
+          api_key = os.environ.get('RESEND_API_KEY', '')
 
-          # HTML을 JSON-safe로 변환
-          EMAIL_HTML=$(python3 -c "import sys,json; print(json.dumps(open('qstock_email.html').read()))")
+          with open('qstock_email.html', 'r') as f:
+              html_body = f.read()
 
-          # Resend API 호출
-          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" -X POST https://api.resend.com/emails \
-            -H "Authorization: Bearer ${{ secrets.RESEND_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"from\": \"PBK Warehouse <onboarding@resend.dev>\",
-              \"to\": $TO_JSON,
-              $CC_FIELD
-              \"subject\": $(python3 -c "import json; print(json.dumps('''$SUBJECT'''))"),
-              \"html\": $EMAIL_HTML
-            }")
+          if is_test:
+              subject = f"[테스트] [수입검사 알림] 긴급 {urgent}건, 주의 {warning}건 ({date_str})"
+              to_list = ["jimin.jung@promega.com"]
+              payload = {
+                  "from": "PBK Warehouse <onboarding@resend.dev>",
+                  "to": to_list,
+                  "subject": subject,
+                  "html": html_body
+              }
+          else:
+              subject = f"[수입검사 알림] 긴급 {urgent}건, 주의 {warning}건 ({date_str})"
+              payload = {
+                  "from": "PBK Warehouse <onboarding@resend.dev>",
+                  "to": ["heejae.kim@promega.com", "changyeol.yoo@promega.com"],
+                  "cc": ["jimin.jung@promega.com", "kwangsub.ahn@promega.com"],
+                  "subject": subject,
+                  "html": html_body
+              }
 
-          echo "Response ($HTTP_CODE): $(cat response.json)"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Email sending failed with status $HTTP_CODE"
-            exit 1
-          fi
-          echo "✅ Email sent successfully!"
+          data = json.dumps(payload).encode('utf-8')
+          req = urllib.request.Request(
+              'https://api.resend.com/emails',
+              data=data,
+              headers={
+                  'Authorization': f'Bearer {api_key}',
+                  'Content-Type': 'application/json'
+              }
+          )
+
+          try:
+              resp = urllib.request.urlopen(req)
+              print(f"✅ Email sent! Status: {resp.status}")
+              print(f"Response: {resp.read().decode()}")
+          except urllib.error.HTTPError as e:
+              body = e.read().decode()
+              print(f"❌ Email failed! Status: {e.code}")
+              print(f"Error: {body}")
+              exit(1)
+          PYEOF

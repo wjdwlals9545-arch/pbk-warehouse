@@ -63,35 +63,51 @@ jobs:
             fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_CC=${ccEmail}\n`);
 
       - name: Send Email via Resend
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
-          # TO를 JSON 배열로 변환
-          TO_JSON=$(echo "$EMAIL_TO" | sed 's/ //g' | awk -F',' '{printf "["; for(i=1;i<=NF;i++){printf "\"%s\"", $i; if(i<NF) printf ","} printf "]"}')
+          python3 << 'PYEOF'
+          import json, os, urllib.request, urllib.error
 
-          # CC 처리
-          CC_FIELD=""
-          if [ -n "$EMAIL_CC" ]; then
-            CC_JSON=$(echo "$EMAIL_CC" | sed 's/ //g' | awk -F',' '{printf "["; for(i=1;i<=NF;i++){printf "\"%s\"", $i; if(i<NF) printf ","} printf "]"}')
-            CC_FIELD="\"cc\": $CC_JSON,"
-          fi
+          api_key = os.environ.get('RESEND_API_KEY', '')
+          to_email = os.environ.get('EMAIL_TO', 'jimin.jung@promega.com')
+          cc_email = os.environ.get('EMAIL_CC', '')
+          subject = os.environ.get('EMAIL_SUBJECT', 'Overdue Delivery Alert')
 
-          # HTML을 JSON-safe로 변환
-          EMAIL_HTML=$(python3 -c "import sys,json; print(json.dumps(open('email_body.html').read()))")
+          with open('email_body.html', 'r') as f:
+              html_body = f.read()
 
-          # Resend API 호출
-          HTTP_CODE=$(curl -s -o response.json -w "%{http_code}" -X POST https://api.resend.com/emails \
-            -H "Authorization: Bearer ${{ secrets.RESEND_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"from\": \"PBK Warehouse <onboarding@resend.dev>\",
-              \"to\": $TO_JSON,
-              $CC_FIELD
-              \"subject\": $(python3 -c "import json; print(json.dumps('$EMAIL_SUBJECT'))"),
-              \"html\": $EMAIL_HTML
-            }")
+          to_list = [e.strip() for e in to_email.split(',') if e.strip()]
 
-          echo "Response ($HTTP_CODE): $(cat response.json)"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Email sending failed with status $HTTP_CODE"
-            exit 1
-          fi
-          echo "✅ Email sent successfully!"
+          payload = {
+              "from": "PBK Warehouse <onboarding@resend.dev>",
+              "to": to_list,
+              "subject": subject,
+              "html": html_body
+          }
+
+          if cc_email:
+              cc_list = [e.strip() for e in cc_email.split(',') if e.strip()]
+              if cc_list:
+                  payload["cc"] = cc_list
+
+          data = json.dumps(payload).encode('utf-8')
+          req = urllib.request.Request(
+              'https://api.resend.com/emails',
+              data=data,
+              headers={
+                  'Authorization': f'Bearer {api_key}',
+                  'Content-Type': 'application/json'
+              }
+          )
+
+          try:
+              resp = urllib.request.urlopen(req)
+              print(f"✅ Email sent! Status: {resp.status}")
+              print(f"Response: {resp.read().decode()}")
+          except urllib.error.HTTPError as e:
+              body = e.read().decode()
+              print(f"❌ Email failed! Status: {e.code}")
+              print(f"Error: {body}")
+              exit(1)
+          PYEOF
