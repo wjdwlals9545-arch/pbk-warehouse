@@ -8,11 +8,11 @@ jobs:
   send-email:
     runs-on: ubuntu-latest
     steps:
-      - name: Build Email HTML
-        id: build
+      - name: Build Email HTML File
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const payload = context.payload.client_payload;
             const items = payload.items || [];
             const today = payload.date || new Date().toISOString().split('T')[0];
@@ -36,13 +36,13 @@ jobs:
             items.forEach((d, idx) => {
               html += `<tr>`;
               html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:center;">${idx+1}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.description}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty} ${d.unit}</td>`;
-              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${d.stock > 0 ? d.stock + ' EA' : '-'}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.poNo || ''}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;font-weight:bold;">${d.material || ''}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.description || ''}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;">${d.supplier || ''}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;color:#dc2626;font-weight:bold;">${d.deliveryDate || ''}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:right;font-weight:bold;">${d.qty || 0} ${d.unit || 'EA'}</td>`;
+              html += `<td style="border:1px solid #e5e7eb;padding:8px;text-align:right;">${(d.stock || 0) > 0 ? d.stock + ' EA' : '-'}</td>`;
               html += `</tr>`;
             });
 
@@ -50,10 +50,17 @@ jobs:
             html += `<br/><p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`;
             html += `<br/><p style="color:#999;font-size:11px;">---<br/>자동 생성 by PBK Warehouse Dashboard</p></div>`;
 
-            core.setOutput('html_body', html);
-            core.setOutput('subject', payload.subject);
-            core.setOutput('to_email', payload.to_email);
-            core.setOutput('cc_email', payload.cc_email || '');
+            // HTML을 파일로 저장
+            fs.writeFileSync('email_body.html', html);
+            console.log(`Email HTML written (${html.length} chars), items: ${items.length}`);
+
+            // 메타데이터를 환경변수로
+            const subject = payload.subject || `[납기 지연 검토 요청] ${items.length}건 (${today})`;
+            const toEmail = payload.to_email || 'jimin.jung@promega.com';
+            const ccEmail = payload.cc_email || '';
+            fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_SUBJECT=${subject}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_TO=${toEmail}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `EMAIL_CC=${ccEmail}\n`);
 
       - name: Send Email
         uses: dawidd6/action-send-mail@v3
@@ -63,8 +70,8 @@ jobs:
           secure: false
           username: ${{ secrets.SMTP_USERNAME }}
           password: ${{ secrets.SMTP_PASSWORD }}
-          subject: ${{ steps.build.outputs.subject }}
-          html_body: ${{ steps.build.outputs.html_body }}
+          subject: ${{ env.EMAIL_SUBJECT }}
+          html_body: file://email_body.html
           from: jimin.jung@promega.com
-          to: ${{ steps.build.outputs.to_email }}
-          cc: ${{ steps.build.outputs.cc_email }}
+          to: ${{ env.EMAIL_TO }}
+          cc: ${{ env.EMAIL_CC }}

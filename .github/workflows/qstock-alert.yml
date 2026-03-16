@@ -27,11 +27,14 @@ jobs:
         id: weekday_check
         run: |
           DAY=$(date -u +%u)
-          if [ "$DAY" -ge 6 ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+          EVENT="${{ github.event_name }}"
+          echo "Day of week (1=Mon,7=Sun): $DAY, Event: $EVENT"
+          if [ "$DAY" -ge 6 ] && [ "$EVENT" = "push" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Weekend detected (day=$DAY), skipping for push trigger"
+            echo "Weekend + push trigger → skipping email"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Proceeding with email check"
           fi
 
       - name: Check Q-Stock Ages and Send Alert
