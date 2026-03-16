@@ -4295,6 +4295,13 @@ export default function PBKWarehouseSystem() {
         hasChanges = true;
       }
 
+      // 대기 상태인 Kitting → pickCycle이 시작됐으면 동일하게 시작 처리
+      if (k.status === 'waiting' && pickInfo.startTime && (pickInfo.status === 'in-progress' || pickInfo.status === 'completed')) {
+        updated.status = 'in-progress';
+        updated.startedAt = pickInfo.startTime;
+        hasChanges = true;
+      }
+
       // 완료된 Kitting의 Lead Time 재계산 (영업일 기준)
       if (k.status === 'completed' && pickInfo.status === 'completed' && pickInfo.startTime) {
         const startTime = new Date(pickInfo.startTime);
