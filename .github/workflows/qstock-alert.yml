@@ -141,81 +141,41 @@ jobs:
             core.setOutput('date_str', now.toISOString().split('T')[0]);
             core.setOutput('is_test', isTest ? 'true' : 'false');
 
-            // GitHub Issue는 테스트 모드에서는 생성하지 않음
-            if (isTest) {
-              console.log('Test mode - skipping GitHub Issue creation');
-              return;
-            }
-
-            // Also create/update GitHub Issue for history
-            let issueBody = `## 🔍 Q-Stock 수입검사 지연 알림\n\n`;
-            issueBody += `**검사일:** ${now.toISOString().split('T')[0]}\n`;
-            issueBody += `**총 알림:** ${allAlerts.length}건\n\n`;
-
-            if (urgents.length > 0) {
-              issueBody += `### 🚨 긴급 (10일 초과) - ${urgents.length}건\n\n`;
-              issueBody += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n`;
-              issueBody += `|---------|------|------|------|--------|--------|\n`;
-              urgents.forEach(i => {
-                issueBody += `| **${i.material}** | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | **${i.days}일** |\n`;
-              });
-              issueBody += '\n';
-            }
-
-            if (warnings.length > 0) {
-              issueBody += `### ⚠️ 주의 (7~10일) - ${warnings.length}건\n\n`;
-              issueBody += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n`;
-              issueBody += `|---------|------|------|------|--------|--------|\n`;
-              warnings.forEach(i => {
-                issueBody += `| ${i.material} | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | ${i.days}일 |\n`;
-              });
-              issueBody += '\n';
-            }
-
-            issueBody += `\n---\n*자동 생성 by PBK Warehouse Dashboard*`;
-
-            const title = `[Q-Stock Alert] ${urgents.length > 0 ? '🚨' : '⚠️'} ${urgents.length}건 긴급, ${warnings.length}건 주의 (${now.toISOString().split('T')[0]})`;
-
-            const existingIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: 'q-stock-alert',
-              state: 'open',
-              per_page: 5
-            });
-
-            const todayStr = now.toISOString().split('T')[0];
-            const duplicateIssue = existingIssues.data.find(issue =>
-              issue.title.includes(todayStr)
-            );
-
-            if (duplicateIssue) {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: duplicateIssue.number,
-                body: issueBody
-              });
-              console.log(`Updated existing issue #${duplicateIssue.number}`);
-            } else {
+            // GitHub Issue 생성 (실패해도 메일 발송에 영향 없도록 try-catch)
+            if (!isTest) {
               try {
-                await github.rest.issues.create({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  title: title,
-                  body: issueBody,
-                  labels: ['q-stock-alert']
-                });
-                console.log('Created new Q-Stock alert issue');
-              } catch (e) {
-                await github.rest.issues.create({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  title: title,
-                  body: issueBody
-                });
-                console.log('Created new Q-Stock alert issue (without label)');
+                let issueBody = `## 🔍 Q-Stock 수입검사 지연 알림\n\n`;
+                issueBody += `**검사일:** ${now.toISOString().split('T')[0]}\n`;
+                issueBody += `**총 알림:** ${allAlerts.length}건\n\n`;
+                if (urgents.length > 0) {
+                  issueBody += `### 🚨 긴급 (10일 초과) - ${urgents.length}건\n\n`;
+                  issueBody += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n|---------|------|------|------|--------|--------|\n`;
+                  urgents.forEach(i => { issueBody += `| **${i.material}** | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | **${i.days}일** |\n`; });
+                }
+                if (warnings.length > 0) {
+                  issueBody += `### ⚠️ 주의 (7~10일) - ${warnings.length}건\n\n`;
+                  issueBody += `| 자재코드 | 품명 | 위치 | 수량 | 입고일 | 경과일 |\n|---------|------|------|------|--------|--------|\n`;
+                  warnings.forEach(i => { issueBody += `| ${i.material} | ${i.description || '-'} | ${i.bin || '-'} | ${i.stock} ${i.unit} | ${i.grDate} | ${i.days}일 |\n`; });
+                }
+                issueBody += `\n---\n*자동 생성 by PBK Warehouse Dashboard*`;
+                const title = `[Q-Stock Alert] ${urgents.length > 0 ? '🚨' : '⚠️'} ${urgents.length}건 긴급, ${warnings.length}건 주의 (${now.toISOString().split('T')[0]})`;
+                const existingIssues = await github.rest.issues.listForRepo({ owner: context.repo.owner, repo: context.repo.repo, labels: 'q-stock-alert', state: 'open', per_page: 5 });
+                const todayStr2 = now.toISOString().split('T')[0];
+                const dup = existingIssues.data.find(issue => issue.title.includes(todayStr2));
+                if (dup) {
+                  await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo, issue_number: dup.number, body: issueBody });
+                } else {
+                  await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body: issueBody, labels: ['q-stock-alert'] }).catch(() =>
+                    github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body: issueBody })
+                  );
+                }
+                console.log('GitHub Issue created/updated');
+              } catch (issueErr) {
+                console.log('GitHub Issue failed (non-critical):', issueErr.message);
+                // Issue 실패해도 메일은 발송되어야 함
               }
+            } else {
+              console.log('Test mode - skipping GitHub Issue');
             }
 
       - name: Send Email Alert
