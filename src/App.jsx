@@ -27,7 +27,7 @@ export class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
-import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck, MessageSquare, Send, Bot, Mail } from 'lucide-react';
+import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck, MessageSquare, Send, Bot, Mail, Home, Activity, MapPin, Shuffle } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
 import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
@@ -1884,7 +1884,7 @@ function getBusinessDays(startDate, endDate) {
 }
 
 export default function PBKWarehouseSystem() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('home');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedZone, setSelectedZone] = useState('all');
   
@@ -3324,6 +3324,8 @@ export default function PBKWarehouseSystem() {
 
   // 공간 최적화 리포트 모달
   const [showSpaceOptimizationModal, setShowSpaceOptimizationModal] = useState(false);
+  // BOM 기반 Bin 최적화 분석 모달
+  const [showBinOptimizationModal, setShowBinOptimizationModal] = useState(false);
 
   // ========== KPI 관리 ==========
   // GR Cancel 기본 데이터 (Movement Type 102 기준)
@@ -8310,6 +8312,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         <div className="max-w-[1400px] mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto">
             {[
+              { id: 'home', label: 'Home', icon: Home },
               { id: 'dashboard', label: 'Production', icon: BarChart3 },
               { id: 'delivery', label: 'Delivery', icon: Truck },
               { id: 'receive', label: 'Receiving', icon: Database },
@@ -8363,9 +8366,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       <nav className={`md:hidden fixed bottom-0 left-0 right-0 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-t'} shadow-lg z-50`}>
         <div className="flex justify-around items-center py-2">
           {[
+            { id: 'home', label: 'Home', icon: Home },
             { id: 'dashboard', label: 'Production', icon: BarChart3 },
             { id: 'receive', label: 'Receiving', icon: Database },
-            { id: 'kitting', label: 'Kitting', icon: Package },
             { id: 'pick', label: 'Cycle', icon: Clock },
             { id: 'more', label: 'More', icon: List },
           ].map(tab => (
@@ -8400,6 +8403,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             <h3 className="font-semibold text-lg mb-4">메뉴</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {[
+                { id: 'home', label: 'Home', icon: Home },
                 { id: 'dashboard', label: 'Production', icon: BarChart3 },
                 { id: 'delivery', label: 'Delivery', icon: Truck },
                 { id: 'receive', label: 'Receiving', icon: Database },
@@ -8441,7 +8445,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       <main className="max-w-[1400px] mx-auto px-6 py-6 pb-24 md:pb-6">
 
         {/* No Data Message */}
-        {inventoryData.length === 0 && activeTab !== 'pick' && activeTab !== 'receive' && activeTab !== 'todo' && activeTab !== 'kitting' && activeTab !== 'kpi' && (
+        {inventoryData.length === 0 && activeTab !== 'home' && activeTab !== 'pick' && activeTab !== 'receive' && activeTab !== 'todo' && activeTab !== 'kitting' && activeTab !== 'kpi' && (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center">
             <FileSpreadsheet className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-700 mb-2">재고 데이터가 없습니다</h3>
@@ -8457,6 +8461,279 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             )}
           </div>
         )}
+
+        {/* 🏠 Home 대시보드 */}
+        {activeTab === 'home' && (() => {
+          const inv = Array.isArray(inventoryData) ? inventoryData : [];
+          const po = Array.isArray(openPORawItems) ? openPORawItems : [];
+          const del = Array.isArray(deliveryData) ? deliveryData : [];
+          const qs = Array.isArray(qStockData) ? qStockData : [];
+          const todayStr = new Date().toISOString().split('T')[0];
+          const koNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+          const dayOfWeek = koNow.getDay();
+
+          // 이번주 범위 (월~금)
+          const weekStart = new Date(koNow);
+          weekStart.setDate(koNow.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 4);
+          const weekStartStr = weekStart.toISOString().split('T')[0];
+          const weekEndStr = weekEnd.toISOString().split('T')[0];
+
+          // 납품 계산
+          const poWithDates = po.map(item => {
+            const dMatch = del.find(d => d.poNo === item.poNo && d.material === item.material);
+            return { ...item, deliveryDate: dMatch ? dMatch.deliveryDate : null };
+          });
+          const todayDeliveries = poWithDates.filter(d => d.deliveryDate === todayStr);
+          const weekDeliveries = poWithDates.filter(d => d.deliveryDate >= weekStartStr && d.deliveryDate <= weekEndStr);
+          const overdueItems = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr);
+
+          // Q-Stock
+          const qItems = qs.filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'));
+          const qWithDays = qItems.map(i => {
+            const gr = i.grDate ? new Date(i.grDate) : null;
+            return { ...i, days: gr ? Math.floor((koNow - gr) / 86400000) : null };
+          });
+          const qOver8 = qWithDays.filter(i => i.days >= 8);
+
+          // 생산 가능 대수
+          const activeBom = customBomData || MODEL_BOM_DATA;
+          const prodCapacity = {};
+          if (activeBom && typeof activeBom === 'object') {
+            Object.entries(activeBom).forEach(([model, bom]) => {
+              if (!bom || typeof bom !== 'object') return;
+              const bomEntries = Array.isArray(bom) ? bom : Object.entries(bom).map(([m, q]) => ({ material: m, quantity: q }));
+              let minUnits = Infinity, bottleneckMat = '';
+              bomEntries.forEach(part => {
+                const mat = part.material || part.mat;
+                const reqQty = part.quantity || part.qty || 0;
+                const invItem = inv.find(i => String(i.material) === String(mat));
+                const stock = invItem ? (parseFloat(invItem.stock) || 0) : 0;
+                const qStock = qs.filter(q => String(q.material) === String(mat)).reduce((s, q) => s + (q.stock || 0), 0);
+                const possible = reqQty > 0 ? Math.floor((stock - qStock) / reqQty) : Infinity;
+                if (possible < minUnits) { minUnits = possible; bottleneckMat = mat; }
+              });
+              if (minUnits === Infinity) minUnits = 0;
+              prodCapacity[model] = { units: minUnits, bottleneck: bottleneckMat };
+            });
+          }
+
+          // 키팅 현황
+          const kittingInProgress = (Array.isArray(kittingData) ? kittingData : []).filter(k => k.status === 'in-progress').length;
+          const kittingWaiting = (Array.isArray(kittingData) ? kittingData : []).filter(k => k.status === 'waiting').length;
+          const pickInProgress = (Array.isArray(pickCycles) ? pickCycles : []).filter(p => p.status === 'in-progress').length;
+
+          // 온습도 (오늘)
+          const todayTH = tempHumidityData ? tempHumidityData[todayStr] : null;
+          const lastTemp = todayTH?.temp;
+          const lastHum = todayTH?.humidity;
+
+          // 이번주 요일별 일정
+          const weekDays = [];
+          for (let d = 0; d < 5; d++) {
+            const dt = new Date(weekStart);
+            dt.setDate(weekStart.getDate() + d);
+            const dateStr = dt.toISOString().split('T')[0];
+            const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+            const dayLabel = dayNames[dt.getDay()];
+            const dayDeliveries = poWithDates.filter(p => p.deliveryDate === dateStr);
+            weekDays.push({ date: dateStr, label: `${dayLabel}(${dateStr.slice(5)})`, deliveries: dayDeliveries, isToday: dateStr === todayStr });
+          }
+
+          return (
+          <div className="space-y-5">
+            {/* 핵심 숫자 카드 */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* 납품 현황 */}
+              <button onClick={() => setActiveTab('delivery')}
+                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 ${overdueItems.length > 0 ? 'border-red-500' : 'border-blue-500'} text-left transition hover:shadow-md`}>
+                <div className="flex items-center justify-between mb-2">
+                  <Truck className={`w-5 h-5 ${overdueItems.length > 0 ? 'text-red-500' : 'text-blue-500'}`} />
+                  {overdueItems.length > 0 && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-bold">{overdueItems.length} 지연</span>}
+                </div>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>납품 현황</p>
+                <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>오늘 {todayDeliveries.length}건</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>이번주 {weekDeliveries.length}건</p>
+              </button>
+
+              {/* Q-Stock */}
+              <button onClick={() => setActiveTab('dashboard')}
+                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 ${qOver8.length > 0 ? 'border-red-500' : 'border-amber-500'} text-left transition hover:shadow-md`}>
+                <div className="flex items-center justify-between mb-2">
+                  <AlertTriangle className={`w-5 h-5 ${qOver8.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
+                  {qOver8.length > 0 && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-bold">{qOver8.length}건 8일+</span>}
+                </div>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>수입검사 대기</p>
+                <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{qItems.length}건</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>8일+ 경과: {qOver8.length}건</p>
+              </button>
+
+              {/* 생산 가능 대수 */}
+              <button onClick={() => setActiveTab('dashboard')}
+                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 border-emerald-500 text-left transition hover:shadow-md`}>
+                <div className="flex items-center mb-2">
+                  <Package className="w-5 h-5 text-emerald-500" />
+                </div>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>생산 가능 대수</p>
+                <div className="mt-1 space-y-0.5">
+                  {Object.entries(prodCapacity).slice(0, 4).map(([model, info]) => (
+                    <div key={model} className="flex justify-between items-center">
+                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{model}</span>
+                      <span className={`text-sm font-bold ${info.units === 0 ? 'text-red-500' : info.units < 5 ? 'text-amber-500' : darkMode ? 'text-white' : 'text-gray-900'}`}>{info.units}대</span>
+                    </div>
+                  ))}
+                </div>
+              </button>
+
+              {/* 키팅 현황 */}
+              <button onClick={() => setActiveTab('pick')}
+                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 border-purple-500 text-left transition hover:shadow-md`}>
+                <div className="flex items-center mb-2">
+                  <Clock className="w-5 h-5 text-purple-500" />
+                </div>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>키팅 현황</p>
+                <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{pickInProgress + kittingInProgress}건 진행</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>대기: {kittingWaiting}건</p>
+              </button>
+
+              {/* 온습도 */}
+              <button onClick={() => setActiveTab('temphumidity')}
+                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 ${!todayTH ? 'border-red-500' : 'border-cyan-500'} text-left transition hover:shadow-md`}>
+                <div className="flex items-center justify-between mb-2">
+                  <Thermometer className={`w-5 h-5 ${!todayTH ? 'text-red-500' : 'text-cyan-500'}`} />
+                  {!todayTH && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-bold">미입력</span>}
+                </div>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>온습도</p>
+                {todayTH ? (
+                  <>
+                    <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{lastTemp}°C</p>
+                    <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>습도: {lastHum}%</p>
+                  </>
+                ) : (
+                  <p className={`text-sm font-medium text-red-500 mt-1`}>오늘 미입력</p>
+                )}
+              </button>
+            </div>
+
+            {/* 긴급 알림 영역 */}
+            {(overdueItems.length > 0 || qOver8.length > 0 || Object.values(prodCapacity).some(v => v.units === 0)) && (
+              <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'} rounded-xl shadow-sm p-4 border`}>
+                <h3 className={`font-semibold text-sm mb-3 flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <AlertTriangle className="w-4 h-4 text-red-500" /> 긴급 알림
+                </h3>
+                <div className="space-y-2 max-h-[240px] overflow-y-auto">
+                  {/* 생산 불가 */}
+                  {Object.entries(prodCapacity).filter(([, v]) => v.units === 0).map(([model, info]) => {
+                    const desc = inv.find(i => String(i.material) === String(info.bottleneck))?.description || '';
+                    return (
+                      <div key={`prod-${model}`} onClick={() => setActiveTab('dashboard')}
+                        className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition ${darkMode ? 'bg-red-900/30 hover:bg-red-900/50' : 'bg-red-50 hover:bg-red-100'}`}>
+                        <span className="text-lg">🔴</span>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>생산 불가 — {model}</p>
+                          <p className={`text-xs truncate ${darkMode ? 'text-red-400' : 'text-red-600'}`}>병목: {info.bottleneck} {desc}</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-red-400 flex-shrink-0" />
+                      </div>
+                    );
+                  })}
+                  {/* 납기 지연 */}
+                  {overdueItems.slice(0, 5).map((d, i) => (
+                    <div key={`od-${i}`} onClick={() => setActiveTab('delivery')}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition ${darkMode ? 'bg-red-900/30 hover:bg-red-900/50' : 'bg-red-50 hover:bg-red-100'}`}>
+                      <span className="text-lg">🔴</span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>납기 지연 — {d.deliveryDate}</p>
+                        <p className={`text-xs truncate ${darkMode ? 'text-red-400' : 'text-red-600'}`}>{d.material} {d.description} | {d.qty} {d.unit} | PO:{d.poNo}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-red-400 flex-shrink-0" />
+                    </div>
+                  ))}
+                  {overdueItems.length > 5 && (
+                    <p className={`text-xs text-center ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>... 외 {overdueItems.length - 5}건</p>
+                  )}
+                  {/* Q-Stock 장기 체류 */}
+                  {qOver8.slice(0, 3).map((q, i) => (
+                    <div key={`qs-${i}`} onClick={() => setActiveTab('dashboard')}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition ${darkMode ? 'bg-amber-900/30 hover:bg-amber-900/50' : 'bg-amber-50 hover:bg-amber-100'}`}>
+                      <span className="text-lg">🟡</span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${darkMode ? 'text-amber-300' : 'text-amber-800'}`}>수입검사 {q.days}일 경과</p>
+                        <p className={`text-xs truncate ${darkMode ? 'text-amber-400' : 'text-amber-600'}`}>{q.material} {q.description} | {q.stock} EA | 입고: {q.grDate}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 하단: 이번주 일정 + 오늘 납품 */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* 이번주 타임라인 */}
+              <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'} rounded-xl shadow-sm p-4 border`}>
+                <h3 className={`font-semibold text-sm mb-3 flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <Calendar className="w-4 h-4 text-indigo-500" /> 이번주 납품 일정
+                </h3>
+                <div className="space-y-2">
+                  {weekDays.map(day => (
+                    <div key={day.date} className={`flex items-start gap-3 p-2 rounded-lg ${day.isToday ? darkMode ? 'bg-indigo-900/30 ring-1 ring-indigo-500' : 'bg-indigo-50 ring-1 ring-indigo-200' : ''}`}>
+                      <div className={`w-14 text-center flex-shrink-0 ${day.isToday ? 'font-bold text-indigo-600' : darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <div className="text-xs">{day.label}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {day.deliveries.length === 0 ? (
+                          <p className={`text-xs ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>—</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {day.deliveries.slice(0, 3).map((d, i) => (
+                              <div key={i} className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'} flex items-center gap-1`}>
+                                <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${day.date < todayStr ? 'bg-red-500' : 'bg-blue-500'}`} />
+                                <span className="truncate">{d.material} {d.description?.slice(0, 25)} ({d.qty})</span>
+                              </div>
+                            ))}
+                            {day.deliveries.length > 3 && <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>+{day.deliveries.length - 3}건</p>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 생산 가능 대수 상세 */}
+              <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'} rounded-xl shadow-sm p-4 border`}>
+                <h3 className={`font-semibold text-sm mb-3 flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <BarChart3 className="w-4 h-4 text-emerald-500" /> 모델별 생산 가능 대수
+                </h3>
+                <div className="space-y-2">
+                  {Object.entries(prodCapacity).map(([model, info]) => {
+                    const desc = inv.find(i => String(i.material) === String(info.bottleneck))?.description || '';
+                    const maxUnits = Math.max(...Object.values(prodCapacity).map(v => v.units), 1);
+                    const barWidth = Math.min(100, (info.units / maxUnits) * 100);
+                    return (
+                      <div key={model} className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className={`text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{model}</span>
+                          <span className={`text-sm font-bold ${info.units === 0 ? 'text-red-500' : info.units < 5 ? 'text-amber-500' : 'text-emerald-500'}`}>{info.units}대</span>
+                        </div>
+                        <div className={`h-2 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                          <div className={`h-full rounded-full transition-all ${info.units === 0 ? 'bg-red-500' : info.units < 5 ? 'bg-amber-400' : 'bg-emerald-400'}`}
+                            style={{ width: `${barWidth}%` }} />
+                        </div>
+                        {info.units < 10 && (
+                          <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>병목: {info.bottleneck} {desc?.slice(0, 30)}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+          );
+        })()}
 
         {/* Dashboard */}
         {activeTab === 'dashboard' && inventoryData.length === 0 && (
@@ -10105,11 +10382,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
 
               {/* v15: 공간 최적화 리포트 버튼 */}
-              <button 
+              <button
                 onClick={() => setShowSpaceOptimizationModal(true)}
                 className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm"
               >
                 <Lightbulb className="w-4 h-4" /> 최적화 리포트
+              </button>
+
+              {/* BOM 기반 Bin 최적화 분석 */}
+              <button
+                onClick={() => setShowBinOptimizationModal(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm"
+              >
+                <Shuffle className="w-4 h-4" /> BOM Bin 최적화
               </button>
 
               {/* v15: 데이터 히스토리 버튼 */}
@@ -17814,6 +18099,237 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           </div>
         </div>
       )}
+
+      {/* BOM 기반 Bin 최적화 분석 모달 */}
+      {showBinOptimizationModal && (() => {
+        const inv = Array.isArray(inventoryData) ? inventoryData : [];
+        const activeBom = customBomData || MODEL_BOM_DATA;
+        if (!activeBom || typeof activeBom !== 'object') return null;
+
+        // 1. 각 모델별 BOM 자재의 현재 Bin 위치 분석
+        const modelAnalysis = {};
+        const allBomMaterials = new Set();
+        Object.entries(activeBom).forEach(([model, bom]) => {
+          const bomEntries = Array.isArray(bom) ? bom.map(b => ({ mat: b.material, qty: b.quantity })) : Object.entries(bom).map(([m, q]) => ({ mat: m, qty: q }));
+          const matBins = [];
+          bomEntries.forEach(({ mat, qty }) => {
+            allBomMaterials.add(mat);
+            const invItem = inv.find(i => String(i.material) === String(mat));
+            if (invItem && invItem.bin) {
+              const area = invItem.bin.split('-')[0];
+              matBins.push({ material: mat, description: invItem.description || '', bin: invItem.bin, area, stock: invItem.stock || 0, qty });
+            }
+          });
+          if (matBins.length > 0) {
+            const areas = {};
+            matBins.forEach(m => { areas[m.area] = (areas[m.area] || 0) + 1; });
+            const sortedAreas = Object.entries(areas).sort((a, b) => b[1] - a[1]);
+            const mainArea = sortedAreas[0]?.[0]?.charAt(0) || '?';
+            const scatterScore = sortedAreas.length;
+            modelAnalysis[model] = { matBins, areas, sortedAreas, mainArea, scatterScore, total: matBins.length };
+          }
+        });
+
+        // 2. 동일 모델 자재인데 다른 Area(A,B,C)에 흩어진 것 분석
+        const suggestions = [];
+        Object.entries(modelAnalysis).forEach(([model, data]) => {
+          // A, B, C 대분류로 그룹핑
+          const majorAreas = {};
+          data.matBins.forEach(m => {
+            const major = m.area.charAt(0); // A, B, C
+            if (!['A', 'B', 'C'].includes(major)) return;
+            if (!majorAreas[major]) majorAreas[major] = [];
+            majorAreas[major].push(m);
+          });
+
+          const majorKeys = Object.keys(majorAreas);
+          if (majorKeys.length <= 1) return; // 이미 한 Area에 모여있음
+
+          // 가장 많은 자재가 있는 주 Area 결정
+          const primaryMajor = majorKeys.sort((a, b) => majorAreas[b].length - majorAreas[a].length)[0];
+          const primaryCount = majorAreas[primaryMajor].length;
+          const totalABC = majorKeys.reduce((s, k) => s + majorAreas[k].length, 0);
+
+          // 다른 Area에 있는 자재들 = 이동 제안 대상
+          majorKeys.forEach(major => {
+            if (major === primaryMajor) return;
+            majorAreas[major].forEach(m => {
+              suggestions.push({
+                model, material: m.material, description: m.description,
+                currentBin: m.bin, currentArea: m.area, currentMajor: major,
+                suggestedMajor: primaryMajor, stock: m.stock, qty: m.qty,
+              });
+            });
+          });
+        });
+
+        // 3. 현재 분산도 점수 계산 (100점 만점 = 완벽 집중)
+        let totalItems = 0, inPrimaryCount = 0;
+        Object.values(modelAnalysis).forEach(data => {
+          const majorAreas = {};
+          data.matBins.forEach(m => {
+            const major = m.area.charAt(0);
+            if (!['A', 'B', 'C'].includes(major)) return;
+            if (!majorAreas[major]) majorAreas[major] = [];
+            majorAreas[major].push(m);
+          });
+          const majorKeys = Object.keys(majorAreas);
+          if (majorKeys.length === 0) return;
+          const primaryMajor = majorKeys.sort((a, b) => majorAreas[b].length - majorAreas[a].length)[0];
+          totalItems += Object.values(majorAreas).reduce((s, arr) => s + arr.length, 0);
+          inPrimaryCount += majorAreas[primaryMajor].length;
+        });
+        const concentrationScore = totalItems > 0 ? Math.round((inPrimaryCount / totalItems) * 100) : 100;
+
+        return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowBinOptimizationModal(false)}>
+          <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-xl shadow-xl w-full max-w-4xl flex flex-col`}
+            style={{ maxHeight: 'calc(100vh - 2rem)' }} onClick={e => e.stopPropagation()}>
+            {/* 헤더 */}
+            <div className={`flex-shrink-0 flex justify-between items-center p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <Shuffle className="w-5 h-5 text-purple-500" /> BOM 기반 Storage Bin 최적화 분석
+              </h3>
+              <button onClick={() => setShowBinOptimizationModal(false)} className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'}`}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* 스크롤 가능한 컨텐츠 */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ minHeight: 0 }}>
+              {/* 집중도 점수 */}
+              <div className={`rounded-xl p-4 ${darkMode ? 'bg-gray-700' : 'bg-gradient-to-r from-purple-50 to-indigo-50'}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>BOM 자재 집중도</span>
+                  <span className={`text-2xl font-bold ${concentrationScore >= 80 ? 'text-emerald-500' : concentrationScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+                    {concentrationScore}점
+                  </span>
+                </div>
+                <div className={`h-3 rounded-full ${darkMode ? 'bg-gray-600' : 'bg-gray-200'}`}>
+                  <div className={`h-full rounded-full transition-all ${concentrationScore >= 80 ? 'bg-emerald-500' : concentrationScore >= 60 ? 'bg-amber-400' : 'bg-red-500'}`}
+                    style={{ width: `${concentrationScore}%` }} />
+                </div>
+                <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  동일 모델 BOM 자재가 같은 Area(A/B/C)에 모여있을수록 100점에 가깝습니다.
+                  {suggestions.length > 0 && ` (${suggestions.length}건 이동 제안)`}
+                </p>
+              </div>
+
+              {/* 모델별 현황 */}
+              <div>
+                <h4 className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>📊 모델별 Area 분포</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {Object.entries(modelAnalysis).map(([model, data]) => {
+                    const majorAreas = {};
+                    data.matBins.forEach(m => {
+                      const major = m.area.charAt(0);
+                      if (['A', 'B', 'C'].includes(major)) {
+                        majorAreas[major] = (majorAreas[major] || 0) + 1;
+                      }
+                    });
+                    const abcTotal = Object.values(majorAreas).reduce((s, v) => s + v, 0);
+                    const majorColors = { A: 'bg-blue-500', B: 'bg-emerald-500', C: 'bg-amber-500' };
+                    return (
+                      <div key={model} className={`rounded-lg p-3 border ${darkMode ? 'border-gray-600 bg-gray-750' : 'border-gray-200'}`}>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{model}</span>
+                          <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{data.total}개 자재</span>
+                        </div>
+                        {/* 바 차트 */}
+                        <div className="flex h-4 rounded-full overflow-hidden mb-1.5">
+                          {['A', 'B', 'C'].map(major => {
+                            const cnt = majorAreas[major] || 0;
+                            if (cnt === 0) return null;
+                            return (
+                              <div key={major} className={`${majorColors[major]} flex items-center justify-center`}
+                                style={{ width: `${(cnt / abcTotal) * 100}%` }}>
+                                <span className="text-[10px] text-white font-bold">{major}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-3 text-xs">
+                          {['A', 'B', 'C'].filter(m => majorAreas[m]).map(major => (
+                            <span key={major} className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                              <span className={`inline-block w-2 h-2 rounded-full ${majorColors[major]} mr-1`} />
+                              {major}: {majorAreas[major]}개
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 이동 제안 목록 */}
+              {suggestions.length > 0 && (
+                <div>
+                  <h4 className={`text-sm font-semibold mb-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    🔄 Bin 이동 제안 ({suggestions.length}건)
+                  </h4>
+                  <p className={`text-xs mb-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    동일 모델의 다른 자재들이 주로 위치한 Area로 이동하면 피킹 동선이 단축됩니다. (A: 대형/중량, B: 중형, C: 소형/경량)
+                  </p>
+                  <div className={`rounded-xl border overflow-hidden ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <div className="overflow-x-auto" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                      <table className="w-full text-sm">
+                        <thead className={`sticky top-0 ${darkMode ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs">모델</th>
+                            <th className="px-3 py-2 text-left text-xs">자재</th>
+                            <th className="px-3 py-2 text-left text-xs">Description</th>
+                            <th className="px-3 py-2 text-center text-xs">현재 Bin</th>
+                            <th className="px-3 py-2 text-center text-xs">→</th>
+                            <th className="px-3 py-2 text-center text-xs">제안 Area</th>
+                            <th className="px-3 py-2 text-right text-xs">재고</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {suggestions.sort((a, b) => a.model.localeCompare(b.model) || a.currentBin.localeCompare(b.currentBin)).map((s, i) => (
+                            <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-100 hover:bg-purple-50'}`}>
+                              <td className={`px-3 py-2 text-xs font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{s.model}</td>
+                              <td className="px-3 py-2 font-mono text-xs font-bold">{s.material}</td>
+                              <td className={`px-3 py-2 text-xs truncate max-w-[200px] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 35)}</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>{s.currentBin}</span>
+                              </td>
+                              <td className="px-3 py-2 text-center text-gray-400">→</td>
+                              <td className="px-3 py-2 text-center">
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                  s.suggestedMajor === 'A' ? 'bg-blue-100 text-blue-700' : s.suggestedMajor === 'B' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                }`}>{s.suggestedMajor} Area</span>
+                              </td>
+                              <td className={`px-3 py-2 text-right text-xs font-medium ${darkMode ? 'text-gray-300' : ''}`}>{(s.stock || 0).toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {suggestions.length === 0 && (
+                <div className={`text-center py-6 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <Check className="w-12 h-12 mx-auto mb-2 text-emerald-500" />
+                  <p className="font-medium">모든 BOM 자재가 최적 위치에 있습니다!</p>
+                  <p className="text-xs mt-1">동일 모델 자재들이 같은 Area에 잘 집중되어 있습니다.</p>
+                </div>
+              )}
+            </div>
+
+            {/* 하단 버튼 */}
+            <div className={`flex justify-end gap-2 p-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <button onClick={() => setShowBinOptimizationModal(false)}
+                className={`px-6 py-2 rounded-lg font-medium ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'}`}>
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* 엑셀 데이터 복사 모달 */}
       {exportModalData && (
