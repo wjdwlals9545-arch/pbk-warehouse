@@ -67,26 +67,18 @@ jobs:
           python3 << 'PYEOF'
           import json, os
 
-          to_email = os.environ.get('EMAIL_TO', 'jimin.jung@promega.com')
-          cc_email = os.environ.get('EMAIL_CC', '')
           subject = os.environ.get('EMAIL_SUBJECT', 'Overdue Delivery Alert')
 
           with open('email_body.html', 'r') as f:
               html_body = f.read()
 
-          to_list = [e.strip() for e in to_email.split(',') if e.strip()]
-
+          # Resend 무료 플랜: 가입 이메일로만 발송 가능
           payload = {
               "from": "PBK Warehouse <onboarding@resend.dev>",
-              "to": to_list,
+              "to": ["wjdwlals9545@gmail.com"],
               "subject": subject,
               "html": html_body
           }
-
-          if cc_email:
-              cc_list = [e.strip() for e in cc_email.split(',') if e.strip()]
-              if cc_list:
-                  payload["cc"] = cc_list
 
           with open('email_payload.json', 'w') as f:
               json.dump(payload, f, ensure_ascii=False)
