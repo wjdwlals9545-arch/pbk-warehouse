@@ -5314,6 +5314,50 @@ export default function PBKWarehouseSystem() {
 
   const subComponentUnits = calculateSubComponentUnits();
 
+  // 병목 자재 카드 렌더링 헬퍼
+  const renderBottleneckCard = (bottleneckMat, avail, reqQty, type) => {
+    const desc = inventoryData.find(i => i.material === bottleneckMat)?.description || '';
+    // Open PO 확인
+    const poItems = (Array.isArray(openPORawItems) ? openPORawItems : [])
+      .filter(po => String(po.material) === String(bottleneckMat) && (po.qty || 0) > 0);
+    const totalPOQty = poItems.reduce((s, po) => s + (po.qty || 0), 0);
+    // Delivery date 확인
+    const delItems = (Array.isArray(deliveryData) ? deliveryData : [])
+      .filter(d => String(d.material) === String(bottleneckMat))
+      .sort((a, b) => (a.deliveryDate || '').localeCompare(b.deliveryDate || ''));
+    const nearestDel = delItems[0];
+
+    const isQStock = type === 'qstock';
+    const borderColor = isQStock ? 'border-orange-200' : 'border-red-200';
+    const titleColor = isQStock ? 'text-orange-600' : 'text-red-600';
+    const title = isQStock ? '병목 자재 (Q Stock 영향)' : '🚨 병목 자재';
+
+    return (
+      <div className={`mt-1.5 pt-1.5 border-t border-dashed ${borderColor}`}>
+        <p className={`text-[10px] ${titleColor} font-bold mb-1`}>{title}</p>
+        <div className="bg-gray-50 rounded-md p-1.5 space-y-1">
+          <p className="text-[10px] text-gray-700 truncate font-medium">{bottleneckMat} <span className="text-gray-400 font-normal">{desc}</span></p>
+          <div className="flex justify-between items-center text-[10px]">
+            <span className={`font-bold ${avail <= 0 ? 'text-red-600' : 'text-blue-600'}`}>재고: {avail} EA</span>
+            <span className="text-gray-500">필요: {reqQty} EA/대</span>
+          </div>
+          {totalPOQty > 0 ? (
+            <div className="flex justify-between items-center text-[10px] border-t border-gray-200 pt-0.5">
+              <span className="text-indigo-600 font-medium">📋 PO: {totalPOQty.toLocaleString()} EA</span>
+              {nearestDel ? (
+                <span className="text-emerald-600 font-medium">🚚 {nearestDel.deliveryDate}</span>
+              ) : (
+                <span className="text-gray-400">납기 미정</span>
+              )}
+            </div>
+          ) : (
+            <div className="text-[10px] text-red-500 font-medium border-t border-gray-200 pt-0.5">⚠️ Open PO 없음</div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // 생산 가능 대수 계산 (사용자 BOM 또는 기본 BOM 사용)
   const calculateProducibleUnits = useCallback(() => {
     if (inventoryData.length === 0) return {};
@@ -8856,54 +8900,29 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
                               // Total 0대일 때 전체 BOM 병목 표시
                               if (prodInfo.units === 0 && Object.keys(modelBom).length > 0) {
-                                let bottleneck = null;
-                                let minUnits = Infinity;
+                                let bn = null; let minU = Infinity;
                                 Object.entries(modelBom).forEach(([mat, reqQty]) => {
                                   if (reqQty <= 0) return;
                                   const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
-                                  const units = Math.floor(avail / reqQty);
-                                  if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, reqQty, units }; }
+                                  const u = Math.floor(avail / reqQty);
+                                  if (u < minU) { minU = u; bn = { material: mat, avail, reqQty }; }
                                 });
-                                if (bottleneck) {
-                                  const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || '';
-                                  return (
-                                    <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
-                                      <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
-                                      <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                      <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                        <span className="text-red-600 font-bold">재고: {bottleneck.avail} EA</span>
-                                        <span className="text-gray-500">필요: {bottleneck.reqQty} EA/대</span>
-                                      </div>
-                                    </div>
-                                  );
-                                }
+                                if (bn) return renderBottleneckCard(bn.material, bn.avail, bn.reqQty, 'shortage');
                               }
                               // Q Stock 영향 병목 표시
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
                               if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
-                              let bottleneck = null;
-                              let minUnits = Infinity;
+                              let bn = null; let minU = Infinity;
                               Object.entries(modelBom).forEach(([mat, reqQty]) => {
                                 if (reqQty <= 0) return;
                                 const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
                                 const qQty = qStockByMaterial[mat] || 0;
                                 if (qQty <= 0) return;
-                                const units = Math.floor((avail - qQty) / reqQty);
-                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                                const u = Math.floor((avail - qQty) / reqQty);
+                                if (u < minU) { minU = u; bn = { material: mat, avail: avail - qQty, reqQty }; }
                               });
-                              if (!bottleneck) return null;
-                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
-                              const avaExQ = bottleneck.avail - bottleneck.qQty;
-                              return (
-                                <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                  <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
-                                  <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                  <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
-                                    <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
-                                  </div>
-                                </div>
-                              );
+                              if (!bn) return null;
+                              return renderBottleneckCard(bn.material, bn.avail, bn.reqQty, 'qstock');
                             })()}
                           </div>
                         </div>
@@ -8993,54 +9012,29 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
                               // Total 0대일 때 전체 BOM 병목 표시
                               if (prodInfo.units === 0 && Object.keys(modelBom).length > 0) {
-                                let bottleneck = null;
-                                let minUnits = Infinity;
+                                let bn = null; let minU = Infinity;
                                 Object.entries(modelBom).forEach(([mat, reqQty]) => {
                                   if (reqQty <= 0) return;
                                   const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
-                                  const units = Math.floor(avail / reqQty);
-                                  if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, reqQty, units }; }
+                                  const u = Math.floor(avail / reqQty);
+                                  if (u < minU) { minU = u; bn = { material: mat, avail, reqQty }; }
                                 });
-                                if (bottleneck) {
-                                  const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || '';
-                                  return (
-                                    <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
-                                      <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
-                                      <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                      <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                        <span className="text-red-600 font-bold">재고: {bottleneck.avail} EA</span>
-                                        <span className="text-gray-500">필요: {bottleneck.reqQty} EA/대</span>
-                                      </div>
-                                    </div>
-                                  );
-                                }
+                                if (bn) return renderBottleneckCard(bn.material, bn.avail, bn.reqQty, 'shortage');
                               }
                               // Q Stock 영향 병목 표시
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
                               if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
-                              let bottleneck = null;
-                              let minUnits = Infinity;
+                              let bn = null; let minU = Infinity;
                               Object.entries(modelBom).forEach(([mat, reqQty]) => {
                                 if (reqQty <= 0) return;
                                 const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
                                 const qQty = qStockByMaterial[mat] || 0;
                                 if (qQty <= 0) return;
-                                const units = Math.floor((avail - qQty) / reqQty);
-                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                                const u = Math.floor((avail - qQty) / reqQty);
+                                if (u < minU) { minU = u; bn = { material: mat, avail: avail - qQty, reqQty }; }
                               });
-                              if (!bottleneck) return null;
-                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
-                              const avaExQ = bottleneck.avail - bottleneck.qQty;
-                              return (
-                                <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                  <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
-                                  <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                  <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
-                                    <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
-                                  </div>
-                                </div>
-                              );
+                              if (!bn) return null;
+                              return renderBottleneckCard(bn.material, bn.avail, bn.reqQty, 'qstock');
                             })()}
                           </div>
                         </div>
@@ -9127,56 +9121,29 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               const bomToUse = customBomData || MODEL_BOM_DATA;
                               const modelBom = bomToUse[model] || {};
                               const qExU = producibleUnitsExQ[model]?.units ?? prodInfo.units;
-                              // Total 0대일 때 전체 BOM 병목 표시
                               if (prodInfo.units === 0 && Object.keys(modelBom).length > 0) {
-                                let bottleneck = null;
-                                let minUnits = Infinity;
+                                let bn = null; let minU = Infinity;
                                 Object.entries(modelBom).forEach(([mat, reqQty]) => {
                                   if (reqQty <= 0) return;
                                   const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
-                                  const units = Math.floor(avail / reqQty);
-                                  if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, reqQty, units }; }
+                                  const u = Math.floor(avail / reqQty);
+                                  if (u < minU) { minU = u; bn = { material: mat, avail, reqQty }; }
                                 });
-                                if (bottleneck) {
-                                  const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || '';
-                                  return (
-                                    <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
-                                      <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
-                                      <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                      <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                        <span className="text-red-600 font-bold">재고: {bottleneck.avail} EA</span>
-                                        <span className="text-gray-500">필요: {bottleneck.reqQty} EA/대</span>
-                                      </div>
-                                    </div>
-                                  );
-                                }
+                                if (bn) return renderBottleneckCard(bn.material, bn.avail, bn.reqQty, 'shortage');
                               }
-                              // Q Stock 영향 병목 표시
                               const modelQItems = qStockData.filter(q => q.material in modelBom);
                               if (modelQItems.length === 0 || qExU === prodInfo.units) return null;
-                              let bottleneck = null;
-                              let minUnits = Infinity;
+                              let bn = null; let minU = Infinity;
                               Object.entries(modelBom).forEach(([mat, reqQty]) => {
                                 if (reqQty <= 0) return;
                                 const avail = inventoryData.filter(i => i.material === mat).reduce((s, i) => s + (i.stock || 0), 0);
                                 const qQty = qStockByMaterial[mat] || 0;
                                 if (qQty <= 0) return;
-                                const units = Math.floor((avail - qQty) / reqQty);
-                                if (units < minUnits) { minUnits = units; bottleneck = { material: mat, avail, qQty, reqQty }; }
+                                const u = Math.floor((avail - qQty) / reqQty);
+                                if (u < minU) { minU = u; bn = { material: mat, avail: avail - qQty, reqQty }; }
                               });
-                              if (!bottleneck) return null;
-                              const desc = inventoryData.find(i => i.material === bottleneck.material)?.description || modelQItems.find(q => q.material === bottleneck.material)?.description || '';
-                              const avaExQ = bottleneck.avail - bottleneck.qQty;
-                              return (
-                                <div className="mt-1.5 pt-1.5 border-t border-dashed border-orange-200">
-                                  <p className="text-[10px] text-orange-600 font-bold mb-0.5">병목 자재 (Q Stock 영향)</p>
-                                  <p className="text-[10px] text-gray-700 truncate">{bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                  <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                    <span className={avaExQ <= 0 ? 'text-red-600 font-bold' : 'text-blue-600'}>Ava: {avaExQ} EA</span>
-                                    <span className="text-orange-600 font-bold">Q: {bottleneck.qQty} EA</span>
-                                  </div>
-                                </div>
-                              );
+                              if (!bn) return null;
+                              return renderBottleneckCard(bn.material, bn.avail, bn.reqQty, 'qstock');
                             })()}
                           </div>
                         </div>
@@ -9359,17 +9326,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {(() => {
                                   // Total 0대일 때 병목 자재 표시
                                   if (info.units === 0 && info.bottleneck) {
-                                    const desc = inventoryData.find(i => i.material === info.bottleneck.material)?.description || '';
-                                    return (
-                                      <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
-                                        <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
-                                        <p className="text-[10px] text-gray-700 truncate">{info.bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                        <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                          <span className="text-red-600 font-bold">재고: {info.bottleneck.currentStock} EA</span>
-                                          <span className="text-gray-500">필요: {info.bottleneck.requiredQty} EA/대</span>
-                                        </div>
-                                      </div>
-                                    );
+                                    return renderBottleneckCard(info.bottleneck.material, info.bottleneck.currentStock, info.bottleneck.requiredQty, 'shortage');
                                   }
                                   const subQItems = qStockData.filter(q => q.material === subComName);
                                   if (subQItems.length === 0) return null;
@@ -9487,17 +9444,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {(() => {
                                   // Total 0대일 때 병목 자재 표시
                                   if (info.units === 0 && info.bottleneck) {
-                                    const desc = inventoryData.find(i => i.material === info.bottleneck.material)?.description || '';
-                                    return (
-                                      <div className="mt-1.5 pt-1.5 border-t border-dashed border-red-200">
-                                        <p className="text-[10px] text-red-600 font-bold mb-0.5">🚨 병목 자재</p>
-                                        <p className="text-[10px] text-gray-700 truncate">{info.bottleneck.material} <span className="text-gray-400">{desc}</span></p>
-                                        <div className="flex justify-between items-center text-[10px] mt-0.5">
-                                          <span className="text-red-600 font-bold">재고: {info.bottleneck.currentStock} EA</span>
-                                          <span className="text-gray-500">필요: {info.bottleneck.requiredQty} EA/대</span>
-                                        </div>
-                                      </div>
-                                    );
+                                    return renderBottleneckCard(info.bottleneck.material, info.bottleneck.currentStock, info.bottleneck.requiredQty, 'shortage');
                                   }
                                   const subQItems = qStockData.filter(q => q.material === subComName);
                                   if (subQItems.length === 0) return null;
