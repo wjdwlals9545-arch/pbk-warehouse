@@ -1496,7 +1496,7 @@ const DEFAULT_WEIGHT_DATA = {
   '712681': { d: 'Sensor-Door, MX-48', w: 0.007503, b: 'C3-11' },
   '712680': { d: 'Sensor-M.Home, MX-48', w: 0.005289, b: 'C3-11' },
   '712649': { d: 'Locating Pins, Tray, MX48', w: 0.000411, b: 'C3-11' },
-  '712055': { d: 'Rod Plastic, 1/8\"Dia', w: 0.0041, b: 'C3-11' },
+  '712055': { d: 'Rod Plastic, 1/8\"Dia', w: 0.00001, b: 'C3-11' },  // 410mm당 4.1g → mm당 0.01g
   '712689': { d: 'Cable-FFC 10\"', w: 0.00076, b: 'C3-12' },
   '712683': { d: 'Cable-24VDC, MX-48', w: 0.009736, b: 'C3-13' },
   '714406': { d: 'Cable-Power Signal, LPS365-M', w: 0.003027, b: 'C3-13' },
@@ -1788,7 +1788,7 @@ const DEFAULT_RACK_CONFIG = {
   // 기타 구역
   'D2': { maxBins: 1, maxWeight: 1000 },   // 약 1톤
   'E': { maxBins: 1, maxWeight: 99999 },   // 무제한
-  'E3': { maxBins: 4, maxWeight: 600 },    // 경량 4개 × 150kg
+  'E3': { maxBins: 48, maxWeight: 600 },   // 경량 4개 × 4단 × 3박스/선반
   'Tablet': { maxBins: 1, maxWeight: 600 }, // 중량 2개 × 300kg
   'Stand': { maxBins: 1, maxWeight: 600 },  // 중량 2개 × 300kg
   'S1': { maxBins: 4, maxWeight: 1200 },   // 중량 4개 × 300kg
