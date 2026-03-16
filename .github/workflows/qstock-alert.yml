@@ -80,7 +80,7 @@ jobs:
                 else warnings.push({ ...item, days }); // 테스트에서는 7일 미만도 포함
               } else {
                 if (days > 10) urgents.push({ ...item, days });
-                else if (days >= 7) warnings.push({ ...item, days });
+                else if (days >= 8) warnings.push({ ...item, days });
               }
             });
 
