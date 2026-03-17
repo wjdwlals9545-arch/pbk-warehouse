@@ -2386,14 +2386,9 @@ export default function PBKWarehouseSystem() {
 
       console.log('[DashSync] Loaded from GitHub, keys:', Object.keys(stateObj).length);
 
-      // 로컬 타임스탬프 vs GitHub 타임스탬프 비교
-      const localTs = parseInt(safeStorage.getItem('pbk_sync_local_ts') || '0', 10);
+      // GitHub를 중앙 저장소로 사용 — 항상 GitHub 데이터를 신뢰
       const remoteTs = stateObj._syncTimestamp || 0;
-      if (localTs > remoteTs) {
-        console.log(`[DashSync] 로컬이 더 최신 (local=${localTs}, remote=${remoteTs}), GitHub 데이터 무시`);
-        // 로드 후 현재 해시 저장 (불필요한 업로드 방지하지 않음 - 로컬이 더 최신이므로 업로드 필요)
-        return;
-      }
+      console.log(`[DashSync] GitHub 데이터 로드 (remoteTs=${remoteTs})`);
 
       // setState 매핑
       const setterMap = {
