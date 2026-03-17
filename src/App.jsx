@@ -18374,13 +18374,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   전체 {totalOptimizable}개 자재 중 {totalOptimizable - totalMoved}개가 최적 위치 | 이동 제안: {totalMoved}건
                 </p>
-                <div className={`mt-3 pt-3 border-t text-xs space-y-1 ${darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-                  <p className="font-medium mb-1">📊 점수 산출 기준</p>
-                  <p>• <b>점수 = (최적 위치 자재 수 ÷ 전체 이동 가능 자재 수) × 100</b></p>
-                  <p>• 같은 모델(48/16/HSM) 자재가 인접 Bin에 모여있으면 "최적 위치"</p>
-                  <p>• 같은 그룹 내 무거운 자재가 하단(큰 번호)에 있으면 "최적 위치"</p>
-                  <p>• 80점 이상 <span className="text-emerald-500 font-bold">●</span> 양호 | 60~79점 <span className="text-amber-500 font-bold">●</span> 개선 필요 | 60점 미만 <span className="text-red-500 font-bold">●</span> 재배치 권장</p>
-                </div>
+                <details className={`mt-3 pt-3 border-t text-xs ${darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+                  <summary className="font-medium cursor-pointer hover:underline select-none">📊 점수 산출 기준</summary>
+                  <div className="mt-2 space-y-1 pl-1">
+                    <p>• <b>점수 = (최적 위치 자재 수 ÷ 전체 이동 가능 자재 수) × 100</b></p>
+                    <p>• 같은 모델(48/16/HSM) 자재가 인접 Bin에 모여있으면 "최적 위치"</p>
+                    <p>• 같은 그룹 내 무거운 자재가 하단(큰 번호)에 있으면 "최적 위치"</p>
+                    <p>• 80점 이상 <span className="text-emerald-500 font-bold">●</span> 양호 | 60~79점 <span className="text-amber-500 font-bold">●</span> 개선 필요 | 60점 미만 <span className="text-red-500 font-bold">●</span> 재배치 권장</p>
+                  </div>
+                </details>
               </div>
 
               {/* 범례 */}
@@ -18416,26 +18418,41 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           {data.fixed > 0 && ` | Fixed: ${data.fixed}`}
                         </span>
                       </div>
-                      {/* 모델 분포 미니 바 */}
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>모델 분포</span>
-                        <div className="flex h-4 w-36 rounded-full overflow-hidden">
-                          {['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].map(g => {
-                            const cnt = data.grouped[g]?.length || 0;
-                            if (cnt === 0) return null;
-                            const pct = Math.round((cnt / data.movable) * 100);
-                            return (
-                              <div key={g} className={`${groupColors[g].dot} relative group/bar cursor-default flex items-center justify-center`}
-                                style={{ width: `${(cnt / data.movable) * 100}%` }}>
-                                {pct >= 15 && <span className="text-[8px] text-white font-bold">{cnt}</span>}
-                                <div className={`absolute bottom-full mb-1 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/bar:opacity-100 transition-opacity z-10 pointer-events-none ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-800 text-white'}`}>
-                                  {g}: {cnt}개 ({pct}%)
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      {/* 모델 분포 미니 도넛 */}
+                      {(() => {
+                        const groups = ['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'];
+                        const counts = groups.map(g => data.grouped[g]?.length || 0);
+                        const total = counts.reduce((a, b) => a + b, 0) || 1;
+                        const colors = ['#10b981', '#3b82f6', '#f97316', '#9ca3af'];
+                        let cumPct = 0;
+                        const segs = [];
+                        groups.forEach((g, i) => {
+                          if (counts[i] === 0) return;
+                          const pct = counts[i] / total;
+                          const s = cumPct; cumPct += pct;
+                          const x1 = Math.cos(2*Math.PI*s - Math.PI/2)*10;
+                          const y1 = Math.sin(2*Math.PI*s - Math.PI/2)*10;
+                          const x2 = Math.cos(2*Math.PI*cumPct - Math.PI/2)*10;
+                          const y2 = Math.sin(2*Math.PI*cumPct - Math.PI/2)*10;
+                          segs.push({ color: colors[i], d: pct >= 1 ? 'M0,-10A10,10,0,1,1,-0.01,-10Z' : `M0,-10A10,10,0,${pct>0.5?1:0},1,${x2.toFixed(2)},${y2.toFixed(2)}L0,0Z`, startAngle: s });
+                        });
+                        return (
+                          <div className="flex items-center gap-1.5 relative group/dist">
+                            <span className={`text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>모델 분포</span>
+                            <svg width="28" height="28" viewBox="-12 -12 24 24" className="cursor-default drop-shadow-sm">
+                              {segs.map((sg, i) => <path key={i} d={sg.d} fill={sg.color} stroke={darkMode ? '#374151' : '#fff'} strokeWidth="0.5"/>)}
+                              <circle cx="0" cy="0" r="5" fill={darkMode ? '#1f2937' : '#fff'}/>
+                            </svg>
+                            {/* 호버 팝업 */}
+                            <div className={`absolute right-0 top-full mt-1 px-3 py-2 rounded-lg shadow-lg text-xs opacity-0 group-hover/dist:opacity-100 transition-opacity z-20 pointer-events-none whitespace-nowrap ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-800 text-white'}`}>
+                              {groups.map((g, i) => {
+                                if (counts[i] === 0) return null;
+                                return <div key={g} className="flex items-center gap-2 py-0.5"><span className="w-2 h-2 rounded-full" style={{backgroundColor:colors[i]}}/><span>{g}: {counts[i]}개 ({Math.round(counts[i]/total*100)}%)</span></div>;
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                     {/* 이동 제안 테이블 */}
                     <div className="overflow-x-auto">
