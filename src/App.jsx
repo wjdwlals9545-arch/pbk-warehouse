@@ -5845,14 +5845,14 @@ export default function PBKWarehouseSystem() {
 </xml>
 <![endif]-->
 <style>
-@page { size: A4; margin: 2cm; }
-body { font-family: 'Malgun Gothic', Arial, sans-serif; font-size: 10pt; }
-h1 { text-align: center; font-size: 14pt; margin-bottom: 5px; }
-h2 { text-align: center; font-size: 11pt; color: #666; margin-top: 0; margin-bottom: 15px; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-td, th { border: 1px solid #000; padding: 5px 8px; text-align: center; }
+@page { size: A4; margin: 1.5cm; }
+body { font-family: 'Malgun Gothic', Arial, sans-serif; font-size: 9pt; }
+h1 { text-align: center; font-size: 13pt; margin-bottom: 3px; }
+h2 { text-align: center; font-size: 10pt; color: #666; margin-top: 0; margin-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+td, th { border: 1px solid #000; padding: 1px 6px; text-align: center; line-height: 1.2; }
 th { background-color: #e8e8e8; font-weight: bold; }
-.header-table td { padding: 8px; }
+.header-table td { padding: 4px; }
 .title-cell { font-weight: bold; background-color: #f5f5f5; width: 40%; font-size: 9pt; }
 .signature-cell { width: 20%; }
 </style>
