@@ -8604,12 +8604,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </div>
                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>생산 가능 대수</p>
                 <div className="mt-1 space-y-0.5">
-                  {Object.entries(prodCapacity).slice(0, 4).map(([model, info]) => (
+                  {['RSC48', 'CSC48', 'RSC16', 'CSC16', 'FSC16'].filter(m => prodCapacity[m]).map(model => {
+                    const info = prodCapacity[model];
+                    return (
                     <div key={model} className="flex justify-between items-center">
                       <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{model}</span>
                       <span className={`text-sm font-bold ${info.units === 0 ? 'text-red-500' : info.units < 5 ? 'text-amber-500' : darkMode ? 'text-white' : 'text-gray-900'}`}>{info.units}대</span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </button>
 
@@ -8644,14 +8647,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* 긴급 알림 영역 */}
-            {(overdueItems.length > 0 || qOver8.length > 0 || Object.values(prodCapacity).some(v => v.units === 0)) && (
+            {(overdueItems.length > 0 || qOver8.length > 0 || ['RSC48','CSC48','RSC16','CSC16','FSC16'].some(m => prodCapacity[m]?.units === 0)) && (
               <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'} rounded-xl shadow-sm p-4 border`}>
                 <h3 className={`font-semibold text-sm mb-3 flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                   <AlertTriangle className="w-4 h-4 text-red-500" /> 긴급 알림
                 </h3>
                 <div className="space-y-2 max-h-[240px] overflow-y-auto">
                   {/* 생산 불가 */}
-                  {Object.entries(prodCapacity).filter(([, v]) => v.units === 0).map(([model, info]) => {
+                  {['RSC48','CSC48','RSC16','CSC16','FSC16'].filter(m => prodCapacity[m]?.units === 0).map(model => { const info = prodCapacity[model];
                     const desc = inv.find(i => String(i.material) === String(info.bottleneck))?.description || '';
                     return (
                       <div key={`prod-${model}`} onClick={() => setActiveTab('dashboard')}
@@ -8735,9 +8738,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <BarChart3 className="w-4 h-4 text-emerald-500" /> 모델별 생산 가능 대수
                 </h3>
                 <div className="space-y-2">
-                  {Object.entries(prodCapacity).map(([model, info]) => {
+                  {['RSC48', 'CSC48', 'RSC16', 'CSC16', 'FSC16'].filter(m => prodCapacity[m]).map(model => {
+                    const info = prodCapacity[model];
                     const desc = inv.find(i => String(i.material) === String(info.bottleneck))?.description || '';
-                    const maxUnits = Math.max(...Object.values(prodCapacity).map(v => v.units), 1);
+                    const maxUnits = Math.max(...['RSC48', 'CSC48', 'RSC16', 'CSC16', 'FSC16'].filter(m => prodCapacity[m]).map(m => prodCapacity[m].units), 1);
                     const barWidth = Math.min(100, (info.units / maxUnits) * 100);
                     return (
                       <div key={model} className="space-y-1">
