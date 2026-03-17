@@ -29,8 +29,7 @@ export class ErrorBoundary extends React.Component {
 }
 import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter, TrendingUp, AlertTriangle, Upload, FileSpreadsheet, Save, RefreshCw, Scale, Edit2, Check, Download, Play, Pause, Bell, BellOff, Calendar, List, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ExternalLink, Thermometer, Printer, FileText, Moon, Sun, History, Info, Keyboard, Zap, ArrowRight, Lightbulb, Archive, Box, Smartphone, Truck, MessageSquare, Send, Bot, Mail, Home, Activity, MapPin, Shuffle } from 'lucide-react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
-import html2canvas from 'html2canvas-pro';
-import jsPDF from 'jspdf';
+// html2canvas, jsPDF → lazy import (PDF 버튼 클릭 시에만 로드)
 // safeStorage: localStorage 사용 가능하면 localStorage, 아니면 인메모리 대체
 const safeStorage = (() => {
   try {
@@ -7198,6 +7197,7 @@ ${context}`;
       showToast('PDF 생성 중...', 'info');
       const el = kpiContentRef.current;
       const scale = 1.5;
+      const { default: html2canvas } = await import('html2canvas-pro');
       const canvas = await html2canvas(el, {
         scale,
         useCORS: true,
@@ -7210,6 +7210,7 @@ ${context}`;
       const imgW = canvas.width;
       const imgH = canvas.height;
       // A4 landscape: 297mm x 210mm
+      const { default: jsPDF } = await import('jspdf');
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
