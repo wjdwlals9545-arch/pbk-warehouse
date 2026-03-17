@@ -2441,10 +2441,18 @@ export default function PBKWarehouseSystem() {
     }
   };
 
-  // 현재 상태를 dashboard_state.json으로 GitHub에 업로드
+  // 현재 상태를 dashboard_state.json으로 GitHub에 업로드 (마스터 PC만)
   const uploadDashboardState = async () => {
     const TOKEN = safeStorage.getItem('pbk_gh_token');
     if (!TOKEN) return;
+
+    // 마스터 PC만 업로드 가능 (SAP 추출 PC)
+    // 설정: localStorage.setItem('pbk_sync_master', 'true')
+    const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
+    if (!isMaster) {
+      console.log('[DashSync] Read-only mode (not master PC), skip upload');
+      return;
+    }
 
     // 현재 상태 수집
     const stateObj = {};
@@ -4101,9 +4109,11 @@ export default function PBKWarehouseSystem() {
   // ──── 페이지 종료/새로고침 시 즉시 동기화 (beacon) ────
   useEffect(() => {
     const handleBeforeUnload = () => {
-      // sendBeacon으로 즉시 업로드 시도 (비동기 fetch는 취소될 수 있음)
+      // 마스터 PC만 동기화 관련 작업 수행
       const TOKEN = safeStorage.getItem('pbk_gh_token');
       if (!TOKEN) return;
+      const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
+      if (!isMaster) return;
       // localStorage는 이미 최신 → 타임스탬프만 최신화
       safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
     };
@@ -4124,6 +4134,19 @@ export default function PBKWarehouseSystem() {
       customBomData, subComponentBomData, bomLastUpdated,
       notifications, previousStats,
       inventoryData, openPOData, openPORawItems, deliveryData, deliveryLastUpdated, qStockData]);
+
+  // ──── 읽기 전용 PC: 5분마다 GitHub에서 최신 데이터 자동 로드 ────
+  useEffect(() => {
+    const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
+    if (isMaster) return; // 마스터 PC는 자기가 올리니까 불필요
+
+    const interval = setInterval(() => {
+      console.log('[DashSync] Read-only PC: auto-refreshing from GitHub...');
+      loadDashboardState();
+    }, 5 * 60 * 1000); // 5분마다
+
+    return () => clearInterval(interval);
+  }, []);
 
   // 자동 백업 (12시, 15시 55분에만)
   useEffect(() => {
