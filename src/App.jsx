@@ -18145,7 +18145,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         const MODEL_GROUPS = {
           'Maxwell 48': ['RSC48', 'CSC48'],
           'Maxwell 16': ['RSC16', 'CSC16', 'FSC16'],
-          'HSM': ['HSM'],
+          'HSM': ['HSM', 'HSM3'],
         };
         // getModelGroup: {group, subComParts} 반환
         const getModelGroup = (matCode) => {
@@ -18449,27 +18449,28 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             const hasMoved = currentNum !== suggestNum;
                             // 사유: 어떤 그룹 기준으로 그룹핑 되었는지 표시
                             const groupLabel = s.subComParts && s.subComParts.length > 0
-                              ? s.subComParts.join(', ')
+                              ? s.subComParts.slice(0, 2).join(', ') + (s.subComParts.length > 2 ? ` 외${s.subComParts.length - 2}` : '')
                               : s.group;
                             const reason = hasMoved
                               ? (s.group !== 'Others' ? `${groupLabel} 그룹핑 + 중량 배치` : '중량 배치')
                               : `${groupLabel} 그룹핑`;
-                            // Model 컬럼: sub-component면 KB 품번 표시
+                            // Model 컬럼: sub-component면 첫 KB만 + 뱃지로 표시
                             const modelDisplay = s.subComParts && s.subComParts.length > 0
-                              ? s.subComParts.slice(0, 3).join(', ') + (s.subComParts.length > 3 ? '...' : '')
+                              ? s.subComParts[0]
                               : s.group;
-                            const suggestedBinDisplay = s.suggestedBinEnd && s.suggestedBinEnd !== s.suggestedBin
-                              ? `${s.suggestedBin}~${s.suggestedBinEnd.split('-')[1]}`
-                              : s.suggestedBin;
+                            const extraCount = s.subComParts && s.subComParts.length > 1 ? s.subComParts.length - 1 : 0;
                             return (
                               <tr key={i} className={`border-t ${darkMode ? 'border-gray-700 hover:bg-gray-700/50' : 'border-gray-100 hover:bg-purple-50/50'}`}>
                                 <td className="px-3 py-1.5">
-                                  {s.subComParts && s.subComParts.length > 0 ? (
-                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-purple-900/40 text-purple-300' : 'bg-purple-100 text-purple-700'}`}
-                                      title={s.subComParts.join(', ')}>{modelDisplay}</span>
-                                  ) : (
-                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? gc.darkBg + ' ' + gc.darkText : gc.bg + ' ' + gc.text}`}>{modelDisplay}</span>
-                                  )}
+                                  <div className="flex items-center gap-1">
+                                    {s.subComParts && s.subComParts.length > 0 ? (
+                                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-purple-900/40 text-purple-300' : 'bg-purple-100 text-purple-700'}`}
+                                        title={s.subComParts.join(', ')}>{modelDisplay}</span>
+                                    ) : (
+                                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${darkMode ? gc.darkBg + ' ' + gc.darkText : gc.bg + ' ' + gc.text}`}>{modelDisplay}</span>
+                                    )}
+                                    {extraCount > 0 && <span className={`text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} title={s.subComParts.join(', ')}>+{extraCount}</span>}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-1.5 font-mono text-xs font-bold">{s.material}</td>
                                 <td className={`px-3 py-1.5 text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.description?.slice(0, 30)}</td>
@@ -18478,12 +18479,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 </td>
                                 <td className="px-3 py-1.5 text-center">
                                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>{s.currentBin}</span>
-                                  {s.binsOccupied > 1 && <span className={`ml-1 text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>({s.binsOccupied}칸)</span>}
                                 </td>
                                 <td className="px-3 py-1.5 text-center text-gray-400 text-xs">→</td>
                                 <td className="px-3 py-1.5 text-center">
-                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>{suggestedBinDisplay}</span>
-                                  {s.binsOccupied > 1 && <span className={`ml-1 text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>({s.binsOccupied}칸)</span>}
+                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>{s.suggestedBin}</span>
                                 </td>
                                 <td className={`px-3 py-1.5 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{reason}</td>
                               </tr>
