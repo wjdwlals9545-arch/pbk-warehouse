@@ -18372,6 +18372,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   전체 {totalOptimizable}개 자재 중 {totalOptimizable - totalMoved}개가 최적 위치 | 이동 제안: {totalMoved}건
                 </p>
+                <div className={`mt-3 pt-3 border-t text-xs space-y-1 ${darkMode ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+                  <p className="font-medium mb-1">📊 점수 산출 기준</p>
+                  <p>• <b>점수 = (최적 위치 자재 수 ÷ 전체 이동 가능 자재 수) × 100</b></p>
+                  <p>• 같은 모델(48/16/HSM) 자재가 인접 Bin에 모여있으면 "최적 위치"</p>
+                  <p>• 같은 그룹 내 무거운 자재가 하단(큰 번호)에 있으면 "최적 위치"</p>
+                  <p>• 80점 이상 <span className="text-emerald-500 font-bold">●</span> 양호 | 60~79점 <span className="text-amber-500 font-bold">●</span> 개선 필요 | 60점 미만 <span className="text-red-500 font-bold">●</span> 재배치 권장</p>
+                </div>
               </div>
 
               {/* 범례 */}
@@ -18408,12 +18415,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         </span>
                       </div>
                       {/* 모델 분포 미니 바 */}
-                      <div className="flex h-3 w-32 rounded-full overflow-hidden">
-                        {['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].map(g => {
-                          const cnt = data.grouped[g]?.length || 0;
-                          if (cnt === 0) return null;
-                          return <div key={g} className={groupColors[g].dot} style={{ width: `${(cnt / data.movable) * 100}%` }} />;
-                        })}
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>모델 분포</span>
+                        <div className="flex h-3 w-32 rounded-full overflow-hidden"
+                          title={['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].filter(g => (data.grouped[g]?.length || 0) > 0).map(g => `${g}: ${data.grouped[g]?.length || 0}개`).join(' | ')}>
+                          {['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].map(g => {
+                            const cnt = data.grouped[g]?.length || 0;
+                            if (cnt === 0) return null;
+                            return <div key={g} className={groupColors[g].dot} style={{ width: `${(cnt / data.movable) * 100}%` }} />;
+                          })}
+                        </div>
                       </div>
                     </div>
                     {/* 이동 제안 테이블 */}
