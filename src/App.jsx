@@ -18336,7 +18336,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
         return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowBinOptimizationModal(false)}>
-          <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-xl shadow-xl w-full max-w-5xl flex flex-col`}
+          <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white'} rounded-xl shadow-xl w-full max-w-6xl flex flex-col`}
             style={{ maxHeight: 'calc(100vh - 2rem)' }} onClick={e => e.stopPropagation()}>
             {/* 헤더 */}
             <div className={`flex-shrink-0 flex justify-between items-center p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -18418,12 +18418,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       {/* 모델 분포 미니 바 */}
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>모델 분포</span>
-                        <div className="flex h-3 w-32 rounded-full overflow-hidden"
-                          title={['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].filter(g => (data.grouped[g]?.length || 0) > 0).map(g => `${g}: ${data.grouped[g]?.length || 0}개`).join(' | ')}>
+                        <div className="flex h-4 w-36 rounded-full overflow-hidden">
                           {['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'].map(g => {
                             const cnt = data.grouped[g]?.length || 0;
                             if (cnt === 0) return null;
-                            return <div key={g} className={groupColors[g].dot} style={{ width: `${(cnt / data.movable) * 100}%` }} />;
+                            const pct = Math.round((cnt / data.movable) * 100);
+                            return (
+                              <div key={g} className={`${groupColors[g].dot} relative group/bar cursor-default flex items-center justify-center`}
+                                style={{ width: `${(cnt / data.movable) * 100}%` }}>
+                                {pct >= 15 && <span className="text-[8px] text-white font-bold">{cnt}</span>}
+                                <div className={`absolute bottom-full mb-1 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-medium whitespace-nowrap opacity-0 group-hover/bar:opacity-100 transition-opacity z-10 pointer-events-none ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-800 text-white'}`}>
+                                  {g}: {cnt}개 ({pct}%)
+                                </div>
+                              </div>
+                            );
                           })}
                         </div>
                       </div>
@@ -18432,14 +18440,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm table-fixed">
                         <colgroup>
-                          <col style={{width:'11%'}} />
                           <col style={{width:'10%'}} />
-                          <col style={{width:'25%'}} />
+                          <col style={{width:'9%'}} />
+                          <col style={{width:'22%'}} />
+                          <col style={{width:'9%'}} />
                           <col style={{width:'10%'}} />
-                          <col style={{width:'11%'}} />
                           <col style={{width:'3%'}} />
-                          <col style={{width:'12%'}} />
-                          <col style={{width:'18%'}} />
+                          <col style={{width:'11%'}} />
+                          <col style={{width:'26%'}} />
                         </colgroup>
                         <thead className={`${darkMode ? 'bg-gray-750' : 'bg-gray-50/50'}`}>
                           <tr>
