@@ -5893,8 +5893,14 @@ ${tableRows}
 </tbody>
 </table>
 
-<p style="font-size:8pt;color:#666;margin-top:20px;">
-* Spec: Temp +5~40℃ / Humidity 0~75% (Equipment: NS-205B)<br/>
+<p style="font-size:9pt;margin-top:10px;">
+Month : ${year}년 ${String(month).padStart(2, '0')}월 &nbsp;&nbsp;&nbsp;&nbsp;
+Equipment &amp; Tool : NS-205B &nbsp;&nbsp;&nbsp;&nbsp;
+Check method : write down the digit<br/>
+Spec. : Temp : +5~40℃, Humidity: 0%~75%
+</p>
+<p style="font-size:8pt;color:#666;margin-top:5px;">
+* Each item could be changed or added without ECO.<br/>
 * Generated: ${new Date().toLocaleString('ko-KR')}
 </p>
 </body>
