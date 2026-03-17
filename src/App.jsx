@@ -2408,7 +2408,7 @@ export default function PBKWarehouseSystem() {
           inventoryAdjust: val.inventoryAdjust || {},
           invAdjustDetail: val.invAdjustDetail || {}
         }),
-        pbk_temp_humidity_data: setTempHumidityData,
+        pbk_temp_humidity_data: (val) => setTempHumidityData(prev => ({ ...HISTORICAL_TEMP_HUMIDITY_DATA, ...prev, ...val })),
         pbk_temp_humidity_recorder: setTempHumidityRecorder,
         pbk_weight_data: setWeightData,
         pbk_custom_bom: setCustomBomData,
@@ -2423,7 +2423,7 @@ export default function PBKWarehouseSystem() {
         pbk_open_po_raw: setOpenPORawItems,
         pbk_open_po_updated: setOpenPOLastUpdated,
         pbk_delivery_data: setDeliveryData,
-        pbk_delivery_updated: (val) => safeStorage.setItem('pbk_delivery_updated', val),
+        pbk_delivery_updated: (val) => { safeStorage.setItem('pbk_delivery_updated', val); setDeliveryLastUpdated(val); },
         pbk_qstock: setQStockData,
       };
 
@@ -4128,7 +4128,8 @@ export default function PBKWarehouseSystem() {
   }, [syncReady, receiveCycles, pickCycles, kittingData, todoList, kpiData,
       tempHumidityData, tempHumidityRecorder, weightData,
       customBomData, subComponentBomData, bomLastUpdated,
-      notifications, previousStats]);
+      notifications, previousStats,
+      inventoryData, openPOData, openPORawItems, deliveryData, deliveryLastUpdated, qStockData]);
 
   // 자동 백업 (12시, 15시 55분에만)
   useEffect(() => {
