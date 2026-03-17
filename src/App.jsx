@@ -18411,7 +18411,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   const mOrder = ['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'];
                   const getDominant = (d) => {
                     let maxG = 'Others', maxC = 0;
-                    mOrder.forEach(g => { const c = d.grouped[g]?.length || 0; if (c > maxC) { maxC = c; maxG = g; } });
+                    // Others 제외하고 실제 모델 그룹만으로 dominant 판별
+                    mOrder.filter(g => g !== 'Others').forEach(g => { const c = d.grouped[g]?.length || 0; if (c > maxC) { maxC = c; maxG = g; } });
                     return maxG;
                   };
                   const gRacks = {}; mOrder.forEach(g => { gRacks[g] = []; });
