@@ -18407,7 +18407,26 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p className="text-xs mt-1">같은 모델 자재끼리 잘 모여있고 중량 배치도 적절합니다.</p>
                 </div>
               ) : (
-                Object.entries(rackResults).sort(([a], [b]) => a.localeCompare(b)).map(([rackId, data]) => (
+                (() => {
+                  const mOrder = ['Maxwell 48', 'Maxwell 16', 'HSM', 'Others'];
+                  const getDominant = (d) => {
+                    let maxG = 'Others', maxC = 0;
+                    mOrder.forEach(g => { const c = d.grouped[g]?.length || 0; if (c > maxC) { maxC = c; maxG = g; } });
+                    return maxG;
+                  };
+                  const gRacks = {}; mOrder.forEach(g => { gRacks[g] = []; });
+                  Object.entries(rackResults).forEach(([id, d]) => { gRacks[getDominant(d)].push([id, d]); });
+                  mOrder.forEach(g => { gRacks[g].sort(([a], [b]) => a.localeCompare(b)); });
+                  return mOrder.filter(g => gRacks[g].length > 0).map(g => (
+                    <div key={g} className="space-y-3">
+                      <div className="flex items-center gap-2 mt-1 px-1">
+                        <span className={`w-3 h-3 rounded-full ${groupColors[g].dot}`} />
+                        <span className={`text-sm font-bold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{g}</span>
+                        <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                          ({gRacks[g].map(([id]) => id).join(', ')})
+                        </span>
+                      </div>
+                      {gRacks[g].map(([rackId, data]) => (
                   <div key={rackId} className={`rounded-xl border ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
                     {/* 랙 헤더 */}
                     <div className={`px-4 py-2.5 flex items-center justify-between ${darkMode ? 'bg-gray-700' : 'bg-gray-50'} rounded-t-xl`}>
@@ -18530,7 +18549,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       </table>
                     </div>
                   </div>
-                ))
+                      ))}
+                    </div>
+                  ));
+                })()
               )}
             </div>
 
