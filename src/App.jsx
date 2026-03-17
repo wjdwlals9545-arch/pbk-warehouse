@@ -2373,24 +2373,18 @@ export default function PBKWarehouseSystem() {
     const TOKEN = safeStorage.getItem('pbk_gh_token');
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main';
     try {
-      const url = TOKEN
-        ? `https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/contents/${DASHBOARD_STATE_PATH}`
-        : `${BASE}/${DASHBOARD_STATE_PATH}?t=${Date.now()}`;
+      // 항상 GitHub API 사용 (public repo는 토큰 없이도 가능, CDN 캐시 없음)
+      const url = `https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/contents/${DASHBOARD_STATE_PATH}`;
       const headers = TOKEN
         ? { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
-        : {};
+        : { Accept: 'application/vnd.github+json' };
       const resp = await fetch(url, { headers });
       if (!resp.ok) { console.log('[DashSync] No dashboard_state.json yet'); return; }
 
-      let stateObj;
-      if (TOKEN) {
-        const info = await resp.json();
-        syncShaRef.current = info.sha;
-        const decoded = decodeURIComponent(escape(atob(info.content.replace(/\n/g, ''))));
-        stateObj = JSON.parse(decoded);
-      } else {
-        stateObj = await resp.json();
-      }
+      const info = await resp.json();
+      syncShaRef.current = info.sha;
+      const decoded = decodeURIComponent(escape(atob(info.content.replace(/\n/g, ''))));
+      const stateObj = JSON.parse(decoded);
 
       console.log('[DashSync] Loaded from GitHub, keys:', Object.keys(stateObj).length);
 
