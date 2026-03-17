@@ -73,6 +73,7 @@ const SYNC_KEYS = [
   // epoch (커밋 시간 기준) — Excel 재파싱 판단용
   'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
   'pbk_qstock',
+  'pbk_last_auto_backup',
 ];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
@@ -2426,6 +2427,7 @@ export default function PBKWarehouseSystem() {
         pbk_delivery_data: setDeliveryData,
         pbk_delivery_updated: (val) => { safeStorage.setItem('pbk_delivery_updated', val); setDeliveryLastUpdated(val); },
         pbk_qstock: setQStockData,
+        pbk_last_auto_backup: setLastAutoBackup,
       };
 
       for (const key of SYNC_KEYS) {
