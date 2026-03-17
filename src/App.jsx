@@ -71,6 +71,9 @@ const SYNC_KEYS = [
   'pbk_inventory', 'pbk_last_updated',
   'pbk_open_po', 'pbk_open_po_raw', 'pbk_open_po_updated',
   'pbk_delivery_data', 'pbk_delivery_updated',
+  // epoch (커밋 시간 기준) — Excel 재파싱 판단용
+  'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
+  'pbk_qstock',
 ];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
@@ -2421,6 +2424,7 @@ export default function PBKWarehouseSystem() {
         pbk_open_po_updated: setOpenPOLastUpdated,
         pbk_delivery_data: setDeliveryData,
         pbk_delivery_updated: (val) => safeStorage.setItem('pbk_delivery_updated', val),
+        pbk_qstock: setQStockData,
       };
 
       for (const key of SYNC_KEYS) {
@@ -3963,7 +3967,6 @@ export default function PBKWarehouseSystem() {
           }
         } catch (e) { console.log('Stock Excel fetch skip:', e.message); }
 
-        // 2. Excel 시도 (OpenPO)
         // 2. Excel 시도 (OpenPO) — epoch 기반 비교
         if (!poLoaded) {
           const poInfo = await getFileCommitInfo('public/data/OpenPOData_latest.xlsx');
@@ -3971,6 +3974,7 @@ export default function PBKWarehouseSystem() {
           const poNewer = poInfo.epoch > savedPoEpoch;
           const needRawItems = !safeStorage.getItem('pbk_open_po_raw');
           const forcePoReparse = parseVersionChanged || needRawItems;
+          console.log(`[OpenPO] epoch비교: GitHub=${poInfo.epoch}(${poInfo.display}), saved=${savedPoEpoch}, newer=${poNewer}, forceReparse=${forcePoReparse}, hasLocal=${!!safeStorage.getItem('pbk_open_po')}`);
           if (poNewer || forcePoReparse || !safeStorage.getItem('pbk_open_po')) try {
             const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
