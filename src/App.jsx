@@ -8590,7 +8590,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </button>
 
               {/* Q-Stock */}
-              <button onClick={() => setActiveTab('dashboard')}
+              <button onClick={() => setActiveTab('delivery')}
                 className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 ${qOver8.length > 0 ? 'border-red-500' : 'border-amber-500'} text-left transition hover:shadow-md`}>
                 <div className="flex items-center justify-between mb-2">
                   <AlertTriangle className={`w-5 h-5 ${qOver8.length > 0 ? 'text-red-500' : 'text-amber-500'}`} />
@@ -8619,7 +8619,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </button>
 
               {/* 키팅 현황 */}
-              <button onClick={() => setActiveTab('pick')}
+              <button onClick={() => setActiveTab('kitting')}
                 className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 border-purple-500 text-left transition hover:shadow-md`}>
                 <div className="flex items-center mb-2">
                   <Clock className="w-5 h-5 text-purple-500" />
