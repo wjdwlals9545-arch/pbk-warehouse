@@ -2362,6 +2362,13 @@ export default function PBKWarehouseSystem() {
 
   // GitHub에서 dashboard_state.json 로드 → localStorage + React state 업데이트
   const loadDashboardState = async () => {
+    // 마스터 PC는 GitHub에서 로드하지 않음 (로컬 SAP 데이터가 항상 최신)
+    const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
+    if (isMaster) {
+      console.log('[DashSync] Master PC: skip GitHub load (local data is source of truth)');
+      return;
+    }
+
     const TOKEN = safeStorage.getItem('pbk_gh_token');
     const BASE = 'https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main';
     try {
