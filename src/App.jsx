@@ -8268,12 +8268,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </p>
                   )}
                   {openPOLastUpdated && (
-                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP 추출: 08:30 / 14:10\nGitHub push 후 자동 반영`}>
+                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP 추출: 08:25 / 14:05\nGitHub push 후 자동 반영`}>
                       <span className="text-amber-300 font-bold">Open PO:</span> {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {deliveryLastUpdated && (
-                    <p title={`${getElapsedTimeDetail(deliveryLastUpdated)}\nSAP 추출: 08:33 / 14:13\nGitHub push 후 자동 반영`}>
+                    <p title={`${getElapsedTimeDetail(deliveryLastUpdated)}\nSAP 추출: 08:30 / 14:10\nGitHub push 후 자동 반영`}>
                       <span className="text-teal-300 font-bold">Delivery:</span> {deliveryLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
@@ -8983,13 +8983,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-amber-200">
                       <p className="text-[10px] text-amber-600 font-bold mb-1">ME2N (Open PO)</p>
-                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:30 / 14:10</p>
+                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:25 / 14:05</p>
                       <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
                       {openPOLastUpdated && <p className="text-[10px] text-amber-500 mt-1 font-medium">✅ {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-teal-200">
                       <p className="text-[10px] text-teal-600 font-bold mb-1">ME2N (Delivery)</p>
-                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:33 / 14:13</p>
+                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:30 / 14:10</p>
                       <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
                       {deliveryLastUpdated && <p className="text-[10px] text-teal-500 mt-1 font-medium">✅ {deliveryLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
