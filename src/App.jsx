@@ -15850,13 +15850,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                         {(inv.status === 'waiting_gr' || inv.status === 'price_error' || inv.status === 'failed') && (
                                           <>
                                             {inv.status === 'waiting_gr' && !isDup && (
-                                              <button onClick={() => { if (window.confirm(`SAP에서 입고 처리 후 눌러주세요.\n\n${inv.vendor} (${inv.po_number})\n\n수동 입고처리로 이동하시겠습니까?`)) manualStartGR(inv.id); }}
-                                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
-                                                수동 입고처리
-                                              </button>
+                                              <>
+                                                <button onClick={() => { if (window.confirm(`SAP 자동 입고처리를 시작합니다.\n\n${inv.vendor} (${inv.po_number})\n\n자동으로 SAP MIGO 입고처리 후 완료 처리됩니다.`)) triggerMigoGR(inv.id); }}
+                                                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                                  🤖 자동 입고처리
+                                                </button>
+                                                <button onClick={() => { if (window.confirm(`수동 입고처리로 이동합니다.\n\n${inv.vendor} (${inv.po_number})\n\nSAP에서 직접 입고 처리 후 완료 버튼을 눌러주세요.`)) manualStartGR(inv.id); }}
+                                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                                  ✋ 수동 입고처리
+                                                </button>
+                                              </>
                                             )}
                                             {inv.status === 'waiting_gr' && isDup && (
-                                              <button onClick={() => { if (window.confirm(`⚠️ 중복 처리 확인\n\n${inv.vendor} (${inv.po_number})\n\n이미 처리된 기록이 있습니다.\n그래도 입고 처리하시겠습니까?`)) manualStartGR(inv.id); }}
+                                              <button onClick={() => { if (window.confirm(`⚠️ 중복 처리 확인\n\n${inv.vendor} (${inv.po_number})\n\n이미 처리된 기록이 있습니다.\n그래도 SAP 자동 입고처리 하시겠습니까?`)) triggerMigoGR(inv.id); }}
                                                 className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
                                                 확인 후 입고
                                               </button>
