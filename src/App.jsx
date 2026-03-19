@@ -1891,10 +1891,7 @@ function getBusinessDays(startDate, endDate) {
 }
 
 export default function PBKWarehouseSystem() {
-  // ?lite=1 파라미터: Home/Production/Locator 탭 제거, Delivery부터 시작
-  const isLiteMode = new URLSearchParams(window.location.search).get('lite') === '1';
-  const LITE_HIDDEN_TABS = ['home', 'dashboard', 'locate'];
-  const [activeTab, setActiveTab] = useState(isLiteMode ? 'migo' : 'home');
+  const [activeTab, setActiveTab] = useState('home');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedZone, setSelectedZone] = useState('all');
   
@@ -3557,11 +3554,11 @@ export default function PBKWarehouseSystem() {
   };
 
   useEffect(() => {
-    if (!isLiteMode || activeTab !== 'migo') return;
+    if (activeTab !== 'migo') return;
     fetchMigoData();
     const interval = setInterval(fetchMigoData, 5000);
     return () => clearInterval(interval);
-  }, [activeTab, fetchMigoData, isLiteMode]);
+  }, [activeTab, fetchMigoData]);
   // ─────────────────────────────────────────────────
 
   const [syncReady, setSyncReady] = useState(false);
@@ -8380,13 +8377,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <span className="text-lg">⬡</span> <span className="hidden sm:inline">Promega</span>
               </div>
               <div>
-                <h1 className="text-lg sm:text-xl font-bold">Warehouse Management <span className="text-indigo-300 text-sm font-normal">{isLiteMode ? 'Lite 1.0' : APP_VERSION}</span></h1>
+                <h1 className="text-lg sm:text-xl font-bold">Warehouse Management <span className="text-indigo-300 text-sm font-normal">{APP_VERSION}</span></h1>
               </div>
             </div>
             {/* PC용 버튼들 */}
             <div className="hidden md:flex items-center gap-2">
               {/* v15: 단축키 도움말 */}
-              {!isLiteMode && (
+              {(
               <button
                 onClick={() => setShowShortcutHelp(true)}
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition"
@@ -8419,7 +8416,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 })()}
               </button>
               {/* v15: 다크 모드 토글 */}
-              {!isLiteMode && (
+              {(
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition"
@@ -8546,11 +8543,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               { id: 'view3d', label: '3D View', icon: Box },
               { id: 'temphumidity', label: 'Climate', icon: Thermometer },
               ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
-            ].filter(tab => {
-              if (tab.id === 'migo') return isLiteMode; // MIGO는 lite 모드에서만 표시
-              if (isLiteMode) return !LITE_HIDDEN_TABS.includes(tab.id);
-              return true;
-            }).map(tab => (
+            ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -8596,11 +8589,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             { id: 'receive', label: 'Receiving', icon: Database },
             { id: 'migo', label: 'MIGO', icon: ClipboardList },
             { id: 'more', label: 'More', icon: List },
-          ].filter(tab => {
-              if (tab.id === 'migo') return isLiteMode;
-              if (isLiteMode) return !LITE_HIDDEN_TABS.includes(tab.id);
-              return true;
-            }).map(tab => (
+          ].map(tab => (
             <button
               key={tab.id}
               onClick={() => {
@@ -12312,7 +12301,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className="text-xs text-gray-500 mb-1">다음주 납품</p>
                 <p className="text-2xl font-bold text-indigo-600">{nextWeekItems.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
-              {!isLiteMode && <div onClick={() => setDeliveryCardExpand(prev => prev === 'overdue' ? null : 'overdue')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'overdue' ? 'ring-2 ring-red-400' : ''}`}>
+              {<div onClick={() => setDeliveryCardExpand(prev => prev === 'overdue' ? null : 'overdue')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'overdue' ? 'ring-2 ring-red-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">납기 지연</p>
                 <p className="text-2xl font-bold text-red-600">{overdueDeliveries.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>}
@@ -12424,8 +12413,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
 
-            {/* 납기 지연 (있을 때만, 라이트 모드 제외) */}
-            {!isLiteMode && overdueDeliveries.length > 0 && (
+            {/* 납기 지연 */}
+            {overdueDeliveries.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                   <h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
@@ -15529,7 +15518,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <button
                       onClick={() => {
                         const serverPart = migoApiUrl.replace(/^https?:\/\//, '');
-                        const shareUrl = `${window.location.origin}${window.location.pathname}?lite=1&migo=${encodeURIComponent(serverPart)}`;
+                        const shareUrl = `${window.location.origin}${window.location.pathname}?migo=${encodeURIComponent(serverPart)}`;
                         navigator.clipboard.writeText(shareUrl).then(() => {
                           showToast('📋 공유 링크 복사됨! 다른 사람에게 이 링크를 전달하면 자동 연결됩니다.', 'success');
                         });
