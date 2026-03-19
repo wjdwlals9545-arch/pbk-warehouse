@@ -8466,7 +8466,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </button>
                 </>
               )}
-              {!isLiteMode && (lastUpdated || openPOLastUpdated || bomLastUpdated) && (
+              {(lastUpdated || openPOLastUpdated || bomLastUpdated) && (
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
                   {lastUpdated && (
