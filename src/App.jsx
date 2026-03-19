@@ -8852,7 +8852,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             </div>
 
             {/* 긴급 알림 영역 */}
-            {(overdueItems.length > 0 || qOver8.length > 0 || ['RSC48','CSC48','RSC16','CSC16','FSC16'].some(m => prodCapacity[m]?.units === 0)) && (
+            {(qOver8.length > 0 || ['RSC48','CSC48','RSC16','CSC16','FSC16'].some(m => prodCapacity[m]?.units === 0)) && (
               <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'} rounded-xl shadow-sm p-4 border`}>
                 <h3 className={`font-semibold text-sm mb-3 flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                   <AlertTriangle className="w-4 h-4 text-red-500" /> 긴급 알림
@@ -8873,21 +8873,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       </div>
                     );
                   })}
-                  {/* 납기 지연 */}
-                  {overdueItems.slice(0, 5).map((d, i) => (
-                    <div key={`od-${i}`} onClick={() => setActiveTab('delivery')}
-                      className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition ${darkMode ? 'bg-red-900/30 hover:bg-red-900/50' : 'bg-red-50 hover:bg-red-100'}`}>
-                      <span className="text-lg">🔴</span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium ${darkMode ? 'text-red-300' : 'text-red-800'}`}>납기 지연 — {d.deliveryDate}</p>
-                        <p className={`text-xs truncate ${darkMode ? 'text-red-400' : 'text-red-600'}`}>{d.material} {d.description} | {d.qty} {d.unit} | PO:{d.poNo}</p>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-red-400 flex-shrink-0" />
-                    </div>
-                  ))}
-                  {overdueItems.length > 5 && (
-                    <p className={`text-xs text-center ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>... 외 {overdueItems.length - 5}건</p>
-                  )}
                   {/* Q-Stock 장기 체류 */}
                   {qOver8.slice(0, 3).map((q, i) => (
                     <div key={`qs-${i}`} onClick={() => setActiveTab('dashboard')}
