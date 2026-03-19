@@ -12135,10 +12135,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className="text-xs text-gray-500 mb-1">다음주 납품</p>
                 <p className="text-2xl font-bold text-indigo-600">{nextWeekItems.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
-              <div onClick={() => setDeliveryCardExpand(prev => prev === 'overdue' ? null : 'overdue')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'overdue' ? 'ring-2 ring-red-400' : ''}`}>
+              {!isLiteMode && <div onClick={() => setDeliveryCardExpand(prev => prev === 'overdue' ? null : 'overdue')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'overdue' ? 'ring-2 ring-red-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">납기 지연</p>
                 <p className="text-2xl font-bold text-red-600">{overdueDeliveries.length}<span className="text-sm font-normal ml-1">건</span></p>
-              </div>
+              </div>}
               <div onClick={() => setDeliveryCardExpand(prev => prev === 'qstock' ? null : 'qstock')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'qstock' ? 'ring-2 ring-amber-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">수입검사 대기</p>
                 <p className="text-2xl font-bold text-amber-600">{filteredQStock.length}<span className="text-sm font-normal ml-1">건</span></p>
@@ -12247,8 +12247,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
 
-            {/* 납기 지연 (있을 때만) */}
-            {overdueDeliveries.length > 0 && (
+            {/* 납기 지연 (있을 때만, 라이트 모드 제외) */}
+            {!isLiteMode && overdueDeliveries.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                   <h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
