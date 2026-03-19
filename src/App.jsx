@@ -15519,7 +15519,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <button
                       onClick={() => {
                         const serverPart = migoApiUrl.replace(/^https?:\/\//, '');
-                        const shareUrl = `${window.location.origin}${window.location.pathname}?migo=${encodeURIComponent(serverPart)}`;
+                        const shareUrl = `${window.location.origin}${window.location.pathname}?lite=1&migo=${encodeURIComponent(serverPart)}`;
                         navigator.clipboard.writeText(shareUrl).then(() => {
                           showToast('📋 공유 링크 복사됨! 다른 사람에게 이 링크를 전달하면 자동 연결됩니다.', 'success');
                         });
