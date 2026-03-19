@@ -16083,7 +16083,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                             <span className={`text-xs font-bold w-6 text-right flex-shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{stat.count}</span>
                             <span className={`text-xs w-24 text-right flex-shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {(stat.total / 10000).toFixed(0)}만원
+                              {(stat.total / 10000).toFixed(1)}만원
                             </span>
                           </div>
                         ))}
@@ -16107,13 +16107,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                             <span className={`text-xs font-bold w-6 text-right flex-shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{stat.count}</span>
                             <span className={`text-xs w-24 text-right flex-shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {(stat.total / 10000).toFixed(0)}만원
+                              {(stat.total / 10000).toFixed(1)}만원
                             </span>
                           </div>
                         ))}
                       </div>
                       <div className={`mt-3 pt-3 border-t text-xs ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-                        누계: {migoHistory.length}건 / 총 {(grandTotal / 10000).toFixed(0)}만원
+                        누계: {migoHistory.length}건 / 총 {(grandTotal / 10000).toFixed(1)}만원
                         {taxDone.length > 0 && ` | 세금계산서 처리 ${taxDone.length}건`}
                         {taxPending.length > 0 && ` | 세금계산서 미처리 ${taxPending.length}건`}
                       </div>
