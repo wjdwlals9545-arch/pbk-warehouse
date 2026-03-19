@@ -3397,9 +3397,19 @@ export default function PBKWarehouseSystem() {
 
   // GitHub 동기화 상태
   // ── MIGO 자동화 ──────────────────────────────────
-  const [migoApiUrl, setMigoApiUrl] = useState(
-    () => localStorage.getItem('pbk_migo_api_url') || 'http://localhost:5100'
-  );
+  const [migoApiUrl, setMigoApiUrl] = useState(() => {
+    // URL 파라미터 ?migo=IP:PORT 로 공유 링크 지원
+    const urlParam = new URLSearchParams(window.location.search).get('migo');
+    if (urlParam) {
+      const full = urlParam.startsWith('http') ? urlParam : `http://${urlParam}`;
+      localStorage.setItem('pbk_migo_api_url', full);
+      // URL에서 파라미터 제거 (히스토리 오염 방지)
+      const clean = window.location.pathname + window.location.hash;
+      window.history.replaceState(null, '', clean);
+      return full;
+    }
+    return localStorage.getItem('pbk_migo_api_url') || 'http://localhost:5100';
+  });
   const MIGO_API = migoApiUrl.replace(/\/$/, ''); // trailing slash 제거
   const [migoApiEditing, setMigoApiEditing] = useState(false);
   const [migoApiInput, setMigoApiInput] = useState('');
@@ -15502,6 +15512,23 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       title="클릭하여 서버 주소 변경 (ngrok URL 등)"
                     >
                       {migoApiUrl}
+                    </button>
+                  )}
+                  {/* 공유 링크 복사 버튼 */}
+                  {!migoApiEditing && (
+                    <button
+                      onClick={() => {
+                        const serverPart = migoApiUrl.replace(/^https?:\/\//, '');
+                        const shareUrl = `${window.location.origin}${window.location.pathname}?migo=${encodeURIComponent(serverPart)}`;
+                        navigator.clipboard.writeText(shareUrl).then(() => {
+                          showToast('📋 공유 링크 복사됨! 다른 사람에게 이 링크를 전달하면 자동 연결됩니다.', 'success');
+                        });
+                      }}
+                      className={`text-xs px-2 py-0.5 rounded border transition flex-shrink-0
+                        ${darkMode ? 'border-blue-700 text-blue-400 bg-blue-900/20 hover:bg-blue-900/40' : 'border-blue-200 text-blue-600 bg-blue-50 hover:bg-blue-100'}`}
+                      title="클릭하면 서버 주소가 포함된 공유 링크를 클립보드에 복사합니다"
+                    >
+                      🔗 링크 복사
                     </button>
                   )}
                   {!migoServerOnline && !migoApiEditing && (
