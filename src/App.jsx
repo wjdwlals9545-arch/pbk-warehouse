@@ -3402,13 +3402,16 @@ export default function PBKWarehouseSystem() {
   const [migoHistory, setMigoHistory] = useState([]);
   const [migoTaxInvoices, setMigoTaxInvoices] = useState([]);
   const [migoServerOnline, setMigoServerOnline] = useState(false);
-  const [migoSelectedStage, setMigoSelectedStage] = useState(null);
+  const [migoSelectedStage, setMigoSelectedStage] = useState('waiting_gr');
+  const [migoIssueFilter, setMigoIssueFilter]     = useState('all'); // 'all' | 'price_error' | 'failed'
+  const [migoMonthFilter, setMigoMonthFilter]     = useState('');   // 'YYYY-MM' for history month filter
   const [migoLastUpdated, setMigoLastUpdated] = useState(null);
   const [migoCheckedRows, setMigoCheckedRows] = useState(new Set());
   const [migoSearch, setMigoSearch] = useState('');
   const [migoSortDir, setMigoSortDir] = useState('asc'); // 'asc' | 'desc'
   const [migoEditingId, setMigoEditingId] = useState(null); // 현재 편집 중인 invoice id
   const [migoEditData, setMigoEditData] = useState(null);   // 편집 중인 데이터 (복사본)
+  const [migoPoModal, setMigoPoModal] = useState(null);     // PO번호 클릭 시 히스토리 모달
 
   const fetchMigoData = useCallback(async () => {
     try {
@@ -3449,6 +3452,48 @@ export default function PBKWarehouseSystem() {
       await fetch(`${MIGO_API}/api/invoices/${encodeURIComponent(invId)}/retry`, { method: 'POST' });
       showToast('🔄 재분석 시작', 'success');
       setTimeout(fetchMigoData, 1000);
+    } catch {
+      showToast('❌ MIGO 서버 연결 실패', 'error');
+    }
+  };
+
+  const manualStartGR = async (invId) => {
+    try {
+      await fetch(`${MIGO_API}/api/invoices/${encodeURIComponent(invId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'processing' }),
+      });
+      showToast('⚙️ 처리중으로 변경됨', 'success');
+      setTimeout(fetchMigoData, 500);
+    } catch {
+      showToast('❌ MIGO 서버 연결 실패', 'error');
+    }
+  };
+
+  const manualCompleteGR = async (invId, invData) => {
+    try {
+      const res = await fetch(`${MIGO_API}/api/invoices/${encodeURIComponent(invId)}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendor: invData?.vendor, po_number: invData?.po_number }),
+      });
+      if (res.ok) {
+        showToast('✅ 입고 완료 처리됨 · 세금계산서 미처리로 이동', 'success');
+      } else {
+        showToast('⚠️ 완료 처리 실패', 'error');
+      }
+      setTimeout(fetchMigoData, 500);
+    } catch {
+      showToast('❌ MIGO 서버 연결 실패', 'error');
+    }
+  };
+
+  const dismissMigoInvoice = async (invId) => {
+    try {
+      await fetch(`${MIGO_API}/api/invoices/${encodeURIComponent(invId)}`, { method: 'DELETE' });
+      showToast('🗑 리스트에서 삭제됨', 'info');
+      setTimeout(fetchMigoData, 500);
     } catch {
       showToast('❌ MIGO 서버 연결 실패', 'error');
     }
@@ -15374,19 +15419,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const completedThisMonth = completedGRs.filter(h => h.completed_at?.startsWith(thisYM));
 
           const STAGES = [
-            { key: 'waiting_gr',  label: '입고대기',      emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
-            { key: 'processing',  label: '처리중',        emoji: '⚙️', colorClass: 'text-indigo-600', bgSel: 'bg-indigo-50 border-indigo-400' },
+            { key: 'waiting_gr',      label: '입고대기',          emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
+            { key: 'processing',      label: '처리중',            emoji: '⚙️', colorClass: 'text-indigo-600', bgSel: 'bg-indigo-50 border-indigo-400' },
             { key: 'completed_month', label: `완료(${String(now.getMonth()+1)}월)`, emoji: '✅', colorClass: 'text-green-600', bgSel: 'bg-green-50 border-green-400' },
-            { key: 'tax_pending', label: '세금계산서\n미처리', emoji: '📋', colorClass: 'text-amber-600',  bgSel: 'bg-amber-50 border-amber-400'  },
-            { key: 'tax_done',    label: '세금계산서\n처리완료', emoji: '🎉', colorClass: 'text-teal-600',  bgSel: 'bg-teal-50 border-teal-400'   },
-            { key: 'price_error', label: '단가오류',      emoji: '❌', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
-            { key: 'failed',      label: '실패',          emoji: '🚫', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
+            { key: 'tax_pending',     label: '세금계산서\n미처리', emoji: '📋', colorClass: 'text-amber-600',  bgSel: 'bg-amber-50 border-amber-400'  },
+            { key: 'tax_done',        label: '세금계산서\n처리완료', emoji: '🗂️', colorClass: 'text-teal-600',  bgSel: 'bg-teal-50 border-teal-400'   },
+            { key: 'issues',          label: '이슈',              emoji: '🔺', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
           ];
 
           const getCount = (key) => {
             if (key === 'completed_month') return completedThisMonth.length;
             if (key === 'tax_pending')     return taxPending.length;
             if (key === 'tax_done')        return taxDone.length;
+            if (key === 'issues')          return migoInvoices.filter(inv => ['price_error', 'failed'].includes(inv.status)).length;
             return migoInvoices.filter(inv => inv.status === key).length;
           };
 
@@ -15394,6 +15439,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             if (key === 'completed_month') return completedThisMonth;
             if (key === 'tax_pending')     return taxPending;
             if (key === 'tax_done')        return taxDone;
+            if (key === 'issues')          return migoInvoices.filter(inv => ['price_error', 'failed'].includes(inv.status));
             return migoInvoices.filter(inv => inv.status === key);
           };
 
@@ -15432,57 +15478,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               {/* 프로세스 파이프라인 카드 */}
               <div>
                 <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  📦 입고 처리 흐름
+                  ð¦ 입고 처리 흐름
                 </p>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {STAGES.slice(0, 7).map(stage => {
-                    const count  = getCount(stage.key);
-                    const isSel  = migoSelectedStage === stage.key;
-                    if (count === 0 && !isSel) return null;
-                    return (
-                      <div
-                        key={stage.key}
-                        onClick={() => setMigoSelectedStage(isSel ? null : stage.key)}
-                        className={`cursor-pointer rounded-xl px-4 py-3 border-2 text-center transition select-none min-w-[90px]
-                          ${isSel
-                            ? `${stage.bgSel} shadow-md scale-105`
-                            : `${darkMode ? 'bg-gray-800 border-gray-600 hover:border-gray-400' : 'bg-white border-gray-200 hover:border-indigo-300'}`
-                          }`}
-                      >
-                        <div className="text-xl mb-0.5">{stage.emoji}</div>
-                        <div className={`text-2xl font-bold ${count > 0 ? stage.colorClass : (darkMode ? 'text-gray-500' : 'text-gray-400')}`}>
-                          {count}
-                        </div>
-                        <div className={`text-[10px] font-medium mt-0.5 leading-tight whitespace-pre-line ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {stage.label}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* 오류 카드 (별도 행, count>0 이면 강조) */}
-                <div className="grid grid-cols-2 gap-2">
-                  {STAGES.slice(7).map(stage => {
+                <div className="grid grid-cols-6 gap-3">
+                  {STAGES.map(stage => {
                     const count = getCount(stage.key);
                     const isSel = migoSelectedStage === stage.key;
-                    if (count === 0 && !isSel) return null;
+                    const isIssue = stage.key === 'issues' && count > 0;
                     return (
                       <div
                         key={stage.key}
                         onClick={() => setMigoSelectedStage(isSel ? null : stage.key)}
-                        className={`cursor-pointer rounded-xl p-2 border-2 text-center transition flex items-center gap-2 justify-center
+                        className={`cursor-pointer rounded-xl border-2 text-center transition select-none py-5 px-2
                           ${isSel
                             ? `${stage.bgSel} shadow-md`
-                            : 'bg-red-50 border-red-200 hover:border-red-400'
+                            : isIssue
+                              ? 'bg-red-50 border-red-300 hover:border-red-500'
+                              : `${darkMode ? 'bg-gray-800 border-gray-600 hover:border-gray-400' : 'bg-white border-gray-200 hover:border-indigo-300'}`
                           }`}
                       >
-                        <span className="text-lg">{stage.emoji}</span>
-                        <div>
-                          <span className="text-lg font-bold text-red-600">{count}</span>
-                          <span className={`ml-1.5 text-xs font-medium ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-                            {stage.label}
-                          </span>
+                        <div className="text-2xl mb-1">{stage.emoji}</div>
+                        <div className={`text-3xl font-bold ${count > 0 ? stage.colorClass : (darkMode ? 'text-gray-500' : 'text-gray-400')}`}>
+                          {count}
+                        </div>
+                        <div className={`text-[11px] font-medium mt-1 leading-tight whitespace-pre-line ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {stage.label}
                         </div>
                       </div>
                     );
@@ -15499,8 +15519,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                 // 검색 필터
                 const q = migoSearch.trim().toLowerCase();
+                // 월별 필터 (completed_month 스테이지)
+                const monthFilteredItems = migoSelectedStage === 'completed_month' && migoMonthFilter
+                  ? completedGRs.filter(h => h.completed_at?.startsWith(migoMonthFilter))
+                  : allItems;
+
                 const filteredItems = q
-                  ? allItems.filter(inv =>
+                  ? monthFilteredItems.filter(inv =>
                       (inv.vendor || '').toLowerCase().includes(q) ||
                       (inv.po_number || '').toLowerCase().includes(q) ||
                       (inv.items || []).some(it =>
@@ -15508,10 +15533,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         (it.description || '').toLowerCase().includes(q)
                       )
                     )
-                  : allItems;
+                  : monthFilteredItems;
+
+                // 이슈 서브필터 (issues 스테이지)
+                const issueFilteredItems = migoSelectedStage === 'issues' && migoIssueFilter !== 'all'
+                  ? filteredItems.filter(inv => inv.status === migoIssueFilter)
+                  : filteredItems;
 
                 // No. 순 정렬 (감지 순서 기반)
-                const sortedItems = [...filteredItems].sort((a, b) => {
+                const sortedItems = [...issueFilteredItems].sort((a, b) => {
                   const ai = allItems.indexOf(a);
                   const bi = allItems.indexOf(b);
                   return migoSortDir === 'asc' ? ai - bi : bi - ai;
@@ -15594,6 +15624,45 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       </div>
                     </div>
 
+                    {/* 이슈 서브탭 */}
+                    {migoSelectedStage === 'issues' && (
+                      <div className="flex gap-2 mb-3 border-b pb-3">
+                        {[
+                          { key: 'all',         label: `전체 (${allItems.length})` },
+                          { key: 'price_error', label: `⚠️ 단가오류 (${allItems.filter(i => i.status==='price_error').length})` },
+                          { key: 'failed',      label: `🚫 처리실패 (${allItems.filter(i => i.status==='failed').length})` },
+                        ].map(tab => (
+                          <button key={tab.key}
+                            onClick={() => setMigoIssueFilter(tab.key)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition
+                              ${migoIssueFilter === tab.key
+                                ? 'bg-red-100 text-red-700 ring-1 ring-red-300'
+                                : (darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+                              }`}
+                          >{tab.label}</button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 월별 필터 (completed_month 스테이지) */}
+                    {migoSelectedStage === 'completed_month' && (() => {
+                      const allMonths = [...new Set(completedGRs.map(h => h.completed_at?.slice(0,7)).filter(Boolean))].sort((a,b) => b.localeCompare(a));
+                      return allMonths.length > 1 ? (
+                        <div className="flex gap-2 mb-3 flex-wrap">
+                          <button
+                            onClick={() => setMigoMonthFilter('')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${!migoMonthFilter ? 'bg-green-100 text-green-700 ring-1 ring-green-300' : (darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600')}`}
+                          >전체 ({completedGRs.length})</button>
+                          {allMonths.map(ym => (
+                            <button key={ym}
+                              onClick={() => setMigoMonthFilter(ym)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${migoMonthFilter === ym ? 'bg-green-100 text-green-700 ring-1 ring-green-300' : (darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600')}`}
+                            >{ym} ({completedGRs.filter(h => h.completed_at?.startsWith(ym)).length})</button>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+
                     {sortedItems.length === 0 ? (
                       <div className="text-center py-8 text-gray-400">
                         {q ? '검색 결과가 없습니다.' : '해당 단계의 항목이 없습니다.'}
@@ -15619,117 +15688,129 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               className={`rounded-xl border-l-4 shadow-sm overflow-hidden ${borderColor} ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}>
 
                               {/* ── 카드 헤더 ── */}
-                              <div className={`px-4 py-3 flex flex-wrap items-start justify-between gap-3 ${darkMode ? 'bg-gray-750' : 'bg-gray-50/70'}`}>
-                                {/* 왼쪽: 체크박스 + No. + 업체명 + 배지 */}
-                                <div className="flex items-start gap-3 min-w-0">
-                                  {!isHist && isCheckable && (
-                                    <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(inv.id)}
-                                      className="w-4 h-4 mt-0.5 cursor-pointer flex-shrink-0" />
-                                  )}
-                                  <div className={`text-xs font-mono mt-0.5 flex-shrink-0 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>#{realNo}</div>
-                                  <div className="min-w-0">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className={`text-base font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                        {inv.vendor || <span className="text-gray-400 italic text-sm font-normal">업체 미인식</span>}
-                                      </span>
-                                      {/* 상태 배지 */}
-                                      {inv.status === 'processing' && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 animate-pulse">⚙️ SAP 처리중</span>
-                                      )}
-                                      {inv.status === 'failed' && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">❌ 처리 실패</span>
-                                      )}
-                                      {hasPriceErr && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700">⚠️ 단가 불일치</span>
-                                      )}
-                                      {isDup && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">⚠️ 중복 이력</span>
-                                      )}
-                                      {inv.price_check_passed === true && !hasPriceErr && (
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">🔍 AI분析완료 · 💰 단가검증완료</span>
-                                      )}
-                                    </div>
-                                    {/* 메타 정보 */}
-                                    <div className={`flex flex-wrap gap-3 mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                                      <span className="flex items-center gap-1">
-                                        <span className="font-mono font-medium text-indigo-500">{inv.po_number || '—'}</span>
-                                      </span>
-                                      <span>📅 {inv.date || '—'}</span>
-                                      <span>📦 품목 {inv.items?.length || 0}개</span>
-                                      {isHist && (
-                                        <span className={`font-medium ${migoSelectedStage === 'tax_pending' ? 'text-amber-600' : migoSelectedStage === 'tax_done' ? 'text-teal-600' : 'text-gray-500'}`}>
-                                          {migoSelectedStage === 'tax_pending' ? '⏳ 세금계산서 미발행'
-                                            : migoSelectedStage === 'tax_done' ? '✅ 세금계산서 완료'
-                                            : `완료: ${inv.completed_at?.slice(0, 16).replace('T', ' ') || '-'}`}
-                                        </span>
+                              <div className={`px-4 py-2.5 ${darkMode ? 'bg-gray-750' : 'bg-gray-50/70'}`}>
+                                {/* 1줄: 체크박스 + No. + 업체명 + 배지 + 금액 + 버튼 */}
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  {/* 왼쪽 */}
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    {!isHist && isCheckable && (
+                                      <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(inv.id)}
+                                        className="w-4 h-4 cursor-pointer flex-shrink-0" />
+                                    )}
+                                    <div className={`text-xs font-mono flex-shrink-0 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>#{realNo}</div>
+                                    <span className={`text-sm font-bold flex-shrink-0 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                      {inv.vendor || <span className="text-gray-400 italic font-normal">업체 미인식</span>}
+                                    </span>
+                                    {/* 상태 배지 */}
+                                    {inv.status === 'processing' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 animate-pulse flex-shrink-0">⚙️ SAP 처리중</span>
+                                    )}
+                                    {inv.status === 'failed' && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 flex-shrink-0">❌ 처리 실패</span>
+                                    )}
+                                    {hasPriceErr && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 flex-shrink-0">⚠️ 단가 불일치</span>
+                                    )}
+                                    {isDup && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 flex-shrink-0">⚠️ 중복 이력</span>
+                                    )}
+                                    {inv.price_check_passed === true && !hasPriceErr && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 flex-shrink-0">🔍 AI분석완료 · 💰 단가검증완료</span>
+                                    )}
+                                  </div>
+                                  {/* 오른쪽: 금액 + 버튼들 (같은 줄) */}
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {/* 금액 */}
+                                    <div className="text-right mr-1">
+                                      <div className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                        {inv.total_amount ? inv.total_amount.toLocaleString() + '원' : '—'}
+                                      </div>
+                                      {inv.total_supply > 0 && (
+                                        <div className={`text-[10px] ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
+                                          공급가 {inv.total_supply.toLocaleString()}원
+                                        </div>
                                       )}
                                     </div>
-                                    {inv.status === 'failed' && inv.error && (
-                                      <div className="text-[10px] text-red-500 mt-0.5 truncate max-w-xs" title={inv.error}>{inv.error}</div>
+                                    {/* 버튼들 */}
+                                    {!isHist && (
+                                      <>
+                                        <button onClick={() => retryMigoParse(inv.id)}
+                                          className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}>
+                                          🔄 재인식
+                                        </button>
+                                        <button onClick={() => isEditing ? (setMigoEditingId(null), setMigoEditData(null)) : startMigoEdit(inv)}
+                                          className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${isEditing ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : (darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600')}`}>
+                                          ✏️ 수동편집
+                                        </button>
+                                        {(inv.status === 'waiting_gr' || inv.status === 'price_error' || inv.status === 'failed') && (
+                                          <>
+                                            {inv.status === 'waiting_gr' && !isDup && (
+                                              <button onClick={() => { if (window.confirm(`SAP에서 입고 처리 후 눌러주세요.\n\n${inv.vendor} (${inv.po_number})\n\n수동 입고처리로 이동하시겠습니까?`)) manualStartGR(inv.id); }}
+                                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                                수동 입고처리
+                                              </button>
+                                            )}
+                                            {inv.status === 'waiting_gr' && isDup && (
+                                              <button onClick={() => { if (window.confirm(`⚠️ 중복 처리 확인\n\n${inv.vendor} (${inv.po_number})\n\n이미 처리된 기록이 있습니다.\n그래도 입고 처리하시겠습니까?`)) manualStartGR(inv.id); }}
+                                                className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                                확인 후 입고
+                                              </button>
+                                            )}
+                                            {inv.status === 'price_error' && (
+                                              <button onClick={() => { if (window.confirm(`단가 불일치 항목입니다.\n${inv.vendor} (${inv.po_number})\n\n수동 확인 후 입고처리 하시겠습니까?`)) manualStartGR(inv.id); }}
+                                                className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                                수동 입고
+                                              </button>
+                                            )}
+                                            {inv.status === 'failed' && (
+                                              <button onClick={() => retryMigoParse(inv.id)}
+                                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                                재시도
+                                              </button>
+                                            )}
+                                          </>
+                                        )}
+                                        {inv.status === 'processing' && (
+                                          <button onClick={() => { if (window.confirm(`입고 처리가 완료되었습니까?\n\n${inv.vendor} (${inv.po_number})\n\n완료 처리 시 세금계산서 미처리로 이동하고\n담당자에게 알림이 전송됩니다.`)) manualCompleteGR(inv.id, inv); }}
+                                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition shadow-sm animate-pulse">
+                                            ✅ 입고 완료
+                                          </button>
+                                        )}
+                                        {(inv.status === 'analyzing' || inv.status === 'price_check' || inv.status === 'pending') && (
+                                          <span className="px-3 py-1.5 text-gray-400 text-xs animate-pulse">분석중...</span>
+                                        )}
+                                      </>
+                                    )}
+                                    {/* 삭제 버튼 */}
+                                    {!isHist && inv.status !== 'processing' && (
+                                      <button
+                                        onClick={() => { if (window.confirm(`"${inv.vendor || inv.id}" 를 리스트에서 삭제하시겠습니까?`)) dismissMigoInvoice(inv.id); }}
+                                        className={`p-1.5 rounded-lg transition opacity-50 hover:opacity-100 ${darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-500'}`}
+                                        title="리스트에서 삭제"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
                                     )}
                                   </div>
                                 </div>
-
-                                {/* 오른쪽: 금액 + 버튼 */}
-                                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                                  {/* 금액 */}
-                                  <div className="text-right">
-                                    <div className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                      {inv.total_amount ? inv.total_amount.toLocaleString() + '원' : '—'}
-                                    </div>
-                                    {inv.total_supply > 0 && (
-                                      <div className={`text-[10px] ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
-                                        공급가 {inv.total_supply.toLocaleString()}원
-                                      </div>
-                                    )}
-                                  </div>
-                                  {/* 액션 버튼 */}
-                                  {!isHist && (
-                                    <div className="flex items-center gap-1.5">
-                                      <button onClick={() => retryMigoParse(inv.id)}
-                                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}>
-                                        🔄 재인식
-                                      </button>
-                                      <button onClick={() => isEditing ? (setMigoEditingId(null), setMigoEditData(null)) : startMigoEdit(inv)}
-                                        className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition ${isEditing ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300' : (darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600')}`}>
-                                        ✏️ 수동편집
-                                      </button>
-                                      {/* 주 액션 버튼 */}
-                                      {(inv.status === 'waiting_gr' || inv.status === 'price_error' || inv.status === 'failed') && (
-                                        <>
-                                          {inv.status === 'waiting_gr' && !isDup && (
-                                            <button onClick={() => triggerMigoGR(inv.id)}
-                                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
-                                              Goods Receipt
-                                            </button>
-                                          )}
-                                          {inv.status === 'waiting_gr' && isDup && (
-                                            <button onClick={() => { if (window.confirm(`⚠️ 중복 처리 확인\n\n${inv.vendor} (${inv.po_number})\n\n이미 처리된 기록이 있습니다.\n그래도 입고 처리하시겠습니까?`)) triggerMigoGR(inv.id); }}
-                                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
-                                              확인 후 입고
-                                            </button>
-                                          )}
-                                          {inv.status === 'price_error' && (
-                                            <button onClick={() => { if (window.confirm(`단가 불일치 항목입니다.\n${inv.vendor} (${inv.po_number})\n\n수동 확인 후 입고처리 하시겠습니까?`)) triggerMigoGR(inv.id); }}
-                                              className="px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
-                                              수동 입고
-                                            </button>
-                                          )}
-                                          {inv.status === 'failed' && (
-                                            <button onClick={() => triggerMigoGR(inv.id)}
-                                              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
-                                              재시도
-                                            </button>
-                                          )}
-                                        </>
-                                      )}
-                                      {inv.status === 'processing' && (
-                                        <span className="px-3 py-1.5 text-indigo-500 text-xs animate-pulse">⚙️ 처리중...</span>
-                                      )}
-                                      {(inv.status === 'analyzing' || inv.status === 'price_check' || inv.status === 'pending') && (
-                                        <span className="px-3 py-1.5 text-gray-400 text-xs animate-pulse">분석중...</span>
-                                      )}
-                                    </div>
+                                {/* 2줄: 메타 정보 */}
+                                <div className={`flex flex-wrap gap-3 mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} style={{paddingLeft: '1.5rem'}}>
+                                  <button
+                                    onClick={() => inv.po_number && setMigoPoModal(inv.po_number)}
+                                    className={`font-mono font-medium underline decoration-dotted underline-offset-2 transition ${darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'} ${inv.po_number ? 'cursor-pointer' : 'cursor-default no-underline'}`}
+                                    title={inv.po_number ? `${inv.po_number} 입고 이력 보기` : ''}
+                                  >{inv.po_number || '—'}</button>
+                                  <span>📅 {inv.date || '—'}</span>
+                                  <span>📦 품목 {inv.items?.length || 0}개</span>
+                                  {isHist && (
+                                    <span className={`font-medium ${migoSelectedStage === 'tax_pending' ? 'text-amber-600' : migoSelectedStage === 'tax_done' ? 'text-teal-600' : 'text-gray-500'}`}>
+                                      {migoSelectedStage === 'tax_pending' ? '⏳ 세금계산서 미발행'
+                                        : migoSelectedStage === 'tax_done' ? '✅ 세금계산서 완료'
+                                        : `완료: ${inv.completed_at?.slice(0, 16).replace('T', ' ') || '-'}`}
+                                    </span>
+                                  )}
+                                  {inv.status === 'failed' && inv.error && (
+                                    <span className="text-red-500 truncate max-w-xs" title={inv.error}>{inv.error}</span>
                                   )}
                                 </div>
                               </div>
@@ -15836,7 +15917,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                           const chk = inv.price_check_detail?.find(d => d.material === String(item.material_no));
                                           return (
                                             <tr key={i} className={`border-t ${darkMode ? 'border-gray-700/50' : 'border-gray-50'}`}>
-                                              <td className={`py-1.5 pr-4 font-mono font-semibold text-[11px] ${darkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{item.material_no}</td>
+                                              <td className={`py-1.5 pr-4 font-mono font-semibold text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.material_no}</td>
                                               <td className={`py-1.5 pr-4 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{item.description || <span className="text-gray-400">—</span>}</td>
                                               <td className={`py-1.5 pr-4 text-right font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.quantity?.toLocaleString()} <span className={`font-normal ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>EA</span></td>
                                               <td className={`py-1.5 pr-4 text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
@@ -15957,6 +16038,103 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           );
         })()}
         {/* ─────────────────────────────────── */}
+
+        {/* PO 입고 이력 모달 */}
+        {migoPoModal && (() => {
+          const poHist = migoHistory.filter(h => h.po_number === migoPoModal);
+          const poActive = migoInvoices.filter(inv => inv.po_number === migoPoModal);
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setMigoPoModal(null)}>
+              <div className={`rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col ${darkMode ? 'bg-gray-800' : 'bg-white'}`}
+                onClick={e => e.stopPropagation()}>
+                {/* 헤더 */}
+                <div className={`flex items-center justify-between px-5 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <div>
+                    <h3 className={`font-bold text-base ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      📋 PO 입고 이력
+                    </h3>
+                    <p className={`text-sm font-mono mt-0.5 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{migoPoModal}</p>
+                  </div>
+                  <button onClick={() => setMigoPoModal(null)}
+                    className={`p-1.5 rounded-lg transition ${darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}>
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                {/* 바디 */}
+                <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+                  {/* 현재 진행 중 */}
+                  {poActive.length > 0 && (
+                    <div>
+                      <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>🔄 현재 진행 중</p>
+                      <div className="space-y-2">
+                        {poActive.map((inv, i) => (
+                          <div key={i} className={`rounded-lg p-3 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-orange-50 border-orange-200'}`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{inv.vendor || '—'}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                inv.status === 'waiting_gr' ? 'bg-orange-100 text-orange-700' :
+                                inv.status === 'processing' ? 'bg-indigo-100 text-indigo-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>{inv.status}</span>
+                            </div>
+                            <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>📅 {inv.date || '—'} · 품목 {inv.items?.length || 0}개 · {inv.total_amount?.toLocaleString()}원</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* 완료 이력 */}
+                  {poHist.length > 0 ? (
+                    <div>
+                      <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>✅ 완료된 입고 이력 ({poHist.length}건)</p>
+                      <div className="space-y-3">
+                        {poHist.map((h, i) => (
+                          <div key={i} className={`rounded-lg p-3 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{h.vendor || '—'}</span>
+                              <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                🕐 {h.completed_at?.slice(0, 16).replace('T', ' ') || '—'}
+                              </span>
+                            </div>
+                            <p className={`text-xs mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                              📅 거래일: {h.date || '—'} · 합계 {h.total_amount?.toLocaleString()}원
+                            </p>
+                            {h.items?.length > 0 && (
+                              <table className={`w-full text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                <thead>
+                                  <tr className={`text-[10px] font-semibold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    <th className="text-left pb-1">품번</th>
+                                    <th className="text-left pb-1">품명</th>
+                                    <th className="text-right pb-1">수량</th>
+                                    <th className="text-right pb-1">단가</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {h.items.map((item, j) => (
+                                    <tr key={j} className={`border-t ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}>
+                                      <td className="py-1 pr-3 font-mono">{item.material_no}</td>
+                                      <td className="py-1 pr-3">{item.description || '—'}</td>
+                                      <td className="py-1 pr-3 text-right">{item.quantity?.toLocaleString()} EA</td>
+                                      <td className="py-1 text-right">{item.unit_price?.toLocaleString()}원</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`text-center py-8 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      {poActive.length === 0 ? '이 PO번호의 입고 이력이 없습니다.' : '완료된 이력이 없습니다.'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 공간 분석 상세 모달 */}
         {spaceAnalysisModal && (
