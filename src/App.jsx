@@ -1891,7 +1891,10 @@ function getBusinessDays(startDate, endDate) {
 }
 
 export default function PBKWarehouseSystem() {
-  const [activeTab, setActiveTab] = useState('home');
+  // ?lite=1 파라미터: Home/Production/Locator 탭 제거, Delivery부터 시작
+  const isLiteMode = new URLSearchParams(window.location.search).get('lite') === '1';
+  const LITE_HIDDEN_TABS = ['home', 'dashboard', 'locate'];
+  const [activeTab, setActiveTab] = useState(isLiteMode ? 'delivery' : 'home');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedZone, setSelectedZone] = useState('all');
   
@@ -8209,12 +8212,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <span className="text-lg">⬡</span> <span className="hidden sm:inline">Promega</span>
               </div>
               <div>
-                <h1 className="text-lg sm:text-xl font-bold">Warehouse Management <span className="text-indigo-300 text-sm font-normal">{APP_VERSION}</span></h1>
+                <h1 className="text-lg sm:text-xl font-bold">Warehouse Management <span className="text-indigo-300 text-sm font-normal">{isLiteMode ? 'Lite 1.0' : APP_VERSION}</span></h1>
               </div>
             </div>
             {/* PC용 버튼들 */}
             <div className="hidden md:flex items-center gap-2">
               {/* v15: 단축키 도움말 */}
+              {!isLiteMode && (
               <button
                 onClick={() => setShowShortcutHelp(true)}
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition"
@@ -8222,6 +8226,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               >
                 <Keyboard className="w-4 h-4" />
               </button>
+              )}
               {/* v15: 알림 센터 */}
               <button
                 onClick={() => setShowNotificationCenter(true)}
@@ -8246,6 +8251,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 })()}
               </button>
               {/* v15: 다크 모드 토글 */}
+              {!isLiteMode && (
               <button
                 onClick={() => setDarkMode(!darkMode)}
                 className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition"
@@ -8253,6 +8259,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               >
                 {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
+              )}
               {isAdmin ? (
                 <button onClick={handleLogout} className="flex items-center gap-1 px-2 py-1.5 bg-emerald-600 hover:bg-emerald-700 rounded-lg transition text-xs" title="로그아웃">
                   🔓 Admin
@@ -8370,7 +8377,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               { id: 'view3d', label: '3D View', icon: Box },
               { id: 'temphumidity', label: 'Climate', icon: Thermometer },
               ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
-            ].map(tab => (
+            ].filter(tab => !isLiteMode || !LITE_HIDDEN_TABS.includes(tab.id)).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -8416,7 +8423,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             { id: 'receive', label: 'Receiving', icon: Database },
             { id: 'pick', label: 'Cycle', icon: Clock },
             { id: 'more', label: 'More', icon: List },
-          ].map(tab => (
+          ].filter(tab => !isLiteMode || !LITE_HIDDEN_TABS.includes(tab.id)).map(tab => (
             <button
               key={tab.id}
               onClick={() => {
