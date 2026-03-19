@@ -15949,15 +15949,23 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                       {inv.filename && <span className="ml-2 text-indigo-400 font-mono text-[10px]">{inv.filename}</span>}
                                     </p>
                                   ) : (
-                                    <table className="w-full text-xs">
+                                    <table className="w-full text-xs table-fixed">
+                                      <colgroup>
+                                        <col style={{width: '110px'}} />
+                                        <col />
+                                        <col style={{width: '100px'}} />
+                                        <col style={{width: '120px'}} />
+                                        <col style={{width: '120px'}} />
+                                        {inv.price_check_detail?.length > 0 && <col style={{width: '40px'}} />}
+                                      </colgroup>
                                       <thead>
                                         <tr className={`border-b ${darkMode ? 'border-gray-700 text-gray-500' : 'border-gray-100 text-gray-400'}`}>
-                                          <th className="text-left pb-1.5 pr-4 font-medium">품번</th>
-                                          <th className="text-left pb-1.5 pr-4 font-medium">품명</th>
-                                          <th className="text-right pb-1.5 pr-4 font-medium">수량</th>
-                                          <th className="text-right pb-1.5 pr-4 font-medium">단가</th>
+                                          <th className="text-left pb-1.5 font-medium">품번</th>
+                                          <th className="text-left pb-1.5 font-medium">품명</th>
+                                          <th className="text-right pb-1.5 font-medium">수량</th>
+                                          <th className="text-right pb-1.5 font-medium">단가</th>
                                           <th className="text-right pb-1.5 font-medium">금액</th>
-                                          {inv.price_check_detail?.length > 0 && <th className="text-center pb-1.5 pl-3 font-medium">단가</th>}
+                                          {inv.price_check_detail?.length > 0 && <th className="text-center pb-1.5 font-medium">✓</th>}
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -15965,20 +15973,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                           const chk = inv.price_check_detail?.find(d => d.material === String(item.material_no));
                                           return (
                                             <tr key={i} className={`border-t ${darkMode ? 'border-gray-700/50' : 'border-gray-50'}`}>
-                                              <td className={`py-1.5 pr-4 font-mono font-semibold text-[11px] ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.material_no}</td>
-                                              <td className={`py-1.5 pr-4 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{item.description || <span className="text-gray-400">—</span>}</td>
-                                              <td className={`py-1.5 pr-4 text-right font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.quantity?.toLocaleString()} <span className={`font-normal ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>EA</span></td>
-                                              <td className={`py-1.5 pr-4 text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                                              <td className={`py-1.5 font-mono font-semibold text-[11px] truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.material_no}</td>
+                                              <td className={`py-1.5 truncate ${darkMode ? 'text-gray-300' : 'text-gray-700'}`} title={item.description}>{item.description || <span className="text-gray-400">—</span>}</td>
+                                              <td className={`py-1.5 text-right font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.quantity?.toLocaleString()} <span className={`font-normal ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>EA</span></td>
+                                              <td className={`py-1.5 text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                                                 {item.unit_price ? item.unit_price.toLocaleString() + '원' : '—'}
                                                 {chk && chk.po_price != null && !chk.ok && (
-                                                  <span className="ml-1 text-red-500 text-[10px]">(PO:{chk.po_price?.toLocaleString()})</span>
+                                                  <div className="text-red-500 text-[10px]">PO: {chk.po_price?.toLocaleString()}</div>
                                                 )}
                                               </td>
                                               <td className={`py-1.5 text-right font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                                 {item.unit_price && item.quantity ? (item.unit_price * item.quantity).toLocaleString() + '원' : '—'}
                                               </td>
                                               {inv.price_check_detail?.length > 0 && (
-                                                <td className="py-1.5 pl-3 text-center">{chk ? (chk.ok ? '✅' : '❌') : '—'}</td>
+                                                <td className="py-1.5 text-center">{chk ? (chk.ok ? '✅' : '❌') : '—'}</td>
                                               )}
                                             </tr>
                                           );
