@@ -3403,9 +3403,11 @@ export default function PBKWarehouseSystem() {
     if (urlParam) {
       const full = urlParam.startsWith('http') ? urlParam : `http://${urlParam}`;
       localStorage.setItem('pbk_migo_api_url', full);
-      // URL에서 파라미터 제거 (히스토리 오염 방지)
-      const clean = window.location.pathname + window.location.hash;
-      window.history.replaceState(null, '', clean);
+      // migo 파라미터만 제거 (lite 등 다른 파라미터는 유지)
+      const params = new URLSearchParams(window.location.search);
+      params.delete('migo');
+      const newSearch = params.toString() ? '?' + params.toString() : '';
+      window.history.replaceState(null, '', window.location.pathname + newSearch + window.location.hash);
       return full;
     }
     return localStorage.getItem('pbk_migo_api_url') || 'http://localhost:5100';
