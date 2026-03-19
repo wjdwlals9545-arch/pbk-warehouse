@@ -3557,11 +3557,11 @@ export default function PBKWarehouseSystem() {
   };
 
   useEffect(() => {
-    if (activeTab !== 'migo') return;
+    if (!isLiteMode || activeTab !== 'migo') return;
     fetchMigoData();
     const interval = setInterval(fetchMigoData, 5000);
     return () => clearInterval(interval);
-  }, [activeTab, fetchMigoData]);
+  }, [activeTab, fetchMigoData, isLiteMode]);
   // ─────────────────────────────────────────────────
 
   const [syncReady, setSyncReady] = useState(false);
@@ -8466,7 +8466,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </button>
                 </>
               )}
-              {(lastUpdated || openPOLastUpdated || bomLastUpdated) && (
+              {!isLiteMode && (lastUpdated || openPOLastUpdated || bomLastUpdated) && (
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
                   {lastUpdated && (
@@ -8546,7 +8546,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               { id: 'view3d', label: '3D View', icon: Box },
               { id: 'temphumidity', label: 'Climate', icon: Thermometer },
               ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
-            ].filter(tab => !isLiteMode || !LITE_HIDDEN_TABS.includes(tab.id)).map(tab => (
+            ].filter(tab => {
+              if (tab.id === 'migo') return isLiteMode; // MIGO는 lite 모드에서만 표시
+              if (isLiteMode) return !LITE_HIDDEN_TABS.includes(tab.id);
+              return true;
+            }).map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -8592,7 +8596,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             { id: 'receive', label: 'Receiving', icon: Database },
             { id: 'migo', label: 'MIGO', icon: ClipboardList },
             { id: 'more', label: 'More', icon: List },
-          ].filter(tab => !isLiteMode || !LITE_HIDDEN_TABS.includes(tab.id)).map(tab => (
+          ].filter(tab => {
+              if (tab.id === 'migo') return isLiteMode;
+              if (isLiteMode) return !LITE_HIDDEN_TABS.includes(tab.id);
+              return true;
+            }).map(tab => (
             <button
               key={tab.id}
               onClick={() => {
