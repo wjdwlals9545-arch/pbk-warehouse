@@ -3397,7 +3397,12 @@ export default function PBKWarehouseSystem() {
 
   // GitHub 동기화 상태
   // ── MIGO 자동화 ──────────────────────────────────
-  const MIGO_API = 'http://localhost:5100';
+  const [migoApiUrl, setMigoApiUrl] = useState(
+    () => localStorage.getItem('pbk_migo_api_url') || 'http://localhost:5100'
+  );
+  const MIGO_API = migoApiUrl.replace(/\/$/, ''); // trailing slash 제거
+  const [migoApiEditing, setMigoApiEditing] = useState(false);
+  const [migoApiInput, setMigoApiInput] = useState('');
   const [migoInvoices, setMigoInvoices] = useState([]);
   const [migoHistory, setMigoHistory] = useState([]);
   const [migoTaxInvoices, setMigoTaxInvoices] = useState([]);
@@ -15451,14 +15456,57 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
               {/* 서버 상태 바 */}
               <div className={`rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border'} shadow-sm`}>
-                <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
                   <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${migoServerOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>
+                  <span className={`text-sm font-semibold flex-shrink-0 ${darkMode ? 'text-white' : 'text-gray-800'}`}>
                     {migoServerOnline ? 'MIGO 서버 연결됨' : '서버 오프라인'}
                   </span>
-                  {!migoServerOnline && (
+                  {/* 서버 URL 표시 / 편집 */}
+                  {migoApiEditing ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={migoApiInput}
+                        onChange={e => setMigoApiInput(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            const url = migoApiInput.trim() || 'http://localhost:5100';
+                            setMigoApiUrl(url);
+                            localStorage.setItem('pbk_migo_api_url', url);
+                            setMigoApiEditing(false);
+                            setTimeout(fetchMigoData, 300);
+                          }
+                          if (e.key === 'Escape') setMigoApiEditing(false);
+                        }}
+                        placeholder="http://localhost:5100 또는 https://xxxx.ngrok-free.app"
+                        className={`px-2 py-1 text-xs rounded-lg border w-72 font-mono ${darkMode ? 'bg-gray-700 border-gray-500 text-white' : 'bg-white border-gray-300 text-gray-800'}`}
+                        autoFocus
+                      />
+                      <button onClick={() => {
+                        const url = migoApiInput.trim() || 'http://localhost:5100';
+                        setMigoApiUrl(url);
+                        localStorage.setItem('pbk_migo_api_url', url);
+                        setMigoApiEditing(false);
+                        setTimeout(fetchMigoData, 300);
+                      }} className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium">저장</button>
+                      <button onClick={() => setMigoApiEditing(false)} className={`px-2 py-1 rounded text-xs ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>취소</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setMigoApiInput(migoApiUrl); setMigoApiEditing(true); }}
+                      className={`text-xs font-mono px-2 py-0.5 rounded border transition flex-shrink-0 max-w-[260px] truncate
+                        ${migoServerOnline
+                          ? (darkMode ? 'border-green-700 text-green-400 bg-green-900/20 hover:bg-green-900/40' : 'border-green-200 text-green-700 bg-green-50 hover:bg-green-100')
+                          : (darkMode ? 'border-gray-600 text-gray-400 hover:bg-gray-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50')
+                        }`}
+                      title="클릭하여 서버 주소 변경 (ngrok URL 등)"
+                    >
+                      {migoApiUrl}
+                    </button>
+                  )}
+                  {!migoServerOnline && !migoApiEditing && (
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      → <code className="bg-gray-100 px-1 rounded">python server.py</code> 실행 필요
+                      → <code className={`px-1 rounded ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>python server.py</code> 실행 필요
                     </span>
                   )}
                   {migoLastUpdated && (
@@ -15469,7 +15517,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </div>
                 <button
                   onClick={fetchMigoData}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition flex-shrink-0"
                 >
                   <RefreshCw className="w-3 h-3" /> 새로고침
                 </button>
@@ -15688,39 +15736,70 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               className={`rounded-xl border-l-4 shadow-sm overflow-hidden ${borderColor} ${darkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}>
 
                               {/* ── 카드 헤더 ── */}
-                              <div className={`px-4 py-2.5 ${darkMode ? 'bg-gray-750' : 'bg-gray-50/70'}`}>
-                                {/* 1줄: 체크박스 + No. + 업체명 + 배지 + 금액 + 버튼 */}
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  {/* 왼쪽 */}
-                                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    {!isHist && isCheckable && (
-                                      <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(inv.id)}
-                                        className="w-4 h-4 cursor-pointer flex-shrink-0" />
+                              <div className={`px-4 pt-3 pb-2 ${darkMode ? 'bg-gray-750' : 'bg-gray-50/70'}`}>
+                                {/* 1줄: 체크박스 + No. + 업체명 + 배지 + X */}
+                                <div className="flex items-center gap-2">
+                                  {!isHist && isCheckable && (
+                                    <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(inv.id)}
+                                      className="w-4 h-4 cursor-pointer flex-shrink-0" />
+                                  )}
+                                  <div className={`text-xs font-mono flex-shrink-0 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>#{realNo}</div>
+                                  <span className={`text-sm font-bold flex-shrink-0 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                    {inv.vendor || <span className="text-gray-400 italic font-normal">업체 미인식</span>}
+                                  </span>
+                                  {/* 상태 배지 */}
+                                  {inv.status === 'processing' && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 animate-pulse flex-shrink-0">⚙️ SAP 처리중</span>
+                                  )}
+                                  {inv.status === 'failed' && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 flex-shrink-0">❌ 처리 실패</span>
+                                  )}
+                                  {hasPriceErr && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 flex-shrink-0">⚠️ 단가 불일치</span>
+                                  )}
+                                  {isDup && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 flex-shrink-0">⚠️ 중복 이력</span>
+                                  )}
+                                  {inv.price_check_passed === true && !hasPriceErr && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 flex-shrink-0">🔍 AI분석완료 · 💰 단가검증완료</span>
+                                  )}
+                                  <div className="flex-1" />
+                                  {/* 삭제 버튼 (우측 상단) */}
+                                  {!isHist && inv.status !== 'processing' && (
+                                    <button
+                                      onClick={() => { if (window.confirm(`"${inv.vendor || inv.id}" 를 리스트에서 삭제하시겠습니까?`)) dismissMigoInvoice(inv.id); }}
+                                      className={`p-1 rounded-lg transition opacity-40 hover:opacity-100 ${darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-500'}`}
+                                      title="리스트에서 삭제"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* 2줄: 메타(좌) + 금액·버튼(우) */}
+                                <div className="flex flex-wrap items-center justify-between gap-2 mt-1.5">
+                                  {/* 왼쪽: PO · 날짜 · 품목수 */}
+                                  <div className={`flex flex-wrap items-center gap-3 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} style={{paddingLeft: '1.5rem'}}>
+                                    <button
+                                      onClick={() => inv.po_number && setMigoPoModal(inv.po_number)}
+                                      className={`font-mono font-medium underline decoration-dotted underline-offset-2 transition ${darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'} ${inv.po_number ? 'cursor-pointer' : 'cursor-default no-underline'}`}
+                                      title={inv.po_number ? `${inv.po_number} 입고 이력 보기` : ''}
+                                    >{inv.po_number || '—'}</button>
+                                    <span>📅 {inv.date || '—'}</span>
+                                    <span>📦 품목 {inv.items?.length || 0}개</span>
+                                    {isHist && (
+                                      <span className={`font-medium ${migoSelectedStage === 'tax_pending' ? 'text-amber-600' : migoSelectedStage === 'tax_done' ? 'text-teal-600' : 'text-gray-500'}`}>
+                                        {migoSelectedStage === 'tax_pending' ? '⏳ 세금계산서 미발행'
+                                          : migoSelectedStage === 'tax_done' ? '✅ 세금계산서 완료'
+                                          : `완료: ${inv.completed_at?.slice(0, 16).replace('T', ' ') || '-'}`}
+                                      </span>
                                     )}
-                                    <div className={`text-xs font-mono flex-shrink-0 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>#{realNo}</div>
-                                    <span className={`text-sm font-bold flex-shrink-0 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                      {inv.vendor || <span className="text-gray-400 italic font-normal">업체 미인식</span>}
-                                    </span>
-                                    {/* 상태 배지 */}
-                                    {inv.status === 'processing' && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 animate-pulse flex-shrink-0">⚙️ SAP 처리중</span>
-                                    )}
-                                    {inv.status === 'failed' && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 flex-shrink-0">❌ 처리 실패</span>
-                                    )}
-                                    {hasPriceErr && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 flex-shrink-0">⚠️ 단가 불일치</span>
-                                    )}
-                                    {isDup && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 flex-shrink-0">⚠️ 중복 이력</span>
-                                    )}
-                                    {inv.price_check_passed === true && !hasPriceErr && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 flex-shrink-0">🔍 AI분석완료 · 💰 단가검증완료</span>
+                                    {inv.status === 'failed' && inv.error && (
+                                      <span className="text-red-500 truncate max-w-xs" title={inv.error}>{inv.error}</span>
                                     )}
                                   </div>
-                                  {/* 오른쪽: 금액 + 버튼들 (같은 줄) */}
+                                  {/* 오른쪽: 금액 + 버튼들 */}
                                   <div className="flex items-center gap-2 flex-shrink-0">
-                                    {/* 금액 */}
                                     <div className="text-right mr-1">
                                       <div className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                                         {inv.total_amount ? inv.total_amount.toLocaleString() + '원' : '—'}
@@ -15731,7 +15810,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                         </div>
                                       )}
                                     </div>
-                                    {/* 버튼들 */}
                                     {!isHist && (
                                       <>
                                         <button onClick={() => retryMigoParse(inv.id)}
@@ -15781,37 +15859,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                         )}
                                       </>
                                     )}
-                                    {/* 삭제 버튼 */}
-                                    {!isHist && inv.status !== 'processing' && (
-                                      <button
-                                        onClick={() => { if (window.confirm(`"${inv.vendor || inv.id}" 를 리스트에서 삭제하시겠습니까?`)) dismissMigoInvoice(inv.id); }}
-                                        className={`p-1.5 rounded-lg transition opacity-50 hover:opacity-100 ${darkMode ? 'hover:bg-gray-700 text-gray-400 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-500'}`}
-                                        title="리스트에서 삭제"
-                                      >
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    )}
                                   </div>
-                                </div>
-                                {/* 2줄: 메타 정보 */}
-                                <div className={`flex flex-wrap gap-3 mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} style={{paddingLeft: '1.5rem'}}>
-                                  <button
-                                    onClick={() => inv.po_number && setMigoPoModal(inv.po_number)}
-                                    className={`font-mono font-medium underline decoration-dotted underline-offset-2 transition ${darkMode ? 'text-gray-300 hover:text-white' : 'text-gray-700 hover:text-gray-900'} ${inv.po_number ? 'cursor-pointer' : 'cursor-default no-underline'}`}
-                                    title={inv.po_number ? `${inv.po_number} 입고 이력 보기` : ''}
-                                  >{inv.po_number || '—'}</button>
-                                  <span>📅 {inv.date || '—'}</span>
-                                  <span>📦 품목 {inv.items?.length || 0}개</span>
-                                  {isHist && (
-                                    <span className={`font-medium ${migoSelectedStage === 'tax_pending' ? 'text-amber-600' : migoSelectedStage === 'tax_done' ? 'text-teal-600' : 'text-gray-500'}`}>
-                                      {migoSelectedStage === 'tax_pending' ? '⏳ 세금계산서 미발행'
-                                        : migoSelectedStage === 'tax_done' ? '✅ 세금계산서 완료'
-                                        : `완료: ${inv.completed_at?.slice(0, 16).replace('T', ' ') || '-'}`}
-                                    </span>
-                                  )}
-                                  {inv.status === 'failed' && inv.error && (
-                                    <span className="text-red-500 truncate max-w-xs" title={inv.error}>{inv.error}</span>
-                                  )}
                                 </div>
                               </div>
 
