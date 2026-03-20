@@ -16690,8 +16690,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                       <div className="space-y-3">
                         {sessions.map(s => (
                           <div key={s.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                            <div className="flex items-start justify-between gap-3 flex-wrap">
-                              <div>
+                            <div>
+                              <div className="mb-2">
                                 <span className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{s.date}</span>
                                 <span className={`ml-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>— {s.folder}</span>
                               </div>
