@@ -15615,7 +15615,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const completedThisMonth = completedGRs.filter(h => h.completed_at?.startsWith(thisYM));
 
           const STAGES = [
-            { key: 'analyzing',       label: 'AI 분석중',            sublabel: 'PO · 단가 · 수량',  tags: ['PO', '단가', '수량'],  emoji: '🔬', colorClass: 'text-violet-600', bgSel: 'bg-violet-50 border-violet-400' },
+            { key: 'analyzing',       label: 'AI 분석중',            sublabel: 'PO · 단가 · 수량',  emoji: '🔬', colorClass: 'text-violet-600', bgSel: 'bg-violet-50 border-violet-400' },
             { key: 'waiting_gr',      label: '입고 대기',            sublabel: 'AI 분석 완료',                                      emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
             { key: 'processing',      label: 'SAP 입고',             sublabel: '처리 중',                                           emoji: '⚙️', colorClass: 'text-indigo-600', bgSel: 'bg-indigo-50 border-indigo-400' },
             { key: 'completed_month', label: 'SAP 입고 완료',        sublabel: '메일 발송 대기',                                    emoji: '✅', colorClass: 'text-green-600', bgSel: 'bg-green-50 border-green-400' },
