@@ -3756,22 +3756,13 @@ export default function PBKWarehouseSystem() {
     try { const saved = JSON.parse(safeStorage.getItem('pbk_tab_order')); return Array.isArray(saved) ? saved : DEFAULT_TAB_ORDER; }
     catch { return DEFAULT_TAB_ORDER; }
   });
-  const dragTabRef = React.useRef(null);
-  const dragOverTabRef = React.useRef(null);
-
-  const handleTabDragStart = (idx) => { dragTabRef.current = idx; };
-  const handleTabDragOver = (e, idx) => { e.preventDefault(); dragOverTabRef.current = idx; };
-  const handleTabDrop = () => {
-    const from = dragTabRef.current;
-    const to = dragOverTabRef.current;
-    if (from === null || to === null || from === to) return;
+  const moveTab = (idx, dir) => {
+    const target = idx + dir;
+    if (target < 0 || target >= tabOrder.length) return;
     const newOrder = [...tabOrder];
-    const [moved] = newOrder.splice(from, 1);
-    newOrder.splice(to, 0, moved);
+    [newOrder[idx], newOrder[target]] = [newOrder[target], newOrder[idx]];
     setTabOrder(newOrder);
     safeStorage.setItem('pbk_tab_order', JSON.stringify(newOrder));
-    dragTabRef.current = null;
-    dragOverTabRef.current = null;
   };
 
   const [showKpiInputModal, setShowKpiInputModal] = useState(false);
@@ -8742,13 +8733,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <button
                       key={id}
                       onClick={() => setActiveTab(id)}
-                      draggable={isAdmin}
-                      onDragStart={isAdmin ? () => handleTabDragStart(idx) : undefined}
-                      onDragOver={isAdmin ? (e) => handleTabDragOver(e, idx) : undefined}
-                      onDrop={isAdmin ? handleTabDrop : undefined}
                       className={`flex items-center gap-1.5 px-2.5 py-2.5 text-xs border-b-2 transition whitespace-nowrap ${
-                        isAdmin ? 'cursor-grab active:cursor-grabbing' : ''
-                      } ${
                         activeTab === id
                           ? 'border-indigo-600 text-indigo-600 bg-indigo-50 font-semibold'
                           : darkMode
@@ -17180,6 +17165,58 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                 );
               })}
             </div>
+            {/* Admin 탭 순서 변경 */}
+            {isAdmin && (
+              <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  <ArrowUpDown className="w-4 h-4 text-indigo-500" />
+                  <p className={`text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>탭 순서 변경 (Admin)</p>
+                </div>
+                <div className="space-y-1 max-h-[30vh] overflow-y-auto">
+                  {tabOrder.filter(id => {
+                    const t = ALL_TABS.find(t => t.id === id);
+                    return t && (!t.adminOnly || isAdmin);
+                  }).map((id, idx) => {
+                    const tab = ALL_TABS.find(t => t.id === id);
+                    const realIdx = tabOrder.indexOf(id);
+                    return (
+                      <div key={id} className={`flex items-center justify-between px-3 py-2 rounded-lg ${darkMode ? 'bg-gray-700/50' : 'bg-gray-50'}`}>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-mono w-5 text-center ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{idx + 1}</span>
+                          <span className="text-sm">{tab?.icon}</span>
+                          <span className={`text-sm font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{tab?.label}</span>
+                        </div>
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => moveTab(realIdx, -1)}
+                            disabled={realIdx === 0}
+                            className={`p-1 rounded transition ${realIdx === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-indigo-100 text-indigo-600'}`}
+                          >
+                            <ChevronUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => moveTab(realIdx, 1)}
+                            disabled={realIdx === tabOrder.length - 1}
+                            className={`p-1 rounded transition ${realIdx === tabOrder.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-indigo-100 text-indigo-600'}`}
+                          >
+                            <ChevronDown className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={() => {
+                    setTabOrder(DEFAULT_TAB_ORDER);
+                    safeStorage.setItem('pbk_tab_order', JSON.stringify(DEFAULT_TAB_ORDER));
+                  }}
+                  className="mt-2 text-xs text-gray-400 hover:text-gray-600 underline"
+                >
+                  기본 순서로 초기화
+                </button>
+              </div>
+            )}
             {/* 하단 버튼 */}
             <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'} flex items-center justify-between`}>
               <button
