@@ -17113,7 +17113,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
       {/* ─── 대시보드 설정 모달 ─── */}
       {showDashSettings && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDashSettings(false)}>
-          <div className={`rounded-2xl shadow-2xl w-full max-w-md ${darkMode ? 'bg-gray-800' : 'bg-white'}`} onClick={e => e.stopPropagation()}>
+          <div className={`rounded-2xl shadow-2xl w-full max-w-md flex flex-col ${darkMode ? 'bg-gray-800' : 'bg-white'}`} style={{ maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
             {/* 헤더 */}
             <div className={`flex items-center justify-between px-6 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
               <div className="flex items-center gap-2">
@@ -17123,7 +17123,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
               <button onClick={() => setShowDashSettings(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             {/* 탭 목록 */}
-            <div className="px-6 py-4 overflow-y-auto" style={{ maxHeight: '65vh' }}>
+            <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">
               <p className={`text-xs mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>표시할 탭을 선택하세요. 숨긴 탭은 네비게이션에서 사라집니다.</p>
               {['메인', '물류', '재고', '분석', '기타'].map(group => {
                 const groupTabs = ALL_TABS.filter(t => t.group === group && (!t.adminOnly || isAdmin));
@@ -17172,7 +17172,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                   <ArrowUpDown className="w-4 h-4 text-indigo-500" />
                   <p className={`text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>탭 순서 변경 (Admin)</p>
                 </div>
-                <div className="space-y-1 max-h-[30vh] overflow-y-auto">
+                <div className="space-y-1 max-h-[25vh] overflow-y-auto">
                   {tabOrder.filter(id => {
                     const t = ALL_TABS.find(t => t.id === id);
                     return t && (!t.adminOnly || isAdmin);
@@ -17218,7 +17218,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
               </div>
             )}
             {/* 하단 버튼 */}
-            <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'} flex items-center justify-between`}>
+            <div className={`px-6 py-4 border-t shrink-0 ${darkMode ? 'border-gray-700' : 'border-gray-100'} flex items-center justify-between`}>
               <button
                 onClick={() => {
                   setHiddenTabs(new Set());
