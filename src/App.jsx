@@ -3481,6 +3481,7 @@ export default function PBKWarehouseSystem() {
   const [analysisLog, setAnalysisLog]           = useState(null);   // analysis_log.json 내용
   const [analysisIssueFilter, setAnalysisIssueFilter] = useState('all'); // 'all'|'resolved'|'confirmed_ok'
   const [analysisDetailModal, setAnalysisDetailModal] = useState(null); // 'sessions'|'issues'|'resolved'|'rules'|null
+  const [expandedIssueId, setExpandedIssueId] = useState(null); // 이슈 행 클릭 시 확장
   // ── (하위호환) Parse Test Log 상태 ────────────────────
   const [parseLogs, setParseLogs]             = useState([]);
   const [parseTestInput, setParseTestInput]   = useState('');
@@ -16708,28 +16709,59 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                           {filteredIssues.length === 0 ? (
                             <tr><td colSpan={7} className={`px-5 py-8 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>이슈가 없습니다</td></tr>
                           ) : filteredIssues.map(iss => (
-                            <tr key={iss.id} className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                              <td className={`px-5 py-3 whitespace-nowrap text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{iss.date}</td>
-                              <td className={`px-5 py-3 font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.vendor}</td>
-                              <td className="px-5 py-3">{docBadge(iss.doc_type)}</td>
-                              <td className={`px-5 py-3 max-w-[280px] text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                <p className="line-clamp-2">{iss.issue}</p>
-                                {iss.files?.length > 0 && (
-                                  <p className={`text-xs mt-0.5 font-mono truncate ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} title={iss.files.join(', ')}>
-                                    {iss.files[0]}{iss.files.length > 1 ? ` 외 ${iss.files.length - 1}건` : ''}
-                                  </p>
-                                )}
-                              </td>
-                              <td className={`px-5 py-3 max-w-[260px] text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                <p className="line-clamp-2">{iss.resolution}</p>
-                              </td>
-                              <td className="px-5 py-3">
-                                {iss.rule_ref
-                                  ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">📌 {iss.rule_ref}</span>
-                                  : <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>—</span>}
-                              </td>
-                              <td className="px-5 py-3">{issueBadge(iss.status)}</td>
-                            </tr>
+                            <React.Fragment key={iss.id}>
+                              <tr
+                                onClick={() => setExpandedIssueId(expandedIssueId === iss.id ? null : iss.id)}
+                                className={`border-t cursor-pointer transition ${darkMode ? 'border-gray-700 hover:bg-gray-700/50' : 'border-gray-100 hover:bg-gray-50'} ${expandedIssueId === iss.id ? (darkMode ? 'bg-gray-700/50' : 'bg-indigo-50/50') : ''}`}>
+                                <td className={`px-5 py-3 whitespace-nowrap text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{iss.date}</td>
+                                <td className={`px-5 py-3 font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.vendor}</td>
+                                <td className="px-5 py-3">{docBadge(iss.doc_type)}</td>
+                                <td className={`px-5 py-3 max-w-[280px] text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  <p className={expandedIssueId === iss.id ? '' : 'line-clamp-2'}>{iss.issue}</p>
+                                  {expandedIssueId !== iss.id && iss.files?.length > 0 && (
+                                    <p className={`text-xs mt-0.5 font-mono truncate ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} title={iss.files.join(', ')}>
+                                      {iss.files[0]}{iss.files.length > 1 ? ` 외 ${iss.files.length - 1}건` : ''}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className={`px-5 py-3 max-w-[260px] text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  <p className={expandedIssueId === iss.id ? '' : 'line-clamp-2'}>{iss.resolution}</p>
+                                </td>
+                                <td className="px-5 py-3">
+                                  {iss.rule_ref
+                                    ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">📌 {iss.rule_ref}</span>
+                                    : <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>—</span>}
+                                </td>
+                                <td className="px-5 py-3">{issueBadge(iss.status)}</td>
+                              </tr>
+                              {expandedIssueId === iss.id && (
+                                <tr className={darkMode ? 'bg-gray-700/30' : 'bg-indigo-50/30'}>
+                                  <td colSpan={7} className="px-5 py-4">
+                                    <div className="space-y-2">
+                                      <div>
+                                        <span className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>발견된 문제:</span>
+                                        <p className={`text-sm mt-0.5 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.issue}</p>
+                                      </div>
+                                      <div>
+                                        <span className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>해결 방법:</span>
+                                        <p className={`text-sm mt-0.5 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.resolution}</p>
+                                      </div>
+                                      {iss.files?.length > 0 && (
+                                        <div>
+                                          <span className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>관련 파일:</span>
+                                          <div className="mt-0.5 space-y-0.5">
+                                            {iss.files.map((f, i) => <p key={i} className={`text-xs font-mono ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{f}</p>)}
+                                          </div>
+                                        </div>
+                                      )}
+                                      <div className="flex gap-3 items-center pt-1">
+                                        <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{iss.id} · {iss.date} · {iss.session || ''}</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
                           ))}
                         </tbody>
                       </table>
