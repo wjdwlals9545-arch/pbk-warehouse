@@ -74,6 +74,7 @@ const SYNC_KEYS = [
   'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
   'pbk_qstock',
   'pbk_last_auto_backup',
+  'pbk_tab_order',
 ];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
@@ -3747,6 +3748,30 @@ export default function PBKWarehouseSystem() {
     setIsAdmin(false);
     safeStorage.removeItem('pbk_admin');
     showToast('로그아웃 완료', 'info');
+  };
+
+  // ── 탭 순서 관리 (Admin drag-and-drop) ──
+  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','kitting','pick','kpi','analysis','locate','layout','view3d','temphumidity','testlog','todo'];
+  const [tabOrder, setTabOrder] = useState(() => {
+    try { const saved = JSON.parse(safeStorage.getItem('pbk_tab_order')); return Array.isArray(saved) ? saved : DEFAULT_TAB_ORDER; }
+    catch { return DEFAULT_TAB_ORDER; }
+  });
+  const dragTabRef = React.useRef(null);
+  const dragOverTabRef = React.useRef(null);
+
+  const handleTabDragStart = (idx) => { dragTabRef.current = idx; };
+  const handleTabDragOver = (e, idx) => { e.preventDefault(); dragOverTabRef.current = idx; };
+  const handleTabDrop = () => {
+    const from = dragTabRef.current;
+    const to = dragOverTabRef.current;
+    if (from === null || to === null || from === to) return;
+    const newOrder = [...tabOrder];
+    const [moved] = newOrder.splice(from, 1);
+    newOrder.splice(to, 0, moved);
+    setTabOrder(newOrder);
+    safeStorage.setItem('pbk_tab_order', JSON.stringify(newOrder));
+    dragTabRef.current = null;
+    dragOverTabRef.current = null;
   };
 
   const [showKpiInputModal, setShowKpiInputModal] = useState(false);
@@ -8690,55 +8715,70 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       <nav className={`hidden md:block ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-b'} shadow-sm sticky top-0 z-10`}>
         <div className="max-w-[1400px] mx-auto px-6">
           <div className="flex gap-1 overflow-x-auto">
-            {[
-              { id: 'migo', label: 'MIGO', icon: ClipboardList },
-              { id: 'home', label: 'Home', icon: Home },
-              { id: 'dashboard', label: 'Production', icon: BarChart3 },
-              { id: 'delivery', label: 'Delivery', icon: Truck },
-              { id: 'receive', label: 'Receiving', icon: Database },
-              { id: 'kitting', label: 'Kitting L/T', icon: Package },
-              { id: 'pick', label: 'Kitting Cycle', icon: Clock },
-              { id: 'kpi', label: 'KPI', icon: TrendingUp },
-              { id: 'analysis', label: 'Area Analysis', icon: BarChart3 },
-              { id: 'locate', label: 'Locator', icon: Search },
-              { id: 'layout', label: 'Layout', icon: Warehouse },
-              { id: 'view3d', label: '3D View', icon: Box },
-              { id: 'temphumidity', label: 'Climate', icon: Thermometer },
-              { id: 'testlog', label: '분석 이력', icon: FileText },
-              ...(isAdmin ? [{ id: 'todo', label: 'TO DO', icon: Check }] : []),
-            ].filter(tab => isTabVisible(tab.id)).map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-2.5 text-xs border-b-2 transition whitespace-nowrap ${
-                  activeTab === tab.id 
-                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50 font-semibold' 
-                    : darkMode 
-                      ? 'border-transparent text-gray-300 hover:text-white font-medium' 
-                      : 'border-transparent text-gray-600 hover:text-gray-900 font-medium'
-                }`}
-              >
-                <tab.icon className="w-3.5 h-3.5" />
-                {tab.label}
-                {tab.id === 'todo' && dueSoonTodos.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{dueSoonTodos.length}</span>
-                )}
-                {tab.id === 'receive' && (() => {
-                  const now = new Date();
-                  const overdueCount = receiveCycles.filter(r => {
-                    if (r.status === 'completed') return false;
-                    if (!r.startTime) return false;
-                    return (now - new Date(r.startTime)) / (1000 * 60 * 60) >= 4;
-                  }).length;
-                  return overdueCount > 0 ? (
-                    <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{overdueCount}</span>
-                  ) : null;
-                })()}
-                {tab.id === 'rack' && fullBins.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 bg-pink-500 text-white text-xs rounded-full">{fullBins.length}</span>
-                )}
-              </button>
-            ))}
+            {(() => {
+              const TAB_DEFS = {
+                migo: { label: 'MIGO', icon: ClipboardList },
+                home: { label: 'Home', icon: Home },
+                dashboard: { label: 'Production', icon: BarChart3 },
+                delivery: { label: 'Delivery', icon: Truck },
+                receive: { label: 'Receiving', icon: Database },
+                kitting: { label: 'Kitting L/T', icon: Package },
+                pick: { label: 'Kitting Cycle', icon: Clock },
+                kpi: { label: 'KPI', icon: TrendingUp },
+                analysis: { label: 'Area Analysis', icon: BarChart3 },
+                locate: { label: 'Locator', icon: Search },
+                layout: { label: 'Layout', icon: Warehouse },
+                view3d: { label: '3D View', icon: Box },
+                temphumidity: { label: 'Climate', icon: Thermometer },
+                testlog: { label: '분석 이력', icon: FileText },
+                todo: { label: 'TO DO', icon: Check },
+              };
+              return tabOrder
+                .filter(id => TAB_DEFS[id] && isTabVisible(id) && (id !== 'todo' || isAdmin))
+                .map((id, idx) => {
+                  const def = TAB_DEFS[id];
+                  const Icon = def.icon;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setActiveTab(id)}
+                      draggable={isAdmin}
+                      onDragStart={isAdmin ? () => handleTabDragStart(idx) : undefined}
+                      onDragOver={isAdmin ? (e) => handleTabDragOver(e, idx) : undefined}
+                      onDrop={isAdmin ? handleTabDrop : undefined}
+                      className={`flex items-center gap-1.5 px-2.5 py-2.5 text-xs border-b-2 transition whitespace-nowrap ${
+                        isAdmin ? 'cursor-grab active:cursor-grabbing' : ''
+                      } ${
+                        activeTab === id
+                          ? 'border-indigo-600 text-indigo-600 bg-indigo-50 font-semibold'
+                          : darkMode
+                            ? 'border-transparent text-gray-300 hover:text-white font-medium'
+                            : 'border-transparent text-gray-600 hover:text-gray-900 font-medium'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {def.label}
+                      {id === 'todo' && dueSoonTodos.length > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{dueSoonTodos.length}</span>
+                      )}
+                      {id === 'receive' && (() => {
+                        const now = new Date();
+                        const overdueCount = receiveCycles.filter(r => {
+                          if (r.status === 'completed') return false;
+                          if (!r.startTime) return false;
+                          return (now - new Date(r.startTime)) / (1000 * 60 * 60) >= 4;
+                        }).length;
+                        return overdueCount > 0 ? (
+                          <span className="ml-1 px-1.5 py-0.5 bg-red-500 text-white text-xs rounded-full">{overdueCount}</span>
+                        ) : null;
+                      })()}
+                      {id === 'rack' && fullBins.length > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 bg-pink-500 text-white text-xs rounded-full">{fullBins.length}</span>
+                      )}
+                    </button>
+                  );
+                });
+            })()}
           </div>
         </div>
       </nav>
