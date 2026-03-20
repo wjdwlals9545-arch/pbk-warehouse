@@ -1,0 +1,327 @@
+{
+  "updated": "2026-03-21",
+  "rules": [
+    {
+      "id": "Rule 1",
+      "vendors": ["미르하이테크"],
+      "desc": "품목 설명 괄호 내 규격 제거 — '품명 (형상코드)' 에서 괄호 부분을 제거해 SAP 품명과 매칭",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 6",
+      "vendors": ["미스미"],
+      "desc": "납품서 '품번' 컬럼에서 우리 내부 material_no 추출 — 미스미 고유 카탈로그 번호 무시",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 7",
+      "vendors": ["사우스코"],
+      "desc": "해외 Commercial Invoice 'C/I:XXXXXX' 형식에서 우리 품번 추출",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 8",
+      "vendors": ["고우넷", "McMaster", "인아오리엔탈모터", "구로자석기계", "인터디바이스", "동화엘에스씨", "이레텍", "용봉", "뷰런", "동우과학", "엠투플러스", "대한자석", "나인컴퍼니"],
+      "desc": "거래명세서 규격/품명 컬럼에 수기/타이핑 내부 품번 감지 — P/N XXXXXX 또는 5~7자리 숫자, XXX-XXXX 하이픈 형식, 나인컴퍼니 영숫자 품번 포함",
+      "added": "2026-03-20",
+      "status": "active"
+    },
+    {
+      "id": "Rule 9",
+      "vendors": ["DigiKey"],
+      "desc": "DigiKey Invoice의 'CUST: XXXXXX' 라인에서 내부 품번 추출 — 접미사(_HSM 등) 제거, CUST 없는 구형은 P/N 수기 확인",
+      "added": "2026-03-20",
+      "status": "active"
+    },
+    {
+      "id": "Rule 10",
+      "vendors": ["영광스프링", "세모에프에이", "쿨원"],
+      "desc": "품목명이 '품번/규격명' 슬래시(/) 형식일 때 슬래시 앞 6자리 숫자를 내부 품번으로 추출 (예: 711194/Tri-Spring → 711194)",
+      "added": "2026-03-20",
+      "status": "active"
+    },
+    {
+      "id": "세금계산서 예외",
+      "vendors": ["경제정공", "미스미"],
+      "desc": "경제정공: 월 2·4주차 수동 발행 (manual_monthly) / 미스미: 매월 25일 수동 발행 (manual_25th) — 자동 이메일 발송 건너뜀",
+      "added": "2026-03-20",
+      "status": "active"
+    }
+  ],
+  "issues": [
+    {
+      "id": "iss_001",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "고우넷",
+      "doc_type": "거래명세서",
+      "files": ["5105662504_고우넷_거래명세서.pdf", "5105662505_고우넷_거래명세서.pdf"],
+      "issue": "규격 컬럼에 타이핑된 내부 품번(716648, 716655)을 Claude가 인식하지 못함 — 인쇄된 규격코드(ZIK-000...)만 읽고 우리 품번 무시",
+      "status": "resolved",
+      "resolution": "Rule 8 추가 (main.py) — 규격컬럼 내 5~7자리 별도 숫자를 내부 품번으로 인식",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_002",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "미스미",
+      "doc_type": "거래명세서",
+      "files": ["5105662501_미스미_거래명세서.pdf", "5105662503_미스미_거래명세서.pdf"],
+      "issue": "여러 거래명세서의 IR번호가 동일 (5105662501) — 시스템 충돌 우려",
+      "status": "confirmed_ok",
+      "resolution": "정상 확인 — F&A에서 월별 일괄 SAP IR 처리 방식. 파일명(stem)이 달라서 시스템 충돌 없음",
+      "rule_ref": null
+    },
+    {
+      "id": "iss_003",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "경제정공",
+      "doc_type": "거래명세서",
+      "files": ["5105662502_경제정공_거래명세서.pdf"],
+      "issue": "입고완료 후 세금계산서 이메일 자동 발송될 뻔함 — 경제정공은 수동 발행 업체",
+      "status": "resolved",
+      "resolution": "TAX_INVOICE_EXCEPTIONS에 경제정공 추가 (manual_monthly) — 자동 이메일 발송 건너뛰고 수동처리 알림으로 변경",
+      "rule_ref": "세금계산서 예외"
+    },
+    {
+      "id": "iss_004",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "미르하이테크",
+      "doc_type": "거래명세서",
+      "files": ["5105662506_미르하이테크_거래명세서.pdf"],
+      "issue": "품목명에 괄호 형상코드 포함 — SAP 품명과 불일치 가능성",
+      "status": "confirmed_ok",
+      "resolution": "Rule 1 적용 확인 — 이미 괄호 제거 로직 있음, 정상 처리됨",
+      "rule_ref": "Rule 1"
+    },
+    {
+      "id": "iss_005",
+      "date": "2026-03-20",
+      "session": "고우넷 PDF 직접 분석",
+      "vendor": "McMaster-Carr",
+      "doc_type": "Invoice",
+      "files": ["McMaster 인보이스 (예시)"],
+      "issue": "McMaster Invoice에 우리 내부 품번이 별도 메모로 기재됨 — 기존 로직으로는 감지 불가",
+      "status": "resolved",
+      "resolution": "Rule 8 범위에 McMaster 포함 (main.py) — 고우넷과 동일 패턴으로 처리",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_006",
+      "date": "2026-03-20",
+      "session": "2·3월 입고완료 폴더 분석",
+      "vendor": "인아오리엔탈모터",
+      "doc_type": "거래명세서",
+      "files": ["4500223009_인아오리엔탈모터_거래명세서.pdf"],
+      "issue": "품명 C079S-9012PTGE 옆에 수기로 '712696' 기재 — Rule 8과 동일 패턴이지만 vendor 목록에 없었음",
+      "status": "resolved",
+      "resolution": "Rule 8 vendor 목록에 인아오리엔탈모터 추가",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_007",
+      "date": "2026-03-20",
+      "session": "2·3월 입고완료 폴더 분석",
+      "vendor": "DigiKey",
+      "doc_type": "Invoice",
+      "files": ["5105663101_4500223174_digikey_invoice.pdf", "5105664633_4500226942_digikey_invoice.pdf"],
+      "issue": "DigiKey Invoice에 'CUST: 716150' 형식으로 내부 품번이 인쇄 필드로 존재 — PART(CCM1949-ND)는 DigiKey 카탈로그 번호이며 우리 품번이 아님",
+      "status": "resolved",
+      "resolution": "Rule 9 추가 — DigiKey Invoice의 CUST 라인에서 내부 품번 추출 로직 추가",
+      "rule_ref": "Rule 9"
+    },
+    {
+      "id": "iss_008",
+      "date": "2026-03-20",
+      "session": "2·3월 입고완료 폴더 분석",
+      "vendor": "신성나노텍",
+      "doc_type": "거래명세서",
+      "files": ["4500234781_신성나노텍_거래명세서.pdf"],
+      "issue": "거래명세서에 내부 품번 미기재 — 품목명(LABEL, CORD WRAP, ARES)만 존재",
+      "status": "confirmed_ok",
+      "resolution": "사용자가 직접 품번을 수기 기입하여 처리. PO번호(4500234781) fallback 매칭도 가능",
+      "rule_ref": null
+    },
+    {
+      "id": "iss_009",
+      "date": "2026-03-20",
+      "session": "2·3월 입고완료 폴더 분석",
+      "vendor": "영광스프링",
+      "doc_type": "거래명세서",
+      "files": ["5105664626_4500233563외_영광스프링_거래명세서.pdf"],
+      "issue": "품목명이 '711194/Tri-Spring' 슬래시 형식 + 하단에 복수 PO 매핑(4500233563:711119, 4500234125:711194) — 기존 파싱 로직 미인식",
+      "status": "resolved",
+      "resolution": "Rule 10 추가 — 슬래시(/) 형식에서 앞쪽 6자리 숫자를 내부 품번으로 추출. 복수 PO '외' 패턴도 인식",
+      "rule_ref": "Rule 10"
+    },
+    {
+      "id": "iss_010",
+      "date": "2026-03-20",
+      "session": "2·3월 입고완료 폴더 분석",
+      "vendor": "세모에프에이",
+      "doc_type": "거래명세서",
+      "files": ["5105664478_4500232663_세모에프에이_거래명세서.pdf"],
+      "issue": "품명이 '711110/MR9MNZU-1-110L V1P' 슬래시 형식 — 영광스프링과 동일 패턴",
+      "status": "resolved",
+      "resolution": "Rule 10 적용 — 세모에프에이도 슬래시 형식 vendor 목록에 추가",
+      "rule_ref": "Rule 10"
+    },
+    {
+      "id": "iss_011",
+      "date": "2026-03-20",
+      "session": "2·3월 입고완료 폴더 분석",
+      "vendor": "(전체)",
+      "doc_type": "파일명",
+      "files": ["4500223009_인아오리엔탈모터_거래명세서.pdf", "4500234781_신성나노텍_거래명세서.pdf"],
+      "issue": "3월 일부 파일(7건)이 IR번호 prefix 없이 PO번호_업체명 형식 — 기존 파일명 파싱에서 IR번호 추출 실패 가능",
+      "status": "noted",
+      "resolution": "파일명 파싱 시 IR번호 없는 경우 PO번호로 fallback 하는 로직 필요. 현재는 수동 확인.",
+      "rule_ref": null
+    },
+    {
+      "id": "iss_012",
+      "date": "2026-03-21",
+      "session": "2025년 전수 분석",
+      "vendor": "DigiKey",
+      "doc_type": "Invoice",
+      "files": ["5105643205_4500212350_digikey_Invoice.pdf"],
+      "issue": "CUST 필드에 'CUST: 710405_HSM' 형식으로 접미사(_HSM) 포함 — 숫자만 추출하지 않으면 SAP 매칭 실패",
+      "status": "resolved",
+      "resolution": "Invoice 프롬프트 Rule 2 업데이트 — CUST 뒤 숫자(5~6자리)만 추출, 언더스코어 뒤 접미사 제외",
+      "rule_ref": "Rule 9"
+    },
+    {
+      "id": "iss_013",
+      "date": "2026-03-21",
+      "session": "2025년 전수 분석",
+      "vendor": "DigiKey",
+      "doc_type": "Invoice",
+      "files": ["5105648810_4500210283_디지키_invoice.pdf"],
+      "issue": "구형 DigiKey Invoice에 CUST 필드 없음 — P/N 716150 수기 기재만 존재",
+      "status": "resolved",
+      "resolution": "Invoice 프롬프트에 CUST 없는 구형은 수기 P/N으로 fallback 규칙 추가",
+      "rule_ref": "Rule 9"
+    },
+    {
+      "id": "iss_014",
+      "date": "2026-03-21",
+      "session": "2025년 전수 분석",
+      "vendor": "(다수)",
+      "doc_type": "거래명세서",
+      "files": ["구로자석기계", "인터디바이스", "동화엘에스씨", "이레텍", "용봉", "뷰런", "동우과학", "엠투플러스"],
+      "issue": "8개 업체에서 Rule 8과 동일한 수기/타이핑 품번 패턴 발견 — P/N XXXXXX 또는 5~7자리 숫자 기재",
+      "status": "resolved",
+      "resolution": "Rule 8 vendor 목록에 8개 업체 일괄 추가 (main.py 거래명세서 프롬프트)",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_015",
+      "date": "2026-03-21",
+      "session": "2025년 전수 분석",
+      "vendor": "대한자석",
+      "doc_type": "거래명세서",
+      "files": ["5105642716_4500212099_대한자석_거래명세서.pdf"],
+      "issue": "거래명세서에 내부 품번 미기재 — 'ND 15×15 <35SH>' 규격만 존재. 업체가 품번을 안 넣어줌",
+      "status": "resolved",
+      "resolution": "사용자가 납품 시 수기 기입 예정 → Rule 8로 커버. 대한자석을 Rule 8 업체 목록에 추가",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_016",
+      "date": "2026-03-21",
+      "session": "2025년 전수 분석",
+      "vendor": "나인컴퍼니",
+      "doc_type": "거래명세서",
+      "files": ["5105644671_4500214290_나인컴퍼니_거래명세서.pdf"],
+      "issue": "비표준 품번 형식 '9FB134' (영문+숫자 혼합, HSM3 품목) — PO번호도 문서에 미기재",
+      "status": "resolved",
+      "resolution": "사용자가 수기 기입. Rule 8에 나인컴퍼니 추가 + 영숫자 혼합 품번 인식 규칙 추가",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_017",
+      "date": "2026-03-21",
+      "session": "2025년 전수 분석",
+      "vendor": "고우넷",
+      "doc_type": "전자 거래명세서",
+      "files": ["5105661110_4500230865_고우넷_거래명세서.pdf"],
+      "issue": "전자 거래명세서 형식에는 수기 품번 없음 — 규격 'ZIK-000' 카탈로그 코드만 존재. 업체가 품번을 안 넣어줌",
+      "status": "resolved",
+      "resolution": "사용자가 납품 시 수기 기입 예정 → Rule 8로 커버 (고우넷은 이미 Rule 8 목록에 포함)",
+      "rule_ref": "Rule 8"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "session_20260320_01",
+      "date": "2026-03-20",
+      "folder": "입고완료\\2026년\\1월",
+      "total_tested": 26,
+      "breakdown": { "거래명세서": 20, "Invoice": 6 },
+      "issues_found": 4,
+      "resolved": 3,
+      "confirmed_ok": 1,
+      "rules_added": ["Rule 8", "세금계산서 예외"],
+      "memo": "1월 폴더 전수 분석. 고우넷 수기품번·경제정공 세금계산서 예외 처리 추가. 미스미 IR번호 중복은 정상 확인."
+    },
+    {
+      "id": "session_20260320_02",
+      "date": "2026-03-20",
+      "folder": "고우넷 PDF 2건 직접 업로드",
+      "total_tested": 2,
+      "breakdown": { "거래명세서": 2, "Invoice": 0 },
+      "issues_found": 1,
+      "resolved": 1,
+      "confirmed_ok": 0,
+      "rules_added": ["Rule 8"],
+      "memo": "고우넷 거래명세서 직접 업로드. 규격컬럼 수기품번 확인 → Rule 8 main.py에 추가."
+    },
+    {
+      "id": "session_20260320_03",
+      "date": "2026-03-20",
+      "folder": "입고완료\\2026년\\2월",
+      "total_tested": 23,
+      "breakdown": { "거래명세서": 20, "Invoice": 3 },
+      "issues_found": 2,
+      "resolved": 2,
+      "confirmed_ok": 0,
+      "rules_added": ["Rule 9"],
+      "new_vendors": ["PJ전자", "예인시스템"],
+      "memo": "2월 폴더 전수 분석(새 폴더 백업 제외). DigiKey CUST 필드 품번 추출 Rule 9 추가. PJ전자·예인시스템은 표준 형식으로 이슈 없음. 경제정공·미스미 세금계산서 예외 유지 확인."
+    },
+    {
+      "id": "session_20260320_04",
+      "date": "2026-03-20",
+      "folder": "입고완료\\2026년\\3월",
+      "total_tested": 16,
+      "breakdown": { "거래명세서": 14, "Invoice": 2 },
+      "issues_found": 4,
+      "resolved": 3,
+      "confirmed_ok": 1,
+      "rules_added": ["Rule 8 확장", "Rule 10"],
+      "excluded": ["대일정공(테스트 문서)", "새 폴더(백업)"],
+      "new_vendors": ["인아오리엔탈모터", "SJ일레콤", "신성나노텍", "영광스프링", "세모에프에이"],
+      "memo": "3월 폴더 전수 분석. 인아오리엔탈모터 수기품번→Rule 8 확장. 영광스프링·세모에프에이 슬래시 형식→Rule 10 추가. 신성나노텍 품번미기재→사용자 수기기입으로 처리. 대일정공은 테스트 문서로 제외. 3월 일부 파일 IR번호 없는 파일명 패턴 발견."
+    },
+    {
+      "id": "session_20260321_01",
+      "date": "2026-03-21",
+      "folder": "입고완료\\2025년\\1월~12월 (전체)",
+      "total_tested": 222,
+      "breakdown": { "거래명세서": 186, "Invoice": 36 },
+      "issues_found": 6,
+      "resolved": 6,
+      "confirmed_ok": 0,
+      "rules_added": ["Rule 8 확장(+10업체)", "Rule 9 업데이트(CUST 접미사·구형)", "Rule 10 확장(+쿨원)"],
+      "vendors_tested": ["영광스프링", "쿨원", "이엠넥스", "세모에프에이", "McMaster", "DigiKey", "재팬마그넷", "사우스코", "효성산업", "일우정밀", "대한자석", "인터디바이스", "구로자석기계", "목클라우드", "SJ일레콤", "신광볼트", "흥영하이테크", "왕특수강", "나인컴퍼니", "진풍피엔티", "미래켐", "경제정공", "동화엘에스씨", "동우과학", "이레텍", "비오티시스템", "용봉", "엠투플러스", "뷰런", "Element14", "송정하이테크", "미르하이테크", "예인시스템", "고우넷", "인아오리엔탈모터"],
+      "new_issues": ["iss_012", "iss_013", "iss_014", "iss_015", "iss_016", "iss_017"],
+      "memo": "2025년 전체(1~12월) 거래명세서·Invoice 전수 분석. 10개 배치로 ~40개 고유 업체 대표 PDF 확인. DigiKey CUST 접미사(_HSM) 제거 및 구형 Invoice P/N 수기 대응 추가. Rule 8 적용 업체 3→11개 확장(구로자석기계·인터디바이스·동화엘에스씨·이레텍·용봉·뷰런·동우과학·엠투플러스). 미해결: 대한자석 품번 미기재, 나인컴퍼니 비표준 품번, 고우넷 전자 거래명세서 품번 미기재 — 모두 PO fallback 필요."
+    }
+  ]
+}
