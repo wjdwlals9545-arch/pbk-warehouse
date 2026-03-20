@@ -3480,6 +3480,7 @@ export default function PBKWarehouseSystem() {
   // ── 분석 이력 상태 ────────────────────────────────────
   const [analysisLog, setAnalysisLog]           = useState(null);   // analysis_log.json 내용
   const [analysisIssueFilter, setAnalysisIssueFilter] = useState('all'); // 'all'|'resolved'|'confirmed_ok'
+  const [analysisDetailModal, setAnalysisDetailModal] = useState(null); // 'sessions'|'issues'|'resolved'|'rules'|null
   // ── (하위호환) Parse Test Log 상태 ────────────────────
   const [parseLogs, setParseLogs]             = useState([]);
   const [parseTestInput, setParseTestInput]   = useState('');
@@ -16509,13 +16510,13 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
             : <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">거래명세서</span>;
 
           return (
-            <div className="p-4 space-y-5 max-w-5xl">
+            <div className="space-y-5">
 
               {/* ── 헤더 ── */}
               <div className="flex items-start justify-between flex-wrap gap-3">
                 <div>
                   <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>🧪 AI 파싱 분석 이력</h2>
-                  <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <p className={`text-sm mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                     Claude Code에서 거래명세서·인보이스를 분석하고 추가한 룰과 발견된 이슈를 기록합니다
                   </p>
                 </div>
@@ -16547,48 +16548,132 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                 </div>
               ) : (
                 <>
-                  {/* ── 요약 카드 4개 ── */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {/* ── 요약 카드 4개 (클릭 → 모달) ── */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {[
-                      { icon: '📄', label: '총 테스트 문서', value: totalTested, sub: `${sessions.length}개 세션`, color: 'indigo' },
-                      { icon: '🔍', label: '발견된 이슈',    value: totalIssues,   sub: `${totalResolved}건 해결 완료`, color: 'yellow' },
-                      { icon: '✅', label: '해결 완료',      value: totalResolved, sub: `${totalIssues - totalResolved}건 진행 중`, color: 'green' },
-                      { icon: '📌', label: '적용 중인 룰',   value: totalRules,    sub: `main.py 기준`, color: 'purple' },
+                      { id: 'sessions', icon: '📄', label: '총 테스트 문서', value: totalTested, sub: `${sessions.length}개 세션`, color: 'indigo' },
+                      { id: 'issues',   icon: '🔍', label: '발견된 이슈',    value: totalIssues,   sub: `${totalResolved}건 해결 완료`, color: 'yellow' },
+                      { id: 'resolved', icon: '✅', label: '해결 완료',      value: totalResolved, sub: `${totalIssues - totalResolved}건 진행 중`, color: 'green' },
+                      { id: 'rules',    icon: '📌', label: '적용 중인 룰',   value: totalRules,    sub: `main.py 기준`, color: 'purple' },
                     ].map(c => (
-                      <div key={c.label} className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                        <div className={`text-2xl font-bold mb-0.5 ${
+                      <div key={c.label}
+                        onClick={() => setAnalysisDetailModal(c.id)}
+                        className={`rounded-xl p-5 border cursor-pointer transition-all hover:shadow-md hover:scale-[1.02] ${darkMode ? 'bg-gray-800 border-gray-700 hover:border-gray-500' : 'bg-white border-gray-200 hover:border-gray-300'}`}>
+                        <div className={`text-3xl font-bold mb-1 ${
                           c.color === 'indigo' ? 'text-indigo-600' :
                           c.color === 'yellow' ? 'text-yellow-600' :
                           c.color === 'green'  ? 'text-green-600'  : 'text-purple-600'
                         }`}>{c.icon} {c.value}</div>
-                        <div className={`text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{c.label}</div>
-                        <div className={`text-xs mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{c.sub}</div>
+                        <div className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{c.label}</div>
+                        <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{c.sub}</div>
                       </div>
                     ))}
                   </div>
 
+                  {/* ── 카드 클릭 상세 모달 ── */}
+                  {analysisDetailModal && (() => {
+                    const modalTitle = { sessions: '📄 테스트 세션 상세', issues: '🔍 발견된 이슈 전체', resolved: '✅ 해결된 이슈', rules: '📌 적용 중인 파싱 룰' }[analysisDetailModal];
+                    return (
+                      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40" onClick={() => setAnalysisDetailModal(null)}>
+                        <div onClick={e => e.stopPropagation()} className={`w-full max-w-3xl max-h-[80vh] flex flex-col rounded-2xl shadow-2xl ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+                          <div className="flex items-center justify-between px-6 py-4 border-b border-inherit shrink-0">
+                            <h3 className="text-base font-bold">{modalTitle}</h3>
+                            <button onClick={() => setAnalysisDetailModal(null)} className={`text-xl px-2 py-1 rounded-lg hover:bg-gray-200 ${darkMode ? 'hover:bg-gray-700' : ''}`}>&times;</button>
+                          </div>
+                          <div className="overflow-y-auto px-6 py-4 space-y-3">
+                            {analysisDetailModal === 'sessions' && sessions.map(s => (
+                              <div key={s.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{s.date}</span>
+                                  <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>— {s.folder}</span>
+                                </div>
+                                <div className="flex gap-2 flex-wrap mb-2">
+                                  <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 font-medium">📄 {s.total_tested}건</span>
+                                  {s.breakdown && Object.entries(s.breakdown).map(([k, v]) => v > 0 && (
+                                    <span key={k} className={`px-2 py-0.5 rounded-full text-xs font-medium ${k === 'Invoice' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{k} {v}건</span>
+                                  ))}
+                                  {s.issues_found > 0 && <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">⚠️ 이슈 {s.issues_found}건</span>}
+                                  {s.rules_added?.map(r => <span key={r} className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 font-medium">📌 {r}</span>)}
+                                </div>
+                                {s.memo && <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.memo}</p>}
+                                {s.vendors_tested && (
+                                  <div className="mt-2">
+                                    <p className={`text-xs font-semibold mb-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>테스트 업체:</p>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                      {s.vendors_tested.map(v => <span key={v} className={`px-2 py-0.5 rounded text-xs ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>{v}</span>)}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {analysisDetailModal === 'issues' && issues.map(iss => (
+                              <div key={iss.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  <span className={`text-xs font-mono ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{iss.id}</span>
+                                  <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{iss.vendor}</span>
+                                  {docBadge(iss.doc_type)}
+                                  {issueBadge(iss.status)}
+                                  {iss.rule_ref && <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">📌 {iss.rule_ref}</span>}
+                                </div>
+                                <p className={`text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{iss.issue}</p>
+                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>→ {iss.resolution}</p>
+                                {iss.files?.length > 0 && <p className={`text-xs mt-1 font-mono ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{iss.files.join(', ')}</p>}
+                              </div>
+                            ))}
+                            {analysisDetailModal === 'resolved' && issues.filter(i => i.status === 'resolved').map(iss => (
+                              <div key={iss.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  <span className={`text-xs font-mono ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{iss.id}</span>
+                                  <span className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>{iss.vendor}</span>
+                                  {docBadge(iss.doc_type)}
+                                  {iss.rule_ref && <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">📌 {iss.rule_ref}</span>}
+                                </div>
+                                <p className={`text-sm mb-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{iss.issue}</p>
+                                <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>→ {iss.resolution}</p>
+                              </div>
+                            ))}
+                            {analysisDetailModal === 'rules' && rules.map(rule => (
+                              <div key={rule.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">{rule.id}</span>
+                                  <span className={`ml-auto text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{rule.added}</span>
+                                </div>
+                                <div className="flex gap-1.5 flex-wrap mb-2">
+                                  {rule.vendors?.map(v => (
+                                    <span key={v} className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-white border border-gray-300 text-gray-600'}`}>{v}</span>
+                                  ))}
+                                </div>
+                                <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{rule.desc}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* ── 세션 요약 (최근 분석 세션들) ── */}
                   {sessions.length > 0 && (
-                    <div className={`rounded-xl border p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                    <div className={`rounded-xl border p-5 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                       <h3 className={`text-sm font-bold mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>📅 분석 세션 이력</h3>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {sessions.map(s => (
-                          <div key={s.id} className={`rounded-lg p-3 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                          <div key={s.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
                             <div className="flex items-start justify-between gap-3 flex-wrap">
                               <div>
-                                <span className={`text-xs font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{s.date}</span>
-                                <span className={`ml-2 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>— {s.folder}</span>
+                                <span className={`text-sm font-semibold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{s.date}</span>
+                                <span className={`ml-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>— {s.folder}</span>
                               </div>
                               <div className="flex gap-2 flex-wrap">
-                                <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-100 text-indigo-700 font-medium">📄 {s.total_tested}건 테스트</span>
+                                <span className="px-2.5 py-1 rounded-full text-xs bg-indigo-100 text-indigo-700 font-medium">📄 {s.total_tested}건 테스트</span>
                                 {s.breakdown && Object.entries(s.breakdown).map(([k, v]) => v > 0 && (
-                                  <span key={k} className={`px-2 py-0.5 rounded-full text-xs font-medium ${k === 'Invoice' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{k} {v}건</span>
+                                  <span key={k} className={`px-2.5 py-1 rounded-full text-xs font-medium ${k === 'Invoice' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{k} {v}건</span>
                                 ))}
-                                {s.issues_found > 0 && <span className="px-2 py-0.5 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">⚠️ 이슈 {s.issues_found}건</span>}
-                                {s.rules_added?.map(r => <span key={r} className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700 font-medium">📌 {r}</span>)}
+                                {s.issues_found > 0 && <span className="px-2.5 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700 font-medium">⚠️ 이슈 {s.issues_found}건</span>}
+                                {s.rules_added?.map(r => <span key={r} className="px-2.5 py-1 rounded-full text-xs bg-purple-100 text-purple-700 font-medium">📌 {r}</span>)}
                               </div>
                             </div>
-                            {s.memo && <p className={`text-xs mt-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.memo}</p>}
+                            {s.memo && <p className={`text-sm mt-2 leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{s.memo}</p>}
                           </div>
                         ))}
                       </div>
@@ -16597,7 +16682,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
 
                   {/* ── 이슈 현황 테이블 ── */}
                   <div className={`rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-inherit flex-wrap gap-2">
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-inherit flex-wrap gap-2">
                       <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>🔍 발견된 이슈 현황</h3>
                       <div className="flex gap-1.5">
                         {[['all','전체'], ['resolved','해결 완료'], ['confirmed_ok','정상 확인']].map(([v, label]) => (
@@ -16611,23 +16696,23 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                       </div>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-sm">
                         <thead className={darkMode ? 'bg-gray-700/60' : 'bg-gray-50'}>
                           <tr>
                             {['날짜', '업체', '문서 유형', '발견된 문제', '해결 방법', '관련 룰', '상태'].map(h => (
-                              <th key={h} className={`text-left px-4 py-2.5 font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{h}</th>
+                              <th key={h} className={`text-left px-5 py-3 text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {filteredIssues.length === 0 ? (
-                            <tr><td colSpan={7} className={`px-4 py-8 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>이슈가 없습니다</td></tr>
+                            <tr><td colSpan={7} className={`px-5 py-8 text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>이슈가 없습니다</td></tr>
                           ) : filteredIssues.map(iss => (
                             <tr key={iss.id} className={`border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                              <td className={`px-4 py-3 whitespace-nowrap ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{iss.date}</td>
-                              <td className={`px-4 py-3 font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.vendor}</td>
-                              <td className="px-4 py-3">{docBadge(iss.doc_type)}</td>
-                              <td className={`px-4 py-3 max-w-[220px] ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              <td className={`px-5 py-3 whitespace-nowrap text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{iss.date}</td>
+                              <td className={`px-5 py-3 font-semibold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.vendor}</td>
+                              <td className="px-5 py-3">{docBadge(iss.doc_type)}</td>
+                              <td className={`px-5 py-3 max-w-[280px] text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                 <p className="line-clamp-2">{iss.issue}</p>
                                 {iss.files?.length > 0 && (
                                   <p className={`text-xs mt-0.5 font-mono truncate ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} title={iss.files.join(', ')}>
@@ -16635,15 +16720,15 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                                   </p>
                                 )}
                               </td>
-                              <td className={`px-4 py-3 max-w-[200px] ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              <td className={`px-5 py-3 max-w-[260px] text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                                 <p className="line-clamp-2">{iss.resolution}</p>
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="px-5 py-3">
                                 {iss.rule_ref
                                   ? <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">📌 {iss.rule_ref}</span>
                                   : <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>—</span>}
                               </td>
-                              <td className="px-4 py-3">{issueBadge(iss.status)}</td>
+                              <td className="px-5 py-3">{issueBadge(iss.status)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -16653,21 +16738,23 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
 
                   {/* ── 적용 중인 룰 목록 ── */}
                   <div className={`rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <div className="px-4 py-3 border-b border-inherit">
+                    <div className="px-5 py-3 border-b border-inherit">
                       <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>📌 현재 적용 중인 파싱 룰</h3>
                       <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>main.py에 적용되어 자동 입고처리 시 사용됩니다</p>
                     </div>
-                    <div className="p-4 grid gap-3 md:grid-cols-2">
+                    <div className="p-5 grid gap-4 md:grid-cols-2">
                       {rules.map(rule => (
-                        <div key={rule.id} className={`rounded-xl p-3.5 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                          <div className="flex items-center gap-2 mb-1.5">
+                        <div key={rule.id} className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                          <div className="flex items-center gap-2 mb-2">
                             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">{rule.id}</span>
-                            {rule.vendors?.map(v => (
-                              <span key={v} className={`px-2 py-0.5 rounded-full text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-white border border-gray-300 text-gray-600'}`}>{v}</span>
-                            ))}
                             <span className={`ml-auto text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{rule.added}</span>
                           </div>
-                          <p className={`text-xs leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{rule.desc}</p>
+                          <div className="flex gap-1.5 flex-wrap mb-2">
+                            {rule.vendors?.map(v => (
+                              <span key={v} className={`px-2 py-0.5 rounded text-xs font-medium ${darkMode ? 'bg-gray-600 text-gray-300' : 'bg-white border border-gray-300 text-gray-600'}`}>{v}</span>
+                            ))}
+                          </div>
+                          <p className={`text-sm leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{rule.desc}</p>
                         </div>
                       ))}
                     </div>
