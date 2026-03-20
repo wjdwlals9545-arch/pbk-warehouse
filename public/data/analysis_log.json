@@ -1,0 +1,140 @@
+{
+  "updated": "2026-03-20",
+  "rules": [
+    {
+      "id": "Rule 1",
+      "vendors": ["미르하이테크"],
+      "desc": "품목 설명 괄호 내 규격 제거 — '품명 (형상코드)' 에서 괄호 부분을 제거해 SAP 품명과 매칭",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 6",
+      "vendors": ["미스미"],
+      "desc": "납품서 '품번' 컬럼에서 우리 내부 material_no 추출 — 미스미 고유 카탈로그 번호 무시",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 7",
+      "vendors": ["사우스코"],
+      "desc": "해외 Commercial Invoice 'C/I:XXXXXX' 형식에서 우리 품번 추출",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 8",
+      "vendors": ["고우넷", "McMaster"],
+      "desc": "거래명세서 규격 컬럼에 인쇄된 규격코드 옆에 타이핑/수기로 추가된 5~7자리 숫자가 우리 내부 품번 (예: 716648, 716655)",
+      "added": "2026-03-20",
+      "status": "active"
+    },
+    {
+      "id": "세금계산서 예외",
+      "vendors": ["경제정공", "미스미"],
+      "desc": "경제정공: 월 2·4주차 수동 발행 (manual_monthly) / 미스미: 매월 25일 수동 발행 (manual_25th) — 자동 이메일 발송 건너뜀",
+      "added": "2026-03-20",
+      "status": "active"
+    }
+  ],
+  "issues": [
+    {
+      "id": "iss_001",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "고우넷",
+      "doc_type": "거래명세서",
+      "files": [
+        "5105662504_고우넷_거래명세서.pdf",
+        "5105662505_고우넷_거래명세서.pdf"
+      ],
+      "issue": "규격 컬럼에 타이핑된 내부 품번(716648, 716655)을 Claude가 인식하지 못함 — 인쇄된 규격코드(ZIK-000...)만 읽고 우리 품번 무시",
+      "status": "resolved",
+      "resolution": "Rule 8 추가 (main.py) — 규격컬럼 내 5~7자리 별도 숫자를 내부 품번으로 인식",
+      "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_002",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "미스미",
+      "doc_type": "거래명세서",
+      "files": [
+        "5105662501_미스미_거래명세서.pdf",
+        "5105662503_미스미_거래명세서.pdf"
+      ],
+      "issue": "여러 거래명세서의 IR번호가 동일 (5105662501) — 시스템 충돌 우려",
+      "status": "confirmed_ok",
+      "resolution": "정상 확인 — F&A에서 월별 일괄 SAP IR 처리 방식. 파일명(stem)이 달라서 시스템 충돌 없음",
+      "rule_ref": null
+    },
+    {
+      "id": "iss_003",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "경제정공",
+      "doc_type": "거래명세서",
+      "files": [
+        "5105662502_경제정공_거래명세서.pdf"
+      ],
+      "issue": "입고완료 후 세금계산서 이메일 자동 발송될 뻔함 — 경제정공은 수동 발행 업체",
+      "status": "resolved",
+      "resolution": "TAX_INVOICE_EXCEPTIONS에 경제정공 추가 (manual_monthly) — 자동 이메일 발송 건너뛰고 수동처리 알림으로 변경",
+      "rule_ref": "세금계산서 예외"
+    },
+    {
+      "id": "iss_004",
+      "date": "2026-03-20",
+      "session": "1월 입고완료 폴더 분석",
+      "vendor": "미르하이테크",
+      "doc_type": "거래명세서",
+      "files": [
+        "5105662506_미르하이테크_거래명세서.pdf"
+      ],
+      "issue": "품목명에 괄호 형상코드 포함 — SAP 품명과 불일치 가능성",
+      "status": "confirmed_ok",
+      "resolution": "Rule 1 적용 확인 — 이미 괄호 제거 로직 있음, 정상 처리됨",
+      "rule_ref": "Rule 1"
+    },
+    {
+      "id": "iss_005",
+      "date": "2026-03-20",
+      "session": "고우넷 PDF 직접 분석",
+      "vendor": "McMaster-Carr",
+      "doc_type": "Invoice",
+      "files": [
+        "McMaster 인보이스 (예시)"
+      ],
+      "issue": "McMaster Invoice에 우리 내부 품번이 별도 메모로 기재됨 — 기존 로직으로는 감지 불가",
+      "status": "resolved",
+      "resolution": "Rule 8 범위에 McMaster 포함 (main.py) — 고우넷과 동일 패턴으로 처리",
+      "rule_ref": "Rule 8"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "session_20260320_01",
+      "date": "2026-03-20",
+      "folder": "입고완료\\2026년\\1월",
+      "total_tested": 26,
+      "breakdown": { "거래명세서": 20, "Invoice": 6 },
+      "issues_found": 4,
+      "resolved": 3,
+      "confirmed_ok": 1,
+      "rules_added": ["Rule 8", "세금계산서 예외"],
+      "memo": "1월 폴더 전수 분석. 고우넷 수기품번·경제정공 세금계산서 예외 처리 추가. 미스미 IR번호 중복은 정상 확인."
+    },
+    {
+      "id": "session_20260320_02",
+      "date": "2026-03-20",
+      "folder": "고우넷 PDF 2건 직접 업로드",
+      "total_tested": 2,
+      "breakdown": { "거래명세서": 2, "Invoice": 0 },
+      "issues_found": 1,
+      "resolved": 1,
+      "confirmed_ok": 0,
+      "rules_added": ["Rule 8"],
+      "memo": "고우넷 거래명세서 직접 업로드. 규격컬럼 수기품번 확인 → Rule 8 main.py에 추가."
+    }
+  ]
+}
