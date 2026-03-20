@@ -15780,59 +15780,78 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               )}
 
               {/* 프로세스 파이프라인 카드 */}
-              <div>
-                <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  📦 입고 처리 흐름
-                </p>
-                <div className="grid grid-cols-6 gap-2">
+              <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/60 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                <div className={`px-4 py-2.5 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-indigo-900/30 to-gray-800' : 'border-gray-100 bg-gradient-to-r from-indigo-50/80 to-white'}`}>
+                  <p className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    입고 처리 흐름
+                  </p>
+                </div>
+                <div className="flex items-stretch p-3 gap-0">
                   {STAGES.map((stage, idx) => {
                     const count = getCount(stage.key);
                     const isSel = migoSelectedStage === stage.key;
                     const isIssue = stage.key === 'issues' && count > 0;
                     return (
-                      <div key={stage.key} className="flex items-stretch gap-0">
-                        {/* 화살표 연결선 (첫 번째 제외) */}
-                        {idx > 0 && (
-                          <div className="flex items-center justify-center w-0 overflow-visible z-10 -mx-1.5">
-                            <div className={`text-lg select-none ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>›</div>
+                      <React.Fragment key={stage.key}>
+                        {/* 화살표 연결선 */}
+                        {idx > 0 && idx < 5 && (
+                          <div className="flex items-center px-0.5 shrink-0">
+                            <svg width="16" height="24" viewBox="0 0 16 24" className={`${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>
+                              <path d="M4 4 L12 12 L4 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </div>
+                        )}
+                        {/* 이슈 구분선 */}
+                        {idx === 5 && (
+                          <div className={`flex items-center px-1.5 shrink-0`}>
+                            <div className={`w-px h-10 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
                           </div>
                         )}
                         <div
                           onClick={() => setMigoSelectedStage(isSel ? null : stage.key)}
-                          className={`flex-1 cursor-pointer rounded-xl border-2 text-center transition select-none py-3 px-2 relative
+                          className={`flex-1 cursor-pointer rounded-lg text-center transition-all select-none py-3 px-1.5 relative
                             ${isSel
-                              ? `${stage.bgSel} shadow-md ring-2 ring-offset-1 ${stage.key === 'issues' ? 'ring-red-400' : stage.key === 'waiting_gr' ? 'ring-orange-400' : stage.key === 'processing' ? 'ring-indigo-400' : stage.key === 'completed_month' ? 'ring-green-400' : 'ring-teal-400'}`
+                              ? `shadow-lg ${stage.key === 'issues'
+                                  ? (darkMode ? 'bg-red-900/50 border border-red-500' : 'bg-red-50 border border-red-400')
+                                  : stage.key === 'waiting_gr'
+                                  ? (darkMode ? 'bg-orange-900/40 border border-orange-500' : 'bg-orange-50 border border-orange-400')
+                                  : stage.key === 'processing'
+                                  ? (darkMode ? 'bg-indigo-900/40 border border-indigo-500' : 'bg-indigo-50 border border-indigo-400')
+                                  : stage.key === 'completed_month'
+                                  ? (darkMode ? 'bg-green-900/40 border border-green-500' : 'bg-green-50 border border-green-400')
+                                  : stage.key === 'tax_requesting'
+                                  ? (darkMode ? 'bg-amber-900/40 border border-amber-500' : 'bg-amber-50 border border-amber-400')
+                                  : (darkMode ? 'bg-teal-900/40 border border-teal-500' : 'bg-teal-50 border border-teal-400')
+                                }`
                               : isIssue
-                                ? (darkMode ? 'bg-red-950/40 border-red-700 hover:border-red-500' : 'bg-red-50 border-red-300 hover:border-red-500')
-                                : (darkMode ? 'bg-gray-800 border-gray-600 hover:border-gray-400' : 'bg-white border-gray-200 hover:border-indigo-300 hover:shadow-sm')
+                                ? (darkMode ? 'bg-red-950/30 border border-red-700/60 hover:bg-red-950/50' : 'bg-red-50/60 border border-red-200 hover:bg-red-50')
+                                : (darkMode ? 'border border-transparent hover:bg-gray-700/50' : 'border border-transparent hover:bg-gray-50')
                             }`}
                         >
-                          {/* 이슈 카드 - 카운트 > 0이면 펄스 뱃지 */}
                           {isIssue && (
-                            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full animate-pulse" />
+                            <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full animate-pulse border-2 border-white dark:border-gray-800" />
                           )}
-                          <div className="text-xl mb-1">{stage.emoji}</div>
-                          <div className={`text-3xl font-bold tabular-nums ${count > 0 ? stage.colorClass : (darkMode ? 'text-gray-600' : 'text-gray-300')}`}>
+                          <div className={`text-2xl leading-none ${count > 0 ? '' : 'grayscale opacity-40'}`}>{stage.emoji}</div>
+                          <div className={`text-2xl font-extrabold tabular-nums mt-1.5 ${count > 0 ? stage.colorClass : (darkMode ? 'text-gray-600' : 'text-gray-300')}`}>
                             {count}
                           </div>
-                          <div className={`text-[11px] font-semibold mt-1 leading-tight ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                          <div className={`text-[11px] font-semibold mt-1 leading-tight ${isSel ? (darkMode ? 'text-white' : 'text-gray-900') : (darkMode ? 'text-gray-300' : 'text-gray-600')}`}>
                             {stage.label}
                           </div>
-                          <div className={`text-[10px] mt-0.5 leading-tight ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                          <div className={`text-[9px] mt-0.5 leading-tight ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                             {stage.sublabel}
                           </div>
-                          {/* 입고대기: AI 분석 태그 */}
                           {stage.tags && (
-                            <div className="flex justify-center gap-1 mt-1.5 flex-wrap">
+                            <div className="flex justify-center gap-0.5 mt-1.5 flex-wrap">
                               {stage.tags.map(tag => (
-                                <span key={tag} className={`text-[9px] px-1 py-0.5 rounded font-medium ${darkMode ? 'bg-orange-900/50 text-orange-300' : 'bg-orange-100 text-orange-600'}`}>
-                                  ✓ {tag}
+                                <span key={tag} className={`text-[8px] px-1 py-0.5 rounded-sm font-semibold ${darkMode ? 'bg-orange-900/50 text-orange-300' : 'bg-orange-100 text-orange-600'}`}>
+                                  {tag}
                                 </span>
                               ))}
                             </div>
                           )}
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>
