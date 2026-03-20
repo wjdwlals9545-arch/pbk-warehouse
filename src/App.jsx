@@ -15784,7 +15784,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className={`text-xs font-semibold mb-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   📦 입고 처리 흐름
                 </p>
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-6 gap-2">
                   {STAGES.map((stage, idx) => {
                     const count = getCount(stage.key);
                     const isSel = migoSelectedStage === stage.key;
@@ -15799,7 +15799,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         )}
                         <div
                           onClick={() => setMigoSelectedStage(isSel ? null : stage.key)}
-                          className={`flex-1 cursor-pointer rounded-xl border-2 text-center transition select-none py-4 px-3 relative
+                          className={`flex-1 cursor-pointer rounded-xl border-2 text-center transition select-none py-3 px-2 relative
                             ${isSel
                               ? `${stage.bgSel} shadow-md ring-2 ring-offset-1 ${stage.key === 'issues' ? 'ring-red-400' : stage.key === 'waiting_gr' ? 'ring-orange-400' : stage.key === 'processing' ? 'ring-indigo-400' : stage.key === 'completed_month' ? 'ring-green-400' : 'ring-teal-400'}`
                               : isIssue
