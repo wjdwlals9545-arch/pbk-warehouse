@@ -3467,6 +3467,7 @@ export default function PBKWarehouseSystem() {
   const [migoServerOnline, setMigoServerOnline] = useState(false);
   const [migoSelectedStage, setMigoSelectedStage] = useState('waiting_gr');
   const [migoIssueFilter, setMigoIssueFilter]     = useState('all'); // 'all' | 'price_error' | 'failed'
+  const [migoReportVendor, setMigoReportVendor] = useState(null);   // expanded vendor in report
   const [migoMonthFilter, setMigoMonthFilter]     = useState('');   // 'YYYY-MM' for history month filter
   const [migoLastUpdated, setMigoLastUpdated] = useState(null);
   const [migoCheckedRows, setMigoCheckedRows] = useState(new Set());
@@ -16348,9 +16349,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 const vendorStats = {};
                 migoHistory.forEach(h => {
                   const v = h.vendor || '알수없음';
-                  if (!vendorStats[v]) vendorStats[v] = { count: 0, total: 0 };
+                  if (!vendorStats[v]) vendorStats[v] = { count: 0, total: 0, pos: [] };
                   vendorStats[v].count++;
                   vendorStats[v].total += h.total_amount || 0;
+                  vendorStats[v].pos.push(h);
                 });
                 const vendorList = Object.entries(vendorStats).sort((a, b) => b[1].count - a[1].count).slice(0, 10);
                 const maxVCnt    = Math.max(...vendorList.map(v => v[1].count), 1);
@@ -16367,99 +16369,257 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 const maxMCnt    = Math.max(...monthList.map(m => m[1].count), 1);
                 const grandTotal = migoHistory.reduce((s, h) => s + (h.total_amount || 0), 0);
 
+                // 이번달 이슈 내역
+                const thisMonthIssues = migoInvoices.filter(inv => {
+                  if (!isIssueItem(inv)) return false;
+                  const dt = inv.created_at || inv.parsed_at || '';
+                  return dt.startsWith(thisYM);
+                });
+                const issueTypeMap = {
+                  price_error: { label: '단가오류', color: 'text-orange-600', bg: darkMode ? 'bg-orange-900/30' : 'bg-orange-50', icon: '💰' },
+                  failed:      { label: '처리실패', color: 'text-red-600',    bg: darkMode ? 'bg-red-900/30'    : 'bg-red-50',    icon: '❌' },
+                  ocr_error:   { label: 'OCR오류',  color: 'text-purple-600', bg: darkMode ? 'bg-purple-900/30' : 'bg-purple-50', icon: '🔍' },
+                  no_items:    { label: '품목없음', color: 'text-amber-600',  bg: darkMode ? 'bg-amber-900/30'  : 'bg-amber-50',  icon: '📋' },
+                };
+                const classifyIssue = (inv) => {
+                  if (inv.status === 'price_error') return 'price_error';
+                  if (inv.status === 'failed') return 'failed';
+                  if (inv.parse_error || inv.ocr_error) return 'ocr_error';
+                  if (inv.status === 'waiting_gr' && Array.isArray(inv.items) && inv.items.length === 0 && inv.parsed_at) return 'no_items';
+                  return 'failed';
+                };
+                const issuesByType = {};
+                thisMonthIssues.forEach(inv => {
+                  const t = classifyIssue(inv);
+                  if (!issuesByType[t]) issuesByType[t] = [];
+                  issuesByType[t].push(inv);
+                });
+
                 return (
                   <div className="space-y-4">
+                  {/* ── 업체별 + 월별 차트 ── */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* 업체별 */}
-                    <div className={`rounded-xl shadow-sm border p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
-                      <h3 className={`font-semibold mb-3 text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        🏭 협력업체별 입고현황
-                      </h3>
-                      <div className="space-y-2">
+                    <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                      <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-gray-800 to-gray-750' : 'border-gray-100 bg-gradient-to-r from-slate-50 to-white'}`}>
+                        <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          협력업체별 입고현황
+                        </h3>
+                        <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>상위 {vendorList.length}개 업체 · 클릭하여 PO 상세 확인</p>
+                      </div>
+                      <div className="p-4 space-y-1">
                         {vendorList.map(([vendor, stat]) => (
-                          <div key={vendor} className="flex items-center gap-2">
-                            <div className={`w-20 text-xs truncate flex-shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`} title={vendor}>
-                              {vendor}
+                          <div key={vendor}>
+                            <div
+                              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-all ${
+                                migoReportVendor === vendor
+                                  ? (darkMode ? 'bg-indigo-900/40 ring-1 ring-indigo-500/50' : 'bg-indigo-50 ring-1 ring-indigo-200')
+                                  : (darkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50')
+                              }`}
+                              onClick={() => setMigoReportVendor(migoReportVendor === vendor ? null : vendor)}
+                            >
+                              <div className={`w-24 text-xs truncate flex-shrink-0 font-medium ${darkMode ? 'text-gray-200' : 'text-gray-700'}`} title={vendor}>
+                                {vendor}
+                              </div>
+                              <div className={`flex-1 rounded-full h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                                <div
+                                  className="bg-gradient-to-r from-indigo-500 to-indigo-400 h-2 rounded-full transition-all"
+                                  style={{ width: `${(stat.count / maxVCnt * 100).toFixed(0)}%` }}
+                                />
+                              </div>
+                              <span className={`text-xs font-bold w-8 text-right flex-shrink-0 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{stat.count}건</span>
+                              <span className={`text-xs w-24 text-right flex-shrink-0 tabular-nums ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {fmtAmt(stat.total)}
+                              </span>
+                              <span className={`text-xs flex-shrink-0 transition-transform ${migoReportVendor === vendor ? 'rotate-180' : ''}`}>▾</span>
                             </div>
-                            <div className="flex-1 bg-gray-200 rounded-full h-2">
-                              <div
-                                className="bg-indigo-500 h-2 rounded-full transition-all"
-                                style={{ width: `${(stat.count / maxVCnt * 100).toFixed(0)}%` }}
-                              />
-                            </div>
-                            <span className={`text-xs font-bold w-6 text-right flex-shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{stat.count}</span>
-                            <span className={`text-xs w-24 text-right flex-shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {fmtAmt(stat.total)}
-                            </span>
+                            {/* Expanded PO list */}
+                            {migoReportVendor === vendor && (
+                              <div className={`ml-4 mr-2 mt-1 mb-2 rounded-lg border overflow-hidden ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50/80'}`}>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className={darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-600'}>
+                                      <th className="text-left px-3 py-1.5 font-medium">PO번호</th>
+                                      <th className="text-center px-2 py-1.5 font-medium">품목수</th>
+                                      <th className="text-right px-2 py-1.5 font-medium">금액</th>
+                                      <th className="text-center px-2 py-1.5 font-medium">완료일</th>
+                                      <th className="text-center px-2 py-1.5 font-medium">세금계산서</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {stat.pos.sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || '')).map((h, i) => (
+                                      <tr key={h.po_number + '-' + i} className={`border-t ${darkMode ? 'border-gray-800' : 'border-gray-200'} ${i % 2 === 0 ? '' : (darkMode ? 'bg-gray-800/30' : 'bg-white/60')}`}>
+                                        <td className={`px-3 py-1.5 font-mono ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{h.po_number || '-'}</td>
+                                        <td className={`text-center px-2 py-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{h.items?.length || 0}개</td>
+                                        <td className={`text-right px-2 py-1.5 tabular-nums font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{fmtAmt(h.total_amount || 0)}</td>
+                                        <td className={`text-center px-2 py-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{(h.completed_at || '').slice(5, 10)}</td>
+                                        <td className="text-center px-2 py-1.5">
+                                          {taxPOs.has(h.po_number)
+                                            ? <span className="text-green-500 font-medium">완료</span>
+                                            : <span className={`${darkMode ? 'text-yellow-400' : 'text-amber-500'} font-medium`}>대기</span>
+                                          }
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
                     </div>
 
                     {/* 월별 */}
-                    <div className={`rounded-xl shadow-sm border p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
-                      <h3 className={`font-semibold mb-3 text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        📅 월별 입고처리 현황
-                      </h3>
-                      <div className="space-y-2">
+                    <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                      <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-gray-800 to-gray-750' : 'border-gray-100 bg-gradient-to-r from-slate-50 to-white'}`}>
+                        <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          월별 입고처리 현황
+                        </h3>
+                        <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>최근 {monthList.length}개월</p>
+                      </div>
+                      <div className="p-4 space-y-2">
                         {monthList.map(([ym, stat]) => (
-                          <div key={ym} className="flex items-center gap-2">
-                            <div className={`w-14 text-xs flex-shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{ym}</div>
-                            <div className="flex-1 bg-gray-200 rounded-full h-2">
+                          <div key={ym} className="flex items-center gap-2 px-2">
+                            <div className={`w-16 text-xs flex-shrink-0 font-medium ${ym === thisYM ? (darkMode ? 'text-green-400' : 'text-green-600') : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}>
+                              {ym}{ym === thisYM && ' *'}
+                            </div>
+                            <div className={`flex-1 rounded-full h-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                               <div
-                                className="bg-green-500 h-2 rounded-full transition-all"
+                                className={`h-2 rounded-full transition-all ${ym === thisYM ? 'bg-gradient-to-r from-green-500 to-emerald-400' : 'bg-gradient-to-r from-green-500 to-green-400'}`}
                                 style={{ width: `${(stat.count / maxMCnt * 100).toFixed(0)}%` }}
                               />
                             </div>
-                            <span className={`text-xs font-bold w-6 text-right flex-shrink-0 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{stat.count}</span>
-                            <span className={`text-xs w-24 text-right flex-shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            <span className={`text-xs font-bold w-8 text-right flex-shrink-0 ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{stat.count}건</span>
+                            <span className={`text-xs w-24 text-right flex-shrink-0 tabular-nums ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                               {fmtAmt(stat.total)}
                             </span>
                           </div>
                         ))}
                       </div>
-                      <div className={`mt-3 pt-3 border-t text-xs ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
-                        누계: {migoHistory.length}건 / 총 {fmtAmt(grandTotal)}
-                        {taxDone.length > 0 && ` | 세금계산서 완료 ${taxDone.length}건`}
-                        {taxPending.length > 0 && ` | 세금계산서 대기 ${taxPending.length}건`}
+                      <div className={`mx-4 mb-4 p-3 rounded-lg ${darkMode ? 'bg-gray-900/60' : 'bg-slate-50'}`}>
+                        <div className={`text-xs space-y-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          <div className="flex justify-between"><span>총 입고 누계</span><span className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{migoHistory.length}건 / {fmtAmt(grandTotal)}</span></div>
+                          {taxDone.length > 0 && <div className="flex justify-between"><span>세금계산서 완료</span><span className="text-green-500 font-medium">{taxDone.length}건</span></div>}
+                          {taxPending.length > 0 && <div className="flex justify-between"><span>세금계산서 대기</span><span className={`font-medium ${darkMode ? 'text-yellow-400' : 'text-amber-500'}`}>{taxPending.length}건</span></div>}
+                        </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* ── 리포트 ── */}
-                  <div className={`rounded-xl shadow-sm border p-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>📊 입고처리 리포트</h3>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            const rows = migoHistory.filter(h => h.status === 'completed');
-                            const csv = ['날짜,업체,PO번호,품목수,공급가액,부가세,합계,세금계산서']
-                              .concat(rows.map(h => [
-                                (h.completed_at || '').slice(0,10),
-                                h.vendor || '',
-                                h.po_number || '',
-                                h.items?.length || 0,
-                                h.total_supply || 0,
-                                h.total_tax || 0,
-                                h.total_amount || 0,
-                                taxPOs.has(h.po_number) ? '완료' : '대기',
-                              ].join(','))).join('\n');
-                            const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'});
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a'); a.href = url;
-                            a.download = `MIGO_리포트_${new Date().toISOString().slice(0,10)}.csv`;
-                            a.click(); URL.revokeObjectURL(url);
-                            showToast('📊 CSV 다운로드 완료', 'success');
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition"
-                        >
-                          ⬇ CSV 다운로드
-                        </button>
-                        <button
-                          onClick={() => {
-                            const rows = migoHistory.filter(h => h.status === 'completed');
-                            const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+                  {/* ── 이번달 이슈 내역 ── */}
+                  {thisMonthIssues.length > 0 && (
+                    <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                      <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-red-900/30 to-gray-800' : 'border-red-100 bg-gradient-to-r from-red-50 to-white'}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                              이번달 이슈 내역
+                            </h3>
+                            <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{thisYM} 기준 · {thisMonthIssues.length}건</p>
+                          </div>
+                          <div className="flex gap-1.5">
+                            {Object.entries(issuesByType).map(([type, items]) => {
+                              const info = issueTypeMap[type] || issueTypeMap.failed;
+                              return (
+                                <span key={type} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${info.bg} ${info.color}`}>
+                                  {info.icon} {info.label} {items.length}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        {Object.entries(issuesByType).map(([type, items]) => {
+                          const info = issueTypeMap[type] || issueTypeMap.failed;
+                          return (
+                            <div key={type}>
+                              <div className={`flex items-center gap-2 mb-2 pb-1 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                                <span className="text-sm">{info.icon}</span>
+                                <span className={`text-xs font-semibold ${info.color}`}>{info.label}</span>
+                                <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>({items.length}건)</span>
+                              </div>
+                              <div className={`rounded-lg border overflow-hidden ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className={darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-50 text-gray-600'}>
+                                      <th className="text-left px-3 py-1.5 font-medium">날짜</th>
+                                      <th className="text-left px-2 py-1.5 font-medium">업체</th>
+                                      <th className="text-left px-2 py-1.5 font-medium">PO번호</th>
+                                      <th className="text-left px-2 py-1.5 font-medium">설명</th>
+                                      <th className="text-center px-2 py-1.5 font-medium">상태</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {items.map((inv, i) => {
+                                      const desc = inv.error || inv.parse_error || inv.ocr_error || (type === 'no_items' ? '파싱 완료되었으나 품목 0개' : inv.status_message || '-');
+                                      const resolved = inv.status === 'completed' || inv.status === 'waiting_gr';
+                                      return (
+                                        <tr key={(inv.po_number || '') + '-' + i} className={`border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'} ${i % 2 === 0 ? '' : (darkMode ? 'bg-gray-800/30' : 'bg-gray-50/50')}`}>
+                                          <td className={`px-3 py-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{(inv.created_at || inv.parsed_at || '').slice(5, 16).replace('T', ' ')}</td>
+                                          <td className={`px-2 py-1.5 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{inv.vendor || '-'}</td>
+                                          <td className={`px-2 py-1.5 font-mono ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{inv.po_number || '-'}</td>
+                                          <td className={`px-2 py-1.5 max-w-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`} title={desc}>{desc}</td>
+                                          <td className="text-center px-2 py-1.5">
+                                            {resolved
+                                              ? <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium dark:bg-green-900/40 dark:text-green-400">해결</span>
+                                              : <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium ${darkMode ? 'bg-red-900/40 text-red-400' : 'bg-red-100 text-red-700'}`}>미해결</span>
+                                            }
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── 리포트 다운로드 ── */}
+                  <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                    <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-gray-800 to-gray-750' : 'border-gray-100 bg-gradient-to-r from-slate-50 to-white'}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>입고처리 리포트</h3>
+                          <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            전체 {migoHistory.filter(h=>h.status==='completed').length}건 기준 · 세금계산서 완료 {taxDone.length}건 / 대기 {taxPending.length}건
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const rows = migoHistory.filter(h => h.status === 'completed');
+                              const csv = ['날짜,업체,PO번호,품목수,공급가액,부가세,합계,세금계산서']
+                                .concat(rows.map(h => [
+                                  (h.completed_at || '').slice(0,10),
+                                  h.vendor || '',
+                                  h.po_number || '',
+                                  h.items?.length || 0,
+                                  h.total_supply || 0,
+                                  h.total_tax || 0,
+                                  h.total_amount || 0,
+                                  taxPOs.has(h.po_number) ? '완료' : '대기',
+                                ].join(','))).join('\n');
+                              const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'});
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a'); a.href = url;
+                              a.download = `MIGO_리포트_${new Date().toISOString().slice(0,10)}.csv`;
+                              a.click(); URL.revokeObjectURL(url);
+                              showToast('📊 CSV 다운로드 완료', 'success');
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${darkMode ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                          >
+                            ⬇ CSV 다운로드
+                          </button>
+                          <button
+                            onClick={() => {
+                              const rows = migoHistory.filter(h => h.status === 'completed');
+                              const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>MIGO 입고처리 리포트 ${new Date().toLocaleDateString('ko-KR')}</title>
 <style>body{font-family:sans-serif;padding:24px;font-size:12px}
 h1{font-size:18px;margin-bottom:4px}p{color:#666;margin:0 0 16px}
@@ -16469,7 +16629,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
 .done{color:#059669;font-weight:600}.pend{color:#d97706;font-weight:600}
 .total{font-weight:bold;background:#f9fafb}
 @media print{button{display:none}}</style></head><body>
-<h1>📦 MIGO 입고처리 리포트</h1>
+<h1>MIGO 입고처리 리포트</h1>
 <p>생성일: ${new Date().toLocaleString('ko-KR')} | 총 ${rows.length}건 / ${rows.reduce((s,h)=>s+(h.total_amount||0),0).toLocaleString()}원</p>
 <table><thead><tr><th>완료일</th><th>업체</th><th>PO번호</th><th>품목수</th><th>공급가액</th><th>부가세</th><th>합계</th><th>세금계산서</th></tr></thead>
 <tbody>${rows.map(h=>`<tr>
@@ -16489,17 +16649,15 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
 <td></td></tr>
 </tbody></table>
 <script>window.onload=()=>window.print()</script></body></html>`;
-                            const w = window.open('', '_blank');
-                            w.document.write(html); w.document.close();
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition"
-                        >
-                          🖨 인쇄 / PDF
-                        </button>
+                              const w = window.open('', '_blank');
+                              w.document.write(html); w.document.close();
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${darkMode ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                          >
+                            🖨 인쇄 / PDF
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      전체 {migoHistory.filter(h=>h.status==='completed').length}건 기준 · 세금계산서 완료 {taxDone.length}건 / 대기 {taxPending.length}건
                     </div>
                   </div>
                   </div>
