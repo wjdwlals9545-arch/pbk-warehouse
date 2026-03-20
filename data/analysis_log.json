@@ -10,6 +10,38 @@
       "status": "active"
     },
     {
+      "id": "Rule 2",
+      "summary": "대괄호·도연 형식 품번 정리",
+      "vendors": ["공통"],
+      "desc": "[712603] 대괄호 제거, '도연: 712640' 형식이면 숫자만 추출",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 3",
+      "summary": "비고란 PO번호 개별 매핑",
+      "vendors": ["공통"],
+      "desc": "비고란에 품목별 PO번호가 다르면 (예: PO4500230552) 각 품목의 po_number에 해당 번호 기입",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 4",
+      "summary": "합계·미수금 행 제외",
+      "vendors": ["공통"],
+      "desc": "합계 행, 전미수잔액, 입금액, PO번호만 있는 행은 items에서 제외. 출고/입고 명세서는 실제 공급가액만 사용하고 누적 미수금 무시",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
+      "id": "Rule 5",
+      "summary": "하이픈(-) 앞 숫자가 품번",
+      "vendors": ["이엠넥스", "나노전자"],
+      "desc": "규격이 '710408-HSM2-MAIN-REV.C' 형식일 때 첫 하이픈 앞 5~6자리 숫자(+알파벳 1자리)가 내부 품번. main.py 거래명세서 Rule 10에 해당",
+      "added": "2026-01-01",
+      "status": "active"
+    },
+    {
       "id": "Rule 6",
       "summary": "미스미 납품서 품번 추출",
       "vendors": ["미스미"],
