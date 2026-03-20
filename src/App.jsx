@@ -3489,6 +3489,9 @@ export default function PBKWarehouseSystem() {
   const [analysisIssueFilter, setAnalysisIssueFilter] = useState('all'); // 'all'|'resolved'|'confirmed_ok'
   const [analysisDetailModal, setAnalysisDetailModal] = useState(null); // 'sessions'|'issues'|'resolved'|'rules'|null
   const [expandedIssueId, setExpandedIssueId] = useState(null); // 이슈 행 클릭 시 확장
+  const [issueMatchedRules, setIssueMatchedRules] = useState({}); // { issueId: [{ rule_id, score, ... }] }
+  const [ruleActionLoading, setRuleActionLoading] = useState(null); // 'match-{id}' | 'add-{id}' | 'create'
+  const [newRuleModal, setNewRuleModal] = useState(null); // { vendor, issue, doc_type, ... } or null
   // ── (하위호환) Parse Test Log 상태 ────────────────────
   const [parseLogs, setParseLogs]             = useState([]);
   const [parseTestInput, setParseTestInput]   = useState('');
@@ -16191,7 +16194,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                               });
                                               if (resp.ok) {
                                                 const result = await resp.json();
-                                                showToast(`📝 분석 이력에 추가됨 (${result.id}) — ${inv.vendor}`, 'success');
+                                                const matchedCount = result.matched_rules?.length || 0;
+                                                const matchMsg = matchedCount > 0
+                                                  ? ` — ${matchedCount}개 유사 룰 발견 (분석 이력 탭에서 확인)`
+                                                  : ' — 유사 룰 없음 (새 룰 생성 필요)';
+                                                showToast(`📝 분석 이력에 추가됨 (${result.id}) — ${inv.vendor}${matchMsg}`, 'success');
                                               } else {
                                                 showToast('분석 이력 저장 실패', 'error');
                                               }
@@ -16990,7 +16997,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                               {expandedIssueId === iss.id && (
                                 <tr className={darkMode ? 'bg-gray-700/30' : 'bg-indigo-50/30'}>
                                   <td colSpan={7} className="px-5 py-4">
-                                    <div className="space-y-2">
+                                    <div className="space-y-3">
                                       <div>
                                         <span className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>발견된 문제:</span>
                                         <p className={`text-sm mt-0.5 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{iss.issue}</p>
@@ -17010,6 +17017,94 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                                       <div className="flex gap-3 items-center pt-1">
                                         <span className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{iss.id} · {iss.date} · {iss.session || ''}</span>
                                       </div>
+
+                                      {/* ── 룰 매칭 & 관리 (Admin) ── */}
+                                      {isAdmin && (
+                                        <div className={`mt-2 pt-3 border-t ${darkMode ? 'border-gray-600' : 'border-gray-200'}`}>
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <span className={`text-xs font-bold ${darkMode ? 'text-purple-400' : 'text-purple-700'}`}>🔗 룰 연결 관리</span>
+                                            {!issueMatchedRules[iss.id] && (
+                                              <button
+                                                disabled={ruleActionLoading === `match-${iss.id}`}
+                                                onClick={async () => {
+                                                  setRuleActionLoading(`match-${iss.id}`);
+                                                  try {
+                                                    const resp = await fetch(`${MIGO_API}/api/analysis-log/match-rule`, {
+                                                      method: 'POST',
+                                                      headers: { 'Content-Type': 'application/json' },
+                                                      body: JSON.stringify({ vendor: iss.vendor, issue: iss.issue, doc_type: iss.doc_type })
+                                                    });
+                                                    if (resp.ok) {
+                                                      const data = await resp.json();
+                                                      setIssueMatchedRules(prev => ({ ...prev, [iss.id]: data.matched_rules || [] }));
+                                                    }
+                                                  } catch (e) { showToast(`룰 매칭 오류: ${e.message}`, 'error'); }
+                                                  setRuleActionLoading(null);
+                                                }}
+                                                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${darkMode ? 'bg-purple-700 hover:bg-purple-600 text-white' : 'bg-purple-100 hover:bg-purple-200 text-purple-700'} ${ruleActionLoading === `match-${iss.id}` ? 'opacity-50' : ''}`}>
+                                                {ruleActionLoading === `match-${iss.id}` ? '매칭 중...' : '🔍 유사 룰 검색'}
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={() => setNewRuleModal({ vendor: iss.vendor, issue: iss.issue, doc_type: iss.doc_type, source_issue: iss.id })}
+                                              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${darkMode ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-green-100 hover:bg-green-200 text-green-700'}`}>
+                                              ➕ 새 룰 생성
+                                            </button>
+                                          </div>
+
+                                          {/* 매칭된 룰 목록 */}
+                                          {issueMatchedRules[iss.id] && (
+                                            <div className="space-y-2">
+                                              {issueMatchedRules[iss.id].length === 0 ? (
+                                                <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>매칭되는 룰이 없습니다. 새 룰을 생성해주세요.</p>
+                                              ) : issueMatchedRules[iss.id].map(mr => (
+                                                <div key={mr.rule_id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-purple-50/50 border-purple-200'}`}>
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">{mr.rule_id}</span>
+                                                      <span className={`text-xs font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>{mr.summary || ''}</span>
+                                                      <span className={`text-xs px-1.5 py-0.5 rounded ${mr.score >= 3 ? 'bg-green-100 text-green-700' : mr.score >= 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-500'}`}>
+                                                        매칭 {mr.score}점
+                                                      </span>
+                                                      {mr.vendor_already && <span className="text-xs text-green-600 font-medium">✓ 업체 등록됨</span>}
+                                                    </div>
+                                                    <p className={`text-xs mt-0.5 truncate ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{mr.desc || ''}</p>
+                                                  </div>
+                                                  {!mr.vendor_already && iss.vendor && (
+                                                    <button
+                                                      disabled={ruleActionLoading === `add-${iss.id}-${mr.rule_id}`}
+                                                      onClick={async () => {
+                                                        setRuleActionLoading(`add-${iss.id}-${mr.rule_id}`);
+                                                        try {
+                                                          const resp = await fetch(`${MIGO_API}/api/analysis-log/rule/add-vendor`, {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ rule_id: mr.rule_id, vendor: iss.vendor })
+                                                          });
+                                                          if (resp.ok) {
+                                                            const data = await resp.json();
+                                                            showToast(`✅ ${iss.vendor} → ${mr.rule_id}에 추가됨${data.main_py_updated ? ' (main.py 반영됨)' : ''}`, 'success');
+                                                            setIssueMatchedRules(prev => ({
+                                                              ...prev,
+                                                              [iss.id]: prev[iss.id].map(r => r.rule_id === mr.rule_id ? { ...r, vendor_already: true } : r)
+                                                            }));
+                                                            // analysis_log 새로고침
+                                                            fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/analysis_log.json?t=${Date.now()}`)
+                                                              .then(r => r.ok ? r.json() : null).then(d => { if (d) setAnalysisLog(d); }).catch(() => {});
+                                                          } else { showToast('업체 추가 실패', 'error'); }
+                                                        } catch (e) { showToast(`오류: ${e.message}`, 'error'); }
+                                                        setRuleActionLoading(null);
+                                                      }}
+                                                      className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${darkMode ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'} ${ruleActionLoading === `add-${iss.id}-${mr.rule_id}` ? 'opacity-50' : ''}`}>
+                                                      {ruleActionLoading === `add-${iss.id}-${mr.rule_id}` ? '추가 중...' : `${iss.vendor} 추가`}
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -17023,9 +17118,17 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
 
                   {/* ── 적용 중인 룰 목록 ── */}
                   <div className={`rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                    <div className="px-5 py-3 border-b border-inherit">
-                      <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>📌 현재 적용 중인 파싱 룰</h3>
-                      <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>main.py에 적용되어 자동 입고처리 시 사용됩니다</p>
+                    <div className="flex items-center justify-between px-5 py-3 border-b border-inherit">
+                      <div>
+                        <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>📌 현재 적용 중인 파싱 룰</h3>
+                        <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>main.py에 적용되어 자동 입고처리 시 사용됩니다</p>
+                      </div>
+                      {isAdmin && (
+                        <button onClick={() => setNewRuleModal({ vendor: '', issue: '', doc_type: '거래명세서' })}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${darkMode ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}>
+                          ➕ 새 룰 추가
+                        </button>
+                      )}
                     </div>
                     <div className="p-5 space-y-3">
                       {rules.map(rule => (
@@ -17050,6 +17153,83 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     마지막 업데이트: {al.updated || '-'} &nbsp;·&nbsp; 파일: MIGO자동화\analysis_log.json
                   </p>
                 </>
+              )}
+
+              {/* ── 새 룰 생성 모달 ── */}
+              {newRuleModal && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40" onClick={() => setNewRuleModal(null)}>
+                  <div onClick={e => e.stopPropagation()} className={`w-full max-w-lg rounded-2xl shadow-2xl ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-inherit">
+                      <h3 className="text-base font-bold">➕ 새 파싱 룰 생성</h3>
+                      <button onClick={() => setNewRuleModal(null)} className={`text-xl px-2 py-1 rounded-lg hover:bg-gray-200 ${darkMode ? 'hover:bg-gray-700' : ''}`}>&times;</button>
+                    </div>
+                    <div className="px-6 py-4 space-y-4">
+                      <div>
+                        <label className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>룰 요약 (summary)</label>
+                        <input value={newRuleModal.summary || ''} onChange={e => setNewRuleModal(p => ({ ...p, summary: e.target.value }))}
+                          placeholder="예: 단가 천단위 구분 오류" className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                      </div>
+                      <div>
+                        <label className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>상세 설명 (desc)</label>
+                        <textarea value={newRuleModal.desc || newRuleModal.issue || ''} onChange={e => setNewRuleModal(p => ({ ...p, desc: e.target.value }))}
+                          rows={3} className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                      </div>
+                      <div>
+                        <label className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>적용 업체</label>
+                        <input value={newRuleModal.vendors_input || newRuleModal.vendor || ''} onChange={e => setNewRuleModal(p => ({ ...p, vendors_input: e.target.value }))}
+                          placeholder="쉼표로 구분 (예: 업체A, 업체B)" className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                      </div>
+                      <div>
+                        <label className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>문서 유형</label>
+                        <select value={newRuleModal.doc_type || '거래명세서'} onChange={e => setNewRuleModal(p => ({ ...p, doc_type: e.target.value }))}
+                          className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
+                          <option value="거래명세서">거래명세서</option>
+                          <option value="Invoice">Invoice</option>
+                          <option value="all">전체</option>
+                        </select>
+                      </div>
+                      {newRuleModal.source_issue && (
+                        <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>출처 이슈: {newRuleModal.source_issue}</p>
+                      )}
+                    </div>
+                    <div className="px-6 py-4 border-t border-inherit flex justify-end gap-2">
+                      <button onClick={() => setNewRuleModal(null)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium ${darkMode ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'}`}>
+                        취소
+                      </button>
+                      <button
+                        disabled={ruleActionLoading === 'create'}
+                        onClick={async () => {
+                          const summary = (newRuleModal.summary || '').trim();
+                          const desc = (newRuleModal.desc || newRuleModal.issue || '').trim();
+                          const vendorsStr = (newRuleModal.vendors_input || newRuleModal.vendor || '').trim();
+                          if (!summary) { showToast('룰 요약을 입력해주세요', 'error'); return; }
+                          if (!desc) { showToast('상세 설명을 입력해주세요', 'error'); return; }
+                          const vendors = vendorsStr ? vendorsStr.split(',').map(v => v.trim()).filter(Boolean) : [];
+                          setRuleActionLoading('create');
+                          try {
+                            const resp = await fetch(`${MIGO_API}/api/analysis-log/rule/create`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ summary, desc, vendors, doc_type: newRuleModal.doc_type || '거래명세서' })
+                            });
+                            if (resp.ok) {
+                              const data = await resp.json();
+                              showToast(`✅ ${data.rule_id} 생성 완료 — ${summary}`, 'success');
+                              setNewRuleModal(null);
+                              // analysis_log 새로고침
+                              fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/analysis_log.json?t=${Date.now()}`)
+                                .then(r => r.ok ? r.json() : null).then(d => { if (d) setAnalysisLog(d); }).catch(() => {});
+                            } else { showToast('룰 생성 실패', 'error'); }
+                          } catch (e) { showToast(`오류: ${e.message}`, 'error'); }
+                          setRuleActionLoading(null);
+                        }}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition ${ruleActionLoading === 'create' ? 'bg-green-400 opacity-50' : 'bg-green-600 hover:bg-green-700'}`}>
+                        {ruleActionLoading === 'create' ? '생성 중...' : '룰 생성'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           );
