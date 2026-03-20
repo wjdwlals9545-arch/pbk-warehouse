@@ -15615,7 +15615,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const completedThisMonth = completedGRs.filter(h => h.completed_at?.startsWith(thisYM));
 
           const STAGES = [
-            { key: 'waiting_gr',      label: '입고 대기',            sublabel: 'AI 분석 완료',       tags: ['PO', '단가', '수량'],  emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
+            { key: 'analyzing',       label: 'AI 분석중',            sublabel: 'PO · 단가 · 수량',  tags: ['PO', '단가', '수량'],  emoji: '🔬', colorClass: 'text-violet-600', bgSel: 'bg-violet-50 border-violet-400' },
+            { key: 'waiting_gr',      label: '입고 대기',            sublabel: 'AI 분석 완료',                                      emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
             { key: 'processing',      label: 'SAP 입고',             sublabel: '처리 중',                                           emoji: '⚙️', colorClass: 'text-indigo-600', bgSel: 'bg-indigo-50 border-indigo-400' },
             { key: 'completed_month', label: 'SAP 입고 완료',        sublabel: '메일 발송 대기',                                    emoji: '✅', colorClass: 'text-green-600', bgSel: 'bg-green-50 border-green-400' },
             { key: 'tax_requesting',  label: '세금계산서 요청',      sublabel: '메일 발송 완료',                                    emoji: '📨', colorClass: 'text-amber-600',  bgSel: 'bg-amber-50 border-amber-400' },
@@ -15623,16 +15624,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             { key: 'issues',          label: '이슈',                 sublabel: '확인 필요',                                         emoji: '🔺', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
           ];
 
+          // AI 분석중 상태들
+          const ANALYZING_STATUSES = new Set(['analyzing', 'pending', 'price_check', 'parsing']);
+
           // 이슈 판단: 비정상 status이거나 파싱 오류 플래그가 있는 항목
-          const NORMAL_STATUSES = new Set(['waiting_gr', 'processing', 'completed', 'tax_done', 'parsing']);
+          const NORMAL_STATUSES = new Set(['waiting_gr', 'processing', 'completed', 'tax_done', 'analyzing', 'pending', 'price_check', 'parsing']);
           const isIssueItem = (inv) => {
             if (!NORMAL_STATUSES.has(inv.status)) return true;   // price_error, failed, error 등
             if (inv.parse_error || inv.ocr_error || inv.has_error) return true;
-            if (inv.status === 'waiting_gr' && Array.isArray(inv.items) && inv.items.length === 0 && inv.parsed_at) return true; // 파싱 완료됐는데 품목 0개
+            if (inv.status === 'waiting_gr' && Array.isArray(inv.items) && inv.items.length === 0 && inv.parsed_at) return true;
             return false;
           };
 
           const getCount = (key) => {
+            if (key === 'analyzing')       return migoInvoices.filter(inv => ANALYZING_STATUSES.has(inv.status)).length;
             if (key === 'completed_month') return completedGRs.filter(h => !taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number)).length;
             if (key === 'tax_requesting')  return completedGRs.filter(h => taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number)).length;
             if (key === 'tax_done')        return taxDone.length;
@@ -15641,6 +15646,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           };
 
           const getItems = (key) => {
+            if (key === 'analyzing')       return migoInvoices.filter(inv => ANALYZING_STATUSES.has(inv.status));
             if (key === 'completed_month') return completedGRs.filter(h => !taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number));
             if (key === 'tax_requesting')  return completedGRs.filter(h => taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number));
             if (key === 'tax_done')        return taxDone;
@@ -15794,7 +15800,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     return (
                       <React.Fragment key={stage.key}>
                         {/* 화살표 연결선 */}
-                        {idx > 0 && idx < 5 && (
+                        {idx > 0 && idx < 6 && (
                           <div className="flex items-center px-0.5 shrink-0">
                             <svg width="16" height="24" viewBox="0 0 16 24" className={`${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>
                               <path d="M4 4 L12 12 L4 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -15802,7 +15808,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </div>
                         )}
                         {/* 이슈 구분선 */}
-                        {idx === 5 && (
+                        {idx === 6 && (
                           <div className={`flex items-center px-1.5 shrink-0`}>
                             <div className={`w-px h-10 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
                           </div>
