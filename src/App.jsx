@@ -75,6 +75,7 @@ const SYNC_KEYS = [
   'pbk_qstock',
   'pbk_last_auto_backup',
   'pbk_tab_order',
+  'pbk_tax_requested',
 ];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
@@ -3467,6 +3468,10 @@ export default function PBKWarehouseSystem() {
   const [migoServerOnline, setMigoServerOnline] = useState(false);
   const [migoSelectedStage, setMigoSelectedStage] = useState('waiting_gr');
   const [migoIssueFilter, setMigoIssueFilter]     = useState('all'); // 'all' | 'price_error' | 'failed'
+  const [taxRequestedPOs, setTaxRequestedPOs] = useState(() => {
+    try { return new Set(JSON.parse(safeStorage.getItem('pbk_tax_requested') || '[]')); }
+    catch { return new Set(); }
+  });
   const [migoReportVendor, setMigoReportVendor] = useState(null);   // expanded vendor in report
   const [migoMonthFilter, setMigoMonthFilter]     = useState('');   // 'YYYY-MM' for history month filter
   const [migoLastUpdated, setMigoLastUpdated] = useState(null);
@@ -15609,8 +15614,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const STAGES = [
             { key: 'waiting_gr',      label: '입고 대기',            sublabel: 'AI 분석 완료',       tags: ['PO', '단가', '수량'],  emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
             { key: 'processing',      label: 'SAP 입고',             sublabel: '처리 중',                                           emoji: '⚙️', colorClass: 'text-indigo-600', bgSel: 'bg-indigo-50 border-indigo-400' },
-            { key: 'completed_month', label: 'SAP 입고 완료',        sublabel: '세금계산서 요청 중',                                emoji: '✅', colorClass: 'text-green-600', bgSel: 'bg-green-50 border-green-400' },
-            { key: 'tax_done',        label: '세금계산서',           sublabel: '처리 완료',                                         emoji: '🗂️', colorClass: 'text-teal-600',  bgSel: 'bg-teal-50 border-teal-400'   },
+            { key: 'completed_month', label: 'SAP 입고 완료',        sublabel: '메일 발송 대기',                                    emoji: '✅', colorClass: 'text-green-600', bgSel: 'bg-green-50 border-green-400' },
+            { key: 'tax_requesting',  label: '세금계산서 요청',      sublabel: '메일 발송 완료',                                    emoji: '📨', colorClass: 'text-amber-600',  bgSel: 'bg-amber-50 border-amber-400' },
+            { key: 'tax_done',        label: '세금계산서 완료',      sublabel: '처리 완료',                                         emoji: '🗂️', colorClass: 'text-teal-600',  bgSel: 'bg-teal-50 border-teal-400'   },
             { key: 'issues',          label: '이슈',                 sublabel: '확인 필요',                                         emoji: '🔺', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
           ];
 
@@ -15624,21 +15630,23 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           };
 
           const getCount = (key) => {
-            if (key === 'completed_month') return taxPending.length;
+            if (key === 'completed_month') return completedGRs.filter(h => !taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number)).length;
+            if (key === 'tax_requesting')  return completedGRs.filter(h => taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number)).length;
             if (key === 'tax_done')        return taxDone.length;
             if (key === 'issues')          return migoInvoices.filter(isIssueItem).length;
             return migoInvoices.filter(inv => inv.status === key && !isIssueItem(inv)).length;
           };
 
           const getItems = (key) => {
-            if (key === 'completed_month') return taxPending;
+            if (key === 'completed_month') return completedGRs.filter(h => !taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number));
+            if (key === 'tax_requesting')  return completedGRs.filter(h => taxRequestedPOs.has(h.po_number) && !taxPOs.has(h.po_number));
             if (key === 'tax_done')        return taxDone;
             if (key === 'issues')          return migoInvoices.filter(isIssueItem);
             return migoInvoices.filter(inv => inv.status === key && !isIssueItem(inv));
           };
 
           const isHistoryStage = (key) =>
-            ['completed_month', 'tax_done'].includes(key);
+            ['completed_month', 'tax_requesting', 'tax_done'].includes(key);
 
           return (
             <div className="space-y-5">
@@ -16164,6 +16172,37 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                             )}
                                           </>
                                         )}
+                                        {migoSelectedStage === 'issues' && (inv.parse_error || inv.ocr_error || inv.status === 'failed') && (
+                                          <button onClick={async () => {
+                                            const issueText = inv.parse_error || inv.ocr_error || inv.error || `${inv.status} — 처리 중 오류 발생`;
+                                            const issueType = inv.parse_error ? 'parse_error' : inv.ocr_error ? 'ocr_error' : inv.status;
+                                            try {
+                                              const resp = await fetch(`${migoApiUrl}/api/analysis-log/issue`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                  vendor: inv.vendor || '',
+                                                  po_number: inv.po_number || '',
+                                                  doc_type: inv.doc_type || '거래명세서',
+                                                  issue: issueText,
+                                                  issue_type: issueType,
+                                                  files: inv.filename ? [inv.filename] : []
+                                                })
+                                              });
+                                              if (resp.ok) {
+                                                const result = await resp.json();
+                                                showToast(`📝 분석 이력에 추가됨 (${result.id}) — ${inv.vendor}`, 'success');
+                                              } else {
+                                                showToast('분석 이력 저장 실패', 'error');
+                                              }
+                                            } catch (e) {
+                                              showToast(`분석 이력 연동 오류: ${e.message}`, 'error');
+                                            }
+                                          }}
+                                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                            📝 분석 이력에 추가
+                                          </button>
+                                        )}
                                         {inv.status === 'processing' && (
                                           <button onClick={() => { if (window.confirm(`입고 처리가 완료되었습니까?\n\n${inv.vendor} (${inv.po_number})\n\n완료 처리 시 세금계산서 미처리로 이동하고\n담당자에게 알림이 전송됩니다.`)) manualCompleteGR(inv.id, inv); }}
                                             className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition shadow-sm animate-pulse">
@@ -16174,6 +16213,32 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                           <span className="px-3 py-1.5 text-gray-400 text-xs animate-pulse">분석중...</span>
                                         )}
                                       </>
+                                    )}
+                                    {migoSelectedStage === 'completed_month' && (
+                                      <button onClick={async () => {
+                                        if (!window.confirm(`세금계산서 요청 메일을 발송하시겠습니까?\n\n${inv.vendor} (${inv.po_number})`)) return;
+                                        try {
+                                          const resp = await fetch(`${MIGO_API}/api/send-tax-email`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ po_number: inv.po_number, vendor: inv.vendor, pdf_path: inv.pdf_path || '' })
+                                          });
+                                          if (resp.ok) {
+                                            const newSet = new Set(taxRequestedPOs);
+                                            newSet.add(inv.po_number);
+                                            setTaxRequestedPOs(newSet);
+                                            safeStorage.setItem('pbk_tax_requested', JSON.stringify([...newSet]));
+                                            showToast(`📧 세금계산서 요청 메일 발송 완료 — ${inv.vendor}`, 'success');
+                                          } else {
+                                            showToast('메일 발송 실패', 'error');
+                                          }
+                                        } catch (e) {
+                                          showToast(`메일 발송 오류: ${e.message}`, 'error');
+                                        }
+                                      }}
+                                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
+                                        📧 세금계산서 요청
+                                      </button>
                                     )}
                                   </div>
                                 </div>
