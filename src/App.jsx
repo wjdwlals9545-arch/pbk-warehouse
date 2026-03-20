@@ -16490,7 +16490,11 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
         {activeTab === 'testlog' && (() => {
           const al = analysisLog;
           const issues = al?.issues || [];
-          const rules  = al?.rules  || [];
+          const rules  = [...(al?.rules || [])].sort((a, b) => {
+            const numA = parseInt((a.id.match(/\d+/) || ['999'])[0]);
+            const numB = parseInt((b.id.match(/\d+/) || ['999'])[0]);
+            return numA - numB;
+          });
           const sessions = al?.sessions || [];
 
           const filteredIssues = analysisIssueFilter === 'all' ? issues
@@ -16637,6 +16641,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                               <div key={rule.id} className={`rounded-lg p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
                                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                                   <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">{rule.id}</span>
+                                  {rule.summary && <span className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{rule.summary}</span>}
                                   <span className={`ml-auto text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{rule.added}</span>
                                 </div>
                                 <div className="flex gap-1.5 flex-wrap mb-2">
@@ -16774,11 +16779,12 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                       <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>📌 현재 적용 중인 파싱 룰</h3>
                       <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>main.py에 적용되어 자동 입고처리 시 사용됩니다</p>
                     </div>
-                    <div className="p-5 grid gap-4 md:grid-cols-2">
+                    <div className="p-5 space-y-3">
                       {rules.map(rule => (
                         <div key={rule.id} className={`rounded-xl p-4 border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                          <div className="flex items-center gap-2 mb-2">
+                          <div className="flex items-center gap-2 mb-1">
                             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">{rule.id}</span>
+                            {rule.summary && <span className={`text-sm font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{rule.summary}</span>}
                             <span className={`ml-auto text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{rule.added}</span>
                           </div>
                           <div className="flex gap-1.5 flex-wrap mb-2">
