@@ -15615,13 +15615,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const completedThisMonth = completedGRs.filter(h => h.completed_at?.startsWith(thisYM));
 
           const STAGES = [
+            { key: 'issues',          label: '이슈',                 sublabel: '확인 필요',                                         emoji: '🔺', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
             { key: 'analyzing',       label: 'AI 분석중',            sublabel: 'PO · 단가 · 수량',  emoji: '🔬', colorClass: 'text-violet-600', bgSel: 'bg-violet-50 border-violet-400' },
             { key: 'waiting_gr',      label: '입고 대기',            sublabel: 'AI 분석 완료',                                      emoji: '⏳', colorClass: 'text-orange-600', bgSel: 'bg-orange-50 border-orange-400' },
             { key: 'processing',      label: 'SAP 입고',             sublabel: '처리 중',                                           emoji: '⚙️', colorClass: 'text-indigo-600', bgSel: 'bg-indigo-50 border-indigo-400' },
             { key: 'completed_month', label: 'SAP 입고 완료',        sublabel: '메일 발송 대기',                                    emoji: '✅', colorClass: 'text-green-600', bgSel: 'bg-green-50 border-green-400' },
             { key: 'tax_requesting',  label: '세금계산서 요청',      sublabel: '메일 발송 완료',                                    emoji: '📨', colorClass: 'text-amber-600',  bgSel: 'bg-amber-50 border-amber-400' },
             { key: 'tax_done',        label: '세금계산서 완료',      sublabel: '처리 완료',                                         emoji: '🗂️', colorClass: 'text-teal-600',  bgSel: 'bg-teal-50 border-teal-400'   },
-            { key: 'issues',          label: '이슈',                 sublabel: '확인 필요',                                         emoji: '🔺', colorClass: 'text-red-600',    bgSel: 'bg-red-50 border-red-400'     },
           ];
 
           // AI 분석중 상태들
@@ -15799,18 +15799,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     const isIssue = stage.key === 'issues' && count > 0;
                     return (
                       <React.Fragment key={stage.key}>
-                        {/* 화살표 연결선 */}
-                        {idx > 0 && idx < 6 && (
+                        {/* 이슈 구분선 (이슈 다음, 분석중 앞) */}
+                        {idx === 1 && (
+                          <div className={`flex items-center px-1.5 shrink-0`}>
+                            <div className={`w-px h-10 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+                          </div>
+                        )}
+                        {/* 화살표 연결선 (분석중 이후 스테이지 간) */}
+                        {idx > 1 && (
                           <div className="flex items-center px-0.5 shrink-0">
                             <svg width="16" height="24" viewBox="0 0 16 24" className={`${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>
                               <path d="M4 4 L12 12 L4 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>
-                          </div>
-                        )}
-                        {/* 이슈 구분선 */}
-                        {idx === 6 && (
-                          <div className={`flex items-center px-1.5 shrink-0`}>
-                            <div className={`w-px h-10 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
                           </div>
                         )}
                         <div
