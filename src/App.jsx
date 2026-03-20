@@ -16414,7 +16414,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 );
               })()}
 
-              {/* 분석 섹션 (이력이 있을 때) */}
+              {/* ── 입고처리 리포트 (전체 섹션) ── */}
               {migoHistory.length > 0 && (() => {
                 const fmtAmt = (v) => v >= 10000000 ? `${(v/10000).toFixed(0)}만원` : v >= 100000 ? `${(v/10000).toFixed(1)}만원` : `${v.toLocaleString()}원`;
                 // 업체별 통계
@@ -16468,7 +16468,79 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 });
 
                 return (
-                  <div className="space-y-4">
+                  <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/60 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
+                  {/* ── 리포트 헤더 ── */}
+                  <div className={`px-5 py-4 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-indigo-900/40 to-gray-800' : 'border-gray-100 bg-gradient-to-r from-indigo-50 to-white'}`}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className={`font-bold text-base ${darkMode ? 'text-white' : 'text-gray-900'}`}>입고처리 리포트</h3>
+                        <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          전체 {migoHistory.length}건 · 합계 {fmtAmt(grandTotal)} · 세금계산서 완료 {taxDone.length}건 / 대기 {taxPending.length}건
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const rows = migoHistory.filter(h => h.status === 'completed');
+                            const csv = ['날짜,업체,PO번호,품목수,공급가액,부가세,합계,세금계산서']
+                              .concat(rows.map(h => [
+                                (h.completed_at || '').slice(0,10), h.vendor || '', h.po_number || '',
+                                h.items?.length || 0, h.total_supply || 0, h.total_tax || 0, h.total_amount || 0,
+                                taxPOs.has(h.po_number) ? '완료' : '대기',
+                              ].join(','))).join('\n');
+                            const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'});
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a'); a.href = url;
+                            a.download = `MIGO_리포트_${new Date().toISOString().slice(0,10)}.csv`;
+                            a.click(); URL.revokeObjectURL(url);
+                            showToast('CSV 다운로드 완료', 'success');
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${darkMode ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                        >
+                          CSV
+                        </button>
+                        <button
+                          onClick={() => {
+                            const rows = migoHistory.filter(h => h.status === 'completed');
+                            const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>MIGO 입고처리 리포트 ${new Date().toLocaleDateString('ko-KR')}</title>
+<style>body{font-family:sans-serif;padding:24px;font-size:12px}
+h1{font-size:18px;margin-bottom:4px}p{color:#666;margin:0 0 16px}
+table{width:100%;border-collapse:collapse}
+th{background:#f3f4f6;padding:8px;text-align:left;border:1px solid #e5e7eb;font-weight:600}
+td{padding:6px 8px;border:1px solid #e5e7eb}
+.done{color:#059669;font-weight:600}.pend{color:#d97706;font-weight:600}
+.total{font-weight:bold;background:#f9fafb}
+@media print{button{display:none}}</style></head><body>
+<h1>MIGO 입고처리 리포트</h1>
+<p>생성일: ${new Date().toLocaleString('ko-KR')} | 총 ${rows.length}건 / ${rows.reduce((s,h)=>s+(h.total_amount||0),0).toLocaleString()}원</p>
+<table><thead><tr><th>완료일</th><th>업체</th><th>PO번호</th><th>품목수</th><th>공급가액</th><th>부가세</th><th>합계</th><th>세금계산서</th></tr></thead>
+<tbody>${rows.map(h=>`<tr>
+<td>${(h.completed_at||'').slice(0,16).replace('T',' ')}</td><td>${h.vendor||''}</td>
+<td style="font-family:monospace">${h.po_number||''}</td><td style="text-align:center">${h.items?.length||0}개</td>
+<td style="text-align:right">${(h.total_supply||0).toLocaleString()}원</td>
+<td style="text-align:right">${(h.total_tax||0).toLocaleString()}원</td>
+<td style="text-align:right;font-weight:bold">${(h.total_amount||0).toLocaleString()}원</td>
+<td class="${taxPOs.has(h.po_number)?'done':'pend'}">${taxPOs.has(h.po_number)?'완료':'대기'}</td>
+</tr>`).join('')}
+<tr class="total"><td colspan="4">합계</td>
+<td style="text-align:right">${rows.reduce((s,h)=>s+(h.total_supply||0),0).toLocaleString()}원</td>
+<td style="text-align:right">${rows.reduce((s,h)=>s+(h.total_tax||0),0).toLocaleString()}원</td>
+<td style="text-align:right">${rows.reduce((s,h)=>s+(h.total_amount||0),0).toLocaleString()}원</td>
+<td></td></tr></tbody></table>
+<script>window.onload=()=>window.print()</script></body></html>`;
+                            const w = window.open('', '_blank');
+                            w.document.write(html); w.document.close();
+                          }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${darkMode ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                        >
+                          인쇄
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 space-y-4">
                   {/* ── 업체별 + 월별 차트 ── */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* 업체별 */}
@@ -16652,85 +16724,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                   )}
 
-                  {/* ── 리포트 다운로드 ── */}
-                  <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white border-gray-200'} shadow-sm`}>
-                    <div className={`px-4 py-3 border-b ${darkMode ? 'border-gray-700 bg-gradient-to-r from-gray-800 to-gray-750' : 'border-gray-100 bg-gradient-to-r from-slate-50 to-white'}`}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className={`font-semibold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>입고처리 리포트</h3>
-                          <p className={`text-xs mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                            전체 {migoHistory.filter(h=>h.status==='completed').length}건 기준 · 세금계산서 완료 {taxDone.length}건 / 대기 {taxPending.length}건
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              const rows = migoHistory.filter(h => h.status === 'completed');
-                              const csv = ['날짜,업체,PO번호,품목수,공급가액,부가세,합계,세금계산서']
-                                .concat(rows.map(h => [
-                                  (h.completed_at || '').slice(0,10),
-                                  h.vendor || '',
-                                  h.po_number || '',
-                                  h.items?.length || 0,
-                                  h.total_supply || 0,
-                                  h.total_tax || 0,
-                                  h.total_amount || 0,
-                                  taxPOs.has(h.po_number) ? '완료' : '대기',
-                                ].join(','))).join('\n');
-                              const blob = new Blob(['\uFEFF' + csv], {type:'text/csv;charset=utf-8'});
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a'); a.href = url;
-                              a.download = `MIGO_리포트_${new Date().toISOString().slice(0,10)}.csv`;
-                              a.click(); URL.revokeObjectURL(url);
-                              showToast('📊 CSV 다운로드 완료', 'success');
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${darkMode ? 'bg-green-700 hover:bg-green-600 text-white' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-                          >
-                            ⬇ CSV 다운로드
-                          </button>
-                          <button
-                            onClick={() => {
-                              const rows = migoHistory.filter(h => h.status === 'completed');
-                              const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>MIGO 입고처리 리포트 ${new Date().toLocaleDateString('ko-KR')}</title>
-<style>body{font-family:sans-serif;padding:24px;font-size:12px}
-h1{font-size:18px;margin-bottom:4px}p{color:#666;margin:0 0 16px}
-table{width:100%;border-collapse:collapse}
-th{background:#f3f4f6;padding:8px;text-align:left;border:1px solid #e5e7eb;font-weight:600}
-td{padding:6px 8px;border:1px solid #e5e7eb}
-.done{color:#059669;font-weight:600}.pend{color:#d97706;font-weight:600}
-.total{font-weight:bold;background:#f9fafb}
-@media print{button{display:none}}</style></head><body>
-<h1>MIGO 입고처리 리포트</h1>
-<p>생성일: ${new Date().toLocaleString('ko-KR')} | 총 ${rows.length}건 / ${rows.reduce((s,h)=>s+(h.total_amount||0),0).toLocaleString()}원</p>
-<table><thead><tr><th>완료일</th><th>업체</th><th>PO번호</th><th>품목수</th><th>공급가액</th><th>부가세</th><th>합계</th><th>세금계산서</th></tr></thead>
-<tbody>${rows.map(h=>`<tr>
-<td>${(h.completed_at||'').slice(0,16).replace('T',' ')}</td>
-<td>${h.vendor||''}</td>
-<td style="font-family:monospace">${h.po_number||''}</td>
-<td style="text-align:center">${h.items?.length||0}개</td>
-<td style="text-align:right">${(h.total_supply||0).toLocaleString()}원</td>
-<td style="text-align:right">${(h.total_tax||0).toLocaleString()}원</td>
-<td style="text-align:right;font-weight:bold">${(h.total_amount||0).toLocaleString()}원</td>
-<td class="${taxPOs.has(h.po_number)?'done':'pend'}">${taxPOs.has(h.po_number)?'✅ 완료':'⏳ 대기'}</td>
-</tr>`).join('')}
-<tr class="total"><td colspan="4">합계</td>
-<td style="text-align:right">${rows.reduce((s,h)=>s+(h.total_supply||0),0).toLocaleString()}원</td>
-<td style="text-align:right">${rows.reduce((s,h)=>s+(h.total_tax||0),0).toLocaleString()}원</td>
-<td style="text-align:right">${rows.reduce((s,h)=>s+(h.total_amount||0),0).toLocaleString()}원</td>
-<td></td></tr>
-</tbody></table>
-<script>window.onload=()=>window.print()</script></body></html>`;
-                              const w = window.open('', '_blank');
-                              w.document.write(html); w.document.close();
-                            }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm ${darkMode ? 'bg-indigo-700 hover:bg-indigo-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
-                          >
-                            🖨 인쇄 / PDF
-                          </button>
-                        </div>
-                      </div>
-                    </div>
                   </div>
                   </div>
                 );

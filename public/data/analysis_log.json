@@ -69,7 +69,7 @@
       "id": "Rule 9",
       "summary": "DigiKey CUST 필드 품번 추출",
       "vendors": ["DigiKey"],
-      "desc": "DigiKey Invoice의 'CUST: XXXXXX' 라인에서 내부 품번 추출 — 접미사(_HSM 등) 제거, CUST 없는 구형은 P/N 수기 확인",
+      "desc": "DigiKey Invoice의 'CUST: XXXXXX' 라인에서 내부 품번 추출 — 5~6자리 숫자(접미사 _HSM 제거) 또는 하이픈 포함 형식(081-0802, 037-0055)도 그대로 사용. PART: RPC1242-ND 등 카탈로그 번호와 구분. CUST 없는 구형은 P/N 수기 확인",
       "added": "2026-03-20",
       "status": "active"
     },
@@ -78,6 +78,14 @@
       "summary": "슬래시(/) 앞 숫자가 품번",
       "vendors": ["영광스프링", "세모에프에이", "쿨원"],
       "desc": "품목명이 '품번/규격명' 슬래시(/) 형식일 때 슬래시 앞 6자리 숫자를 내부 품번으로 추출 (예: 711194/Tri-Spring → 711194)",
+      "added": "2026-03-20",
+      "status": "active"
+    },
+    {
+      "id": "Rule 11",
+      "summary": "DigiKey 소수점 단가 → 수기 정수 단가 우선",
+      "vendors": ["DigiKey"],
+      "desc": "DigiKey 인보이스의 인쇄 단가는 소수점 포함(359.96142 등)이나 SAP 미지원. 사용자가 수기로 반올림 정수(360, 1156 등)와 금액을 기입 → 수기 값 우선 사용. 수기 없으면 소수점 반올림 후 정수 변환",
       "added": "2026-03-20",
       "status": "active"
     },
@@ -294,6 +302,30 @@
       "status": "resolved",
       "resolution": "사용자가 납품 시 수기 기입 예정 → Rule 8로 커버 (고우넷은 이미 Rule 8 목록에 포함)",
       "rule_ref": "Rule 8"
+    },
+    {
+      "id": "iss_018",
+      "date": "2026-03-20",
+      "session": "DigiKey 인보이스 테스트",
+      "vendor": "DigiKey",
+      "doc_type": "Invoice",
+      "files": ["4500235073_digikey_invoice.pdf"],
+      "issue": "DigiKey 인보이스 품목 0개 인식 — CUST 필드가 하이픈 형식(081-0802, 037-0055)으로 기존 5~6자리 숫자 룰에 매칭 안됨. PART 번호(RPC1242-ND 등)와 혼동 가능",
+      "status": "resolved",
+      "resolution": "Rule 9 확장 — CUST 하이픈 형식(XXX-XXXX)도 material_no로 인식. PART:-ND 카탈로그 번호와 구분 규칙 명확화",
+      "rule_ref": "Rule 9"
+    },
+    {
+      "id": "iss_019",
+      "date": "2026-03-20",
+      "session": "DigiKey 인보이스 테스트",
+      "vendor": "DigiKey",
+      "doc_type": "Invoice",
+      "files": ["4500235073_digikey_invoice.pdf"],
+      "issue": "DigiKey 인보이스 단가가 소수점(359.96142, 1155.46126)으로 SAP 입력 불가 — 사용자가 수기로 반올림 정수(360, 1156)와 금액(360000, 578000)을 기입하지만 AI가 인쇄된 소수점 값을 읽음",
+      "status": "resolved",
+      "resolution": "Rule 11 추가 — 수기 기입된 정수 단가/금액을 우선 사용. main.py Invoice 프롬프트에 DigiKey 단가 특별 규칙 추가",
+      "rule_ref": "Rule 11"
     }
   ],
   "sessions": [
