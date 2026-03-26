@@ -1,8 +1,9 @@
 name: Overdue Delivery Review Email
 
 on:
-  repository_dispatch:
-    types: [send-overdue-email]
+  # repository_dispatch:
+  #   types: [send-overdue-email]
+  workflow_dispatch:
 
 jobs:
   send-email:
