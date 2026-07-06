@@ -2442,6 +2442,23 @@ export default function PBKWarehouseSystem() {
       const remoteTs = stateObj._syncTimestamp || 0;
       console.log(`[DashSync] GitHub 데이터 로드 (remoteTs=${remoteTs})`);
 
+      // Excel 파생 데이터: 로컬에서 직접 파싱한 Excel이 원격 상태보다 최신이면 덮어쓰지 않음
+      // (마스터 PC가 멈춰 dashboard_state.json이 오래된 경우, 5분 동기화가 최신 데이터를 롤백하는 것 방지)
+      const EXCEL_KEYS = new Set([
+        'pbk_inventory', 'pbk_last_updated',
+        'pbk_open_po', 'pbk_open_po_raw', 'pbk_open_po_updated',
+        'pbk_delivery_data', 'pbk_delivery_updated',
+        'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
+        'pbk_qstock',
+      ]);
+      const localExcelEpoch = Math.max(
+        parseInt(safeStorage.getItem('pbk_stock_epoch') || '0'),
+        parseInt(safeStorage.getItem('pbk_po_epoch') || '0'),
+        parseInt(safeStorage.getItem('pbk_del_epoch') || '0')
+      );
+      const skipExcelKeys = localExcelEpoch > remoteTs;
+      if (skipExcelKeys) console.log(`[DashSync] 로컬 Excel 데이터가 더 최신 (${localExcelEpoch} > ${remoteTs}) → Excel 키 건너뜀`);
+
       // setState 매핑
       const setterMap = {
         pbk_receive_cycles: setReceiveCycles,
@@ -2475,6 +2492,7 @@ export default function PBKWarehouseSystem() {
       };
 
       for (const key of SYNC_KEYS) {
+        if (skipExcelKeys && EXCEL_KEYS.has(key)) continue;
         if (stateObj[key] !== undefined && stateObj[key] !== null) {
           // localStorage 업데이트
           const val = stateObj[key];
@@ -3729,6 +3747,7 @@ export default function PBKWarehouseSystem() {
   const syncTimerRef = React.useRef(null);
   const syncShaRef = React.useRef(null);
   const lastSyncHashRef = React.useRef(null);
+  const fetchGitHubDataRef = React.useRef(null); // 5분 주기 Excel 재체크용
   const kpiContentRef = React.useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
   const [showKpiUploadGuide, setShowKpiUploadGuide] = useState(false);
@@ -4262,10 +4281,10 @@ export default function PBKWarehouseSystem() {
     const getFileCommitInfo = async (filePath) => {
       try {
         const token = safeStorage.getItem('pbk_gh_token');
-        if (!token) return { epoch: 0, display: null }; // 토큰 없으면 항상 로드
-        const resp = await fetch(`https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/commits?path=${filePath}&per_page=1`, {
-          headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
-        });
+        // public repo라 토큰 없이도 커밋 조회 가능 (rate limit 60/hr이지만 파일 3개 조회는 충분)
+        const headers = { 'Accept': 'application/vnd.github+json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const resp = await fetch(`https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/commits?path=${filePath}&per_page=1`, { headers });
         if (!resp.ok) return { epoch: 0, display: null };
         const commits = await resp.json();
         if (!commits || commits.length === 0) return { epoch: 0, display: null };
@@ -4448,6 +4467,7 @@ export default function PBKWarehouseSystem() {
     };
 
     // 먼저 대시보드 상태 로드 → 그 다음 Stock/OpenPO 로드
+    fetchGitHubDataRef.current = fetchGitHubData; // 5분 주기 재체크에서 사용
     const initLoad = async () => {
       await loadDashboardState();
       await fetchGitHubData();
@@ -4490,9 +4510,11 @@ export default function PBKWarehouseSystem() {
     const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
     if (isMaster) return; // 마스터 PC는 자기가 올리니까 불필요
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       console.log('[DashSync] Read-only PC: auto-refreshing from GitHub...');
-      loadDashboardState();
+      await loadDashboardState();
+      // Excel 파일도 재체크 (새 커밋 있으면 재파싱 — 폴더 감시 워크플로우 대응)
+      if (fetchGitHubDataRef.current) await fetchGitHubDataRef.current();
     }, 5 * 60 * 1000); // 5분마다
 
     return () => clearInterval(interval);
@@ -7408,7 +7430,7 @@ ${context}`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-5',
           max_tokens: 800,
           stream: true,
           system: systemPrompt,
