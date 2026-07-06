@@ -378,6 +378,11 @@ tr:hover td{background:#f8f9ff}
 
   // 재고 + 배치도 로드 완료 후 앱 시작 (URL 파라미터 검색이 최신 데이터로 실행되도록)
   Promise.all([stockP, layoutP]).then(startApp, startApp);
+
+  // mobile.html 통합 셸에 iframe으로 임베드될 때: 하단 탭바에 안 가리게 여백 확보
+  if (new URLSearchParams(location.search).get('embed')) {
+    document.body.style.paddingBottom = '72px';
+  }
 })();
 </script>
 </body>

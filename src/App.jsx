@@ -19619,16 +19619,16 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
       {showQrModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowQrModal(false)}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm m-4 text-center" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-2">📱 모바일 자재위치 검색</h3>
-            <p className="text-sm text-gray-500 mb-4">QR코드를 스캔하면 자재위치 검색 페이지로 이동합니다.</p>
+            <h3 className="text-lg font-bold mb-2">📱 창고 모바일 앱</h3>
+            <p className="text-sm text-gray-500 mb-4">QR코드를 스캔하면 위치 조회 · 키팅 스캔 통합 페이지로 이동합니다.</p>
             <div className="flex justify-center mb-4">
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('https://wjdwlals9545-arch.github.io/pbk-warehouse/location.html')}`}
-                alt="자재위치 검색 QR"
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('https://wjdwlals9545-arch.github.io/pbk-warehouse/mobile.html')}`}
+                alt="창고 모바일 앱 QR"
                 className="w-48 h-48 rounded-lg border"
               />
             </div>
-            <p className="text-xs text-gray-400 mb-3 break-all">https://wjdwlals9545-arch.github.io/pbk-warehouse/location.html</p>
+            <p className="text-xs text-gray-400 mb-3 break-all">https://wjdwlals9545-arch.github.io/pbk-warehouse/mobile.html</p>
             <div className="flex gap-2">
               <button onClick={() => setShowQrModal(false)} className="flex-1 px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 text-sm">닫기</button>
               <button onClick={exportLocationHTML} className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm">HTML 다운로드</button>

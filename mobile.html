@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>PBK 창고 모바일</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f1f5f9;}
+  #frame{position:fixed;top:0;left:0;right:0;bottom:60px;width:100%;border:none;background:#f1f5f9;}
+  #tabs{position:fixed;left:0;right:0;bottom:0;height:60px;display:flex;background:#13294B;box-shadow:0 -2px 10px rgba(0,0,0,.2);z-index:10;}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+       color:#93a4c8;font-size:12px;font-weight:600;cursor:pointer;border:none;background:none;padding:6px 0;transition:color .15s;}
+  .tab .ic{font-size:20px;line-height:1;}
+  .tab.active{color:#fff;}
+  .tab.active .ic{transform:scale(1.12);}
+  .tab.active::before{content:"";position:absolute;bottom:0;width:44px;height:3px;border-radius:3px 3px 0 0;background:#FDB813;transform:translateY(-57px);}
+</style>
+</head>
+<body>
+<iframe id="frame" allow="camera"></iframe>
+<nav id="tabs">
+  <button class="tab active" id="tab-locate" onclick="go('locate')"><span class="ic">📍</span>위치 조회</button>
+  <button class="tab" id="tab-kit" onclick="go('kit')"><span class="ic">📦</span>키팅 스캔</button>
+</nav>
+<script>
+/* 통합 모바일 셸 — location.html / kitting.html 을 iframe 으로 전환.
+ * 탭 전환 시 src 를 교체 → 이전 페이지의 카메라 스트림이 자동 정지된다.
+ * 같은 origin 이라 localStorage(토큰 등)는 두 화면이 공유한다. */
+var params = new URLSearchParams(location.search);
+var PAGES = {
+  locate: 'location.html?embed=1' + (params.get('m') ? '&m=' + encodeURIComponent(params.get('m')) : ''),
+  kit:    'kitting.html?embed=1'
+};
+var current = null;
+function go(tab){
+  if (tab === current) return;
+  current = tab;
+  document.getElementById('frame').src = PAGES[tab];
+  document.getElementById('tab-locate').classList.toggle('active', tab === 'locate');
+  document.getElementById('tab-kit').classList.toggle('active', tab === 'kit');
+}
+// 시작 탭: ?tab=kit 또는 ?m=<자재> 없으면 위치 조회 기본
+var startTab = params.get('tab') === 'kit' ? 'kit' : 'locate';
+go(startTab);
+</script>
+</body>
+</html>
