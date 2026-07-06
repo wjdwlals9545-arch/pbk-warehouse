@@ -331,6 +331,11 @@ loadOrders();
 render();
 flushQueue(false);
 setInterval(loadOrders, 5*60*1000);
+
+// mobile.html 통합 셸에 iframe으로 임베드될 때: 하단 탭바에 안 가리게 여백 확보
+if (new URLSearchParams(location.search).get('embed')) {
+  document.body.style.paddingBottom = '72px';
+}
 </script>
 </body>
 </html>
