@@ -31,11 +31,19 @@ import { Package, Clock, Warehouse, BarChart3, Database, Plus, X, Search, Filter
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, ComposedChart, Bar, Line, Cell } from 'recharts';
 // html2canvas, jsPDF → lazy import (PDF 버튼 클릭 시에만 로드)
 // safeStorage: localStorage 사용 가능하면 localStorage, 아니면 인메모리 대체
+// setItem은 쿼터 초과(QuotaExceededError) 시 앱 크래시 대신 경고 로그만 남김
 const safeStorage = (() => {
   try {
     localStorage.setItem('__pbk_test__', '1');
     localStorage.removeItem('__pbk_test__');
-    return localStorage; // ✅ localStorage 정상 작동 → 그대로 반환 (데이터 영구 저장)
+    return {
+      getItem: (k) => localStorage.getItem(k),
+      setItem: (k, v) => {
+        try { localStorage.setItem(k, v); }
+        catch (e) { console.warn(`[safeStorage] setItem 실패 (${k}, ${String(v).length}자):`, e.name); }
+      },
+      removeItem: (k) => localStorage.removeItem(k),
+    };
   } catch {
     // 접근 불가 환경: 인메모리 대체 (세션 내에서만 유지)
     const _data = {};
@@ -46,6 +54,36 @@ const safeStorage = (() => {
     };
   }
 })();
+
+// 안전 JSON.parse — 손상된 localStorage 값으로 앱 전체가 크래시하지 않도록
+const safeParse = (raw, fallback) => {
+  if (raw === null || raw === undefined) return fallback;
+  try { return JSON.parse(raw); } catch { return fallback; }
+};
+
+// 한국어 로케일 날짜 문자열 파싱: "2026. 7. 6. 오후 12:20:10" → Date | null
+const parseKoreanDate = (dateString) => {
+  if (!dateString) return null;
+  try {
+    if (dateString.includes('오전') || dateString.includes('오후')) {
+      const isAM = dateString.includes('오전');
+      const cleaned = dateString.replace('오전', '').replace('오후', '').trim();
+      const parts = cleaned.split(/[.\s:]+/).filter(p => p);
+      if (parts.length >= 4) {
+        let hours = parseInt(parts[3]);
+        if (!isAM && hours !== 12) hours += 12;
+        if (isAM && hours === 12) hours = 0;
+        const d = new Date(
+          parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]),
+          hours, parseInt(parts[4]) || 0, parseInt(parts[5]) || 0
+        );
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+    const d = new Date(dateString);
+    return isNaN(d.getTime()) ? null : d;
+  } catch { return null; }
+};
 
 // 간단한 해시 (변경 감지용)
 const simpleHash = (str) => {
@@ -67,8 +105,9 @@ const SYNC_KEYS = [
   'pbk_custom_bom', 'pbk_subcom_bom', 'pbk_bom_updated',
   'pbk_notifications', 'pbk_previous_stats',
   // v19.8: Stock, Open PO, Delivery 동기화 추가
+  // pbk_open_po_raw 제외: MB급 대용량 → dashboard_state.json이 GitHub contents API 1MB 한도를 넘으면 동기화 전체가 깨짐
   'pbk_inventory', 'pbk_last_updated',
-  'pbk_open_po', 'pbk_open_po_raw', 'pbk_open_po_updated',
+  'pbk_open_po', 'pbk_open_po_updated',
   'pbk_delivery_data', 'pbk_delivery_updated',
   // epoch (커밋 시간 기준) — Excel 재파싱 판단용
   'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
@@ -836,20 +875,6 @@ const MATERIAL_QTY_PER_BOX = {
   '714646': 200,
   '714647': 200,
   '714645': 200,
-  '714352': 500,
-  '714350': 500,
-  '714378': 500,
-  '714356': 500,
-  '714355': 500,
-  '714373': 500,
-  '714377': 500,
-  '714372': 500,
-  '714375': 500,
-  '714370': 500,
-  '714376': 500,
-  '714371': 500,
-  '714351': 500,
-  '714353': 500,
   'KB0840': 10,
   'KB0835': 10,
   'KB0778': 10,
@@ -1967,13 +1992,14 @@ export default function PBKWarehouseSystem() {
   // 이전 데이터 저장 (C1 대시보드 증감 표시용)
   const [previousStats, setPreviousStats] = useState(() => {
     const saved = safeStorage.getItem('pbk_previous_stats');
-    return saved ? JSON.parse(saved) : null;
+    return safeParse(saved, null);
   });
   
   // TO DO 리스트
   const [todoList, setTodoList] = useState(() => {
     const saved = safeStorage.getItem('pbk_todo_list');
-    return saved ? JSON.parse(saved) : [
+    const parsed = safeParse(saved, null);
+    return parsed !== null ? parsed : [
       { id: 1, text: '랙별 최대 하중량 데이터 입력', category: 'data', priority: 'high', completed: false, createdAt: '2026-02-01', dueDate: '2026-02-10' },
       { id: 2, text: 'MIGO 처리 시간 단축 방안 검토', category: 'process', priority: 'medium', completed: false, createdAt: '2026-02-01', dueDate: '2026-02-15' },
       { id: 3, text: 'Kitting Lead Time KPI 기준 수립', category: 'kpi', priority: 'high', completed: false, createdAt: '2026-02-01', dueDate: '2026-02-08' },
@@ -1995,7 +2021,7 @@ export default function PBKWarehouseSystem() {
   });
   const [qStockData, setQStockData] = useState(() => {
     const saved = safeStorage.getItem('pbk_qstock');
-    return saved ? JSON.parse(saved) : [];
+    return safeParse(saved, []);
   });
   const [qStockSearch, setQStockSearch] = useState('');
   const [qStockStatusFilter, setQStockStatusFilter] = useState('all');
@@ -2009,7 +2035,7 @@ export default function PBKWarehouseSystem() {
   // Open PO 데이터 (발주 진행 중인 자재)
   const [openPOData, setOpenPOData] = useState(() => {
     const saved = safeStorage.getItem('pbk_open_po');
-    return saved ? JSON.parse(saved) : [];
+    return safeParse(saved, []);
   });
   const [openPOLastUpdated, setOpenPOLastUpdated] = useState(() => {
     return safeStorage.getItem('pbk_open_po_updated') || null;
@@ -2038,12 +2064,12 @@ export default function PBKWarehouseSystem() {
   // BOM 데이터 (사용자 업로드 가능)
   const [customBomData, setCustomBomData] = useState(() => {
     const saved = safeStorage.getItem('pbk_custom_bom');
-    return saved ? JSON.parse(saved) : null;
+    return safeParse(saved, null);
   });
   // Sub-component BOM 데이터
   const [subComponentBomData, setSubComponentBomData] = useState(() => {
     const saved = safeStorage.getItem('pbk_subcom_bom');
-    return saved ? JSON.parse(saved) : null;
+    return safeParse(saved, null);
   });
   const [bomLastUpdated, setBomLastUpdated] = useState(() => {
     return safeStorage.getItem('pbk_bom_updated') || null;
@@ -2063,8 +2089,9 @@ export default function PBKWarehouseSystem() {
   const [weightData, setWeightData] = useState(() => {
     // safeStorage 데이터가 있어도 개수가 다르면 기본값 사용
     const saved = safeStorage.getItem('pbk_weight_data');
-    if (saved) {
-      const parsed = JSON.parse(saved);
+    const savedParsed = safeParse(saved, null);
+    if (savedParsed) {
+      const parsed = savedParsed;
       // 515개 미만이면 기본값으로 리셋
       if (Object.keys(parsed).length < 500) {
         safeStorage.removeItem('pbk_weight_data');
@@ -2092,8 +2119,9 @@ export default function PBKWarehouseSystem() {
   // Cycle Time 기록 (safeStorage에 저장)
   const [pickCycles, setPickCycles] = useState(() => {
     const saved = safeStorage.getItem('pbk_pick_cycles');
-    if (saved) {
-      return JSON.parse(saved).map(p => { if(p.materialNum&&SUBCOM_INFO[p.materialNum]&&p.model!=='Sub-com.')p.model='Sub-com.';
+    const savedCycles = safeParse(saved, null);
+    if (savedCycles) {
+      return savedCycles.map(p => { if(p.materialNum&&SUBCOM_INFO[p.materialNum]&&p.model!=='Sub-com.')p.model='Sub-com.';
         if (p.status === 'completed' && p.completed) {
           // NaN 포함된 경우 → startTime + cycleMin으로 재계산
           if (String(p.completed).includes('NaN')) {
@@ -2119,7 +2147,8 @@ export default function PBKWarehouseSystem() {
   
   const [receiveCycles, setReceiveCycles] = useState(() => {
     const saved = safeStorage.getItem('pbk_receive_cycles');
-    return saved ? JSON.parse(saved) : [
+    const parsed = safeParse(saved, null);
+    return parsed !== null ? parsed : [
       { id: 1, poNo: 'PUR-2026-001', vendor: 'Metal Tech', delivery: '2026-01-27 10:00', migo: '2026-01-27 11:30', cycleMin: 90, status: 'completed' },
       { id: 2, poNo: 'PUR-2026-002', vendor: 'PCB Korea', delivery: '2026-01-28 09:30', migo: '2026-01-28 10:15', cycleMin: 45, status: 'completed' },
     ];
@@ -2192,9 +2221,10 @@ export default function PBKWarehouseSystem() {
   // Kitting 현황 데이터
   const [kittingData, setKittingData] = useState(() => {
     const saved = safeStorage.getItem('pbk_kitting_data');
-    if (saved) {
+    const savedKitting = safeParse(saved, null);
+    if (savedKitting) {
       let needSave = false;
-      const parsed = JSON.parse(saved).map(k => { if(k.materialNum&&SUBCOM_INFO[k.materialNum]&&k.model!=='Sub-com.')k.model='Sub-com.';
+      const parsed = savedKitting.map(k => { if(k.materialNum&&SUBCOM_INFO[k.materialNum]&&k.model!=='Sub-com.')k.model='Sub-com.';
         if (k.completedAt && k.status === 'completed') {
           try {
             if (/^\d{2}-\d{2} /.test(k.completedAt)) {
@@ -2459,6 +2489,12 @@ export default function PBKWarehouseSystem() {
       const skipExcelKeys = localExcelEpoch > remoteTs;
       if (skipExcelKeys) console.log(`[DashSync] 로컬 Excel 데이터가 더 최신 (${localExcelEpoch} > ${remoteTs}) → Excel 키 건너뜀`);
 
+      // 사용자 입력 데이터(투두/키팅/KPI 등): 이 PC의 마지막 편집이 원격 스냅샷보다 최신이면 덮어쓰지 않음
+      // (마스터 PC가 멈춰 원격 상태가 오래된 경우, 5분 동기화가 최근 입력을 롤백하는 것 방지)
+      const localEditTs = parseInt(safeStorage.getItem('pbk_sync_local_ts') || '0');
+      const skipUserKeys = localEditTs > remoteTs;
+      if (skipUserKeys) console.log(`[DashSync] 로컬 편집이 더 최신 (${localEditTs} > ${remoteTs}) → 사용자 입력 키 건너뜀`);
+
       // setState 매핑
       const setterMap = {
         pbk_receive_cycles: setReceiveCycles,
@@ -2493,6 +2529,7 @@ export default function PBKWarehouseSystem() {
 
       for (const key of SYNC_KEYS) {
         if (skipExcelKeys && EXCEL_KEYS.has(key)) continue;
+        if (skipUserKeys && !EXCEL_KEYS.has(key)) continue;
         if (stateObj[key] !== undefined && stateObj[key] !== null) {
           // localStorage 업데이트
           const val = stateObj[key];
@@ -2522,6 +2559,14 @@ export default function PBKWarehouseSystem() {
     const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
     if (!isMaster) {
       console.log('[DashSync] Read-only mode (not master PC), skip upload');
+      return;
+    }
+
+    // 좀비 마스터 가드: 이 PC에서 실제 편집한 적이 없으면(pbk_sync_local_ts 없음) 업로드 금지
+    // (오래 꺼져 있던 옛 마스터 PC가 켜지자마자 낡은 상태로 전체를 덮어쓰는 사고 방지)
+    const localEditTs = parseInt(safeStorage.getItem('pbk_sync_local_ts') || '0');
+    if (!localEditTs) {
+      console.log('[DashSync] 이 PC의 편집 이력 없음 → 업로드 건너뜀 (좀비 마스터 가드)');
       return;
     }
 
@@ -3355,6 +3400,7 @@ export default function PBKWarehouseSystem() {
   }, []);
   const [locateSearch, setLocateSearch] = useState(urlParams.get('q') || '');
   const [locateQuery, setLocateQuery] = useState(urlParams.get('q') || '');
+  const [locateQrMaterial, setLocateQrMaterial] = useState(null); // 자재별 QR 모달 (location.html?m= 딥링크)
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [selectedCalendarTodo, setSelectedCalendarTodo] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -3365,7 +3411,7 @@ export default function PBKWarehouseSystem() {
   // 온습도 관리 상태
   const [tempHumidityData, setTempHumidityData] = useState(() => {
     const saved = safeStorage.getItem('pbk_temp_humidity_data');
-    const savedData = saved ? JSON.parse(saved) : {};
+    const savedData = safeParse(saved, {});
     // 과거 데이터와 사용자 입력 데이터 병합 (사용자 입력이 우선)
     return { ...HISTORICAL_TEMP_HUMIDITY_DATA, ...savedData };
   });
@@ -3385,14 +3431,14 @@ export default function PBKWarehouseSystem() {
   // 다크 모드
   const [darkMode, setDarkMode] = useState(() => {
     const saved = safeStorage.getItem('pbk_dark_mode');
-    return saved ? JSON.parse(saved) : false;
+    return safeParse(saved, false);
   });
 
   // 알림 센터
   const [showNotificationCenter, setShowNotificationCenter] = useState(false);
   const [notifications, setNotifications] = useState(() => {
     const saved = safeStorage.getItem('pbk_notifications');
-    return saved ? JSON.parse(saved) : [];
+    return safeParse(saved, []);
   });
 
   // 토스트 메시지 (자동 저장 표시)
@@ -3404,7 +3450,7 @@ export default function PBKWarehouseSystem() {
   // 데이터 업로드 히스토리
   const [dataHistory, setDataHistory] = useState(() => {
     const saved = safeStorage.getItem('pbk_data_history');
-    return saved ? JSON.parse(saved) : [];
+    return safeParse(saved, []);
   });
   const [showHistoryModal, setShowHistoryModal] = useState(false);
 
@@ -3437,8 +3483,8 @@ export default function PBKWarehouseSystem() {
 
   const [kpiData, setKpiData] = useState(() => {
     const saved = safeStorage.getItem('pbk_kpi_data');
-    if (saved) {
-      const parsed = JSON.parse(saved);
+    const parsed = safeParse(saved, null);
+    if (parsed) {
       return {
         grCancel: { ...DEFAULT_GR_CANCEL_DATA, ...parsed.grCancel },
         grCancelQty: { ...DEFAULT_GR_CANCEL_QTY, ...parsed.grCancelQty },
@@ -3530,17 +3576,17 @@ export default function PBKWarehouseSystem() {
 
   const fetchParseLogs = useCallback(async () => {
     try {
-      const r = await fetch('http://localhost:5100/api/parse-logs');
+      const r = await fetch(`${MIGO_API}/api/parse-logs`);
       if (r.ok) setParseLogs(await r.json());
     } catch {}
-  }, []);
+  }, [MIGO_API]);
 
   const scanFolderForTest = useCallback(async () => {
     const p = parseTestInput.trim();
     if (!p) return;
     setParseTestLoading(true);
     try {
-      const r = await fetch('http://localhost:5100/api/scan-folder', {
+      const r = await fetch(`${MIGO_API}/api/scan-folder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folder_path: p }),
@@ -3553,12 +3599,12 @@ export default function PBKWarehouseSystem() {
       }
     } catch (e) { alert('서버 연결 실패'); }
     setParseTestLoading(false);
-  }, [parseTestInput]);
+  }, [parseTestInput, MIGO_API]);
 
   const testParseFile = useCallback(async (pdfPath) => {
     setParseParsingIds(prev => new Set([...prev, pdfPath]));
     try {
-      const r = await fetch('http://localhost:5100/api/test-parse', {
+      const r = await fetch(`${MIGO_API}/api/test-parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdf_path: pdfPath }),
@@ -3571,7 +3617,7 @@ export default function PBKWarehouseSystem() {
       setParseSelectedLog(data);
     } catch (e) { alert('파싱 오류: ' + e.message); }
     setParseParsingIds(prev => { const n = new Set(prev); n.delete(pdfPath); return n; });
-  }, []);
+  }, [MIGO_API]);
 
   const testParseAll = useCallback(async () => {
     for (const f of parseScanFiles) {
@@ -3581,7 +3627,7 @@ export default function PBKWarehouseSystem() {
 
   const updateParseLogNote = useCallback(async (id, note) => {
     try {
-      await fetch(`http://localhost:5100/api/parse-logs/${encodeURIComponent(id)}/note`, {
+      await fetch(`${MIGO_API}/api/parse-logs/${encodeURIComponent(id)}/note`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ note }),
@@ -3589,14 +3635,14 @@ export default function PBKWarehouseSystem() {
       setParseLogs(prev => prev.map(l => l.id === id ? { ...l, note } : l));
       if (parseSelectedLog?.id === id) setParseSelectedLog(prev => ({ ...prev, note }));
     } catch {}
-  }, [parseSelectedLog]);
+  }, [parseSelectedLog, MIGO_API]);
 
   const clearParseLogs = useCallback(async () => {
     if (!window.confirm('파싱 로그를 모두 삭제하시겠습니까?')) return;
-    await fetch('http://localhost:5100/api/parse-logs', { method: 'DELETE' });
+    try { await fetch(`${MIGO_API}/api/parse-logs`, { method: 'DELETE' }); } catch {}
     setParseLogs([]);
     setParseSelectedLog(null);
-  }, []);
+  }, [MIGO_API]);
   // ────────────────────────────────────────────────────────
 
   const fetchMigoData = useCallback(async () => {
@@ -3616,7 +3662,7 @@ export default function PBKWarehouseSystem() {
     } catch {
       setMigoServerOnline(false);
     }
-  }, []);
+  }, [MIGO_API]);
 
   const triggerMigoGR = async (invId) => {
     try {
@@ -3748,6 +3794,7 @@ export default function PBKWarehouseSystem() {
   const syncShaRef = React.useRef(null);
   const lastSyncHashRef = React.useRef(null);
   const fetchGitHubDataRef = React.useRef(null); // 5분 주기 Excel 재체크용
+  const firstSyncRunRef = React.useRef(true); // 초기 로드 시 편집 시각 오기록 방지
   const kpiContentRef = React.useRef(null);
   const [pdfExporting, setPdfExporting] = useState(false);
   const [showKpiUploadGuide, setShowKpiUploadGuide] = useState(false);
@@ -4397,8 +4444,9 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('Delivery Excel fetch skip:', e.message); }
       }
 
-      // ── JSON fallback: 항상 시도 (가벼움, 모바일 안전) ──
-      if (!stockLoaded) {
+      // ── JSON fallback: 로컬 데이터가 전혀 없을 때만 (Excel 파싱 실패한 첫 로드 대비)
+      // 로컬에 파싱된 데이터가 있는데 fallback JSON이 오래된 경우 멀쩡한 데이터를 덮어쓰는 사고 방지
+      if (!stockLoaded && !safeStorage.getItem('pbk_inventory')) {
         try {
           const stockResp = await fetch(`${BASE}/stock_data.json?t=${Date.now()}`);
           if (stockResp.ok) {
@@ -4417,8 +4465,8 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('Stock JSON fetch skip:', e.message); }
       }
 
-      // Q Stock JSON fallback
-      try {
+      // Q Stock JSON fallback (로컬에 없을 때만)
+      if (!safeStorage.getItem('pbk_qstock')) try {
         const qResp = await fetch(`${BASE}/qstock_data.json?t=${Date.now()}`);
         if (qResp.ok) {
           const qJson = await qResp.json();
@@ -4429,7 +4477,7 @@ export default function PBKWarehouseSystem() {
         }
       } catch (e) { console.log('Q-Stock JSON fetch skip:', e.message); }
 
-      if (!poLoaded) {
+      if (!poLoaded && !safeStorage.getItem('pbk_open_po')) {
         try {
           const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
           if (poResp.ok) {
@@ -4494,6 +4542,12 @@ export default function PBKWarehouseSystem() {
   // ──── Debounced 자동 동기화 (5초 디바운스) ────
   useEffect(() => {
     if (!syncReady) return; // 초기 로드 중에는 업로드 방지
+    // 첫 실행(초기 로드 직후)은 편집이 아니므로 로컬 편집 시각을 기록하지 않음
+    if (firstSyncRunRef.current) {
+      firstSyncRunRef.current = false;
+    } else {
+      safeStorage.setItem('pbk_sync_local_ts', String(Date.now()));
+    }
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       uploadDashboardState();
@@ -5202,8 +5256,8 @@ export default function PBKWarehouseSystem() {
   useEffect(() => {
     const savedInventory = safeStorage.getItem('pbk_inventory');
     const savedLastUpdated = safeStorage.getItem('pbk_last_updated');
-    if (savedInventory) {
-      const data = JSON.parse(savedInventory);
+    const data = safeParse(savedInventory, null);
+    if (data) {
       setInventoryData(data);
       processRackSummary(data);
     }
@@ -7285,17 +7339,30 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
   // 🤖 AI 챗봇: 창고 데이터 컨텍스트 빌더
   const buildWarehouseContext = (userMsg) => {
     const today = new Date().toISOString().slice(0, 10);
-    const lines = [`[창고 데이터 현황 - ${today}]`];
+    const lines = [`[창고 데이터 현황 - 오늘: ${today}]`];
+    // 데이터 기준일 — 수동 업데이트 체제라 실시간이 아님을 모델에게 알림
+    if (lastUpdated) lines.push(`재고(Stock) 데이터 기준: ${lastUpdated} — 이 시점의 스냅샷이며 실시간이 아님`);
+    if (openPOLastUpdated) lines.push(`Open PO 데이터 기준: ${openPOLastUpdated}`);
     const inv = Array.isArray(inventoryData) ? inventoryData : [];
     const po = Array.isArray(openPORawItems) ? openPORawItems : [];
     const del = Array.isArray(deliveryData) ? deliveryData : [];
     const qs = Array.isArray(qStockData) ? qStockData : [];
 
+    // 자재 매칭: 자재코드 포함 또는 자재명 키워드(2자 이상) 포함
+    const matchesMaterial = (i) => {
+      if (userMsg.includes(String(i.material))) return true;
+      const desc = (i.description || '').toLowerCase();
+      if (!desc) return false;
+      // 사용자 메시지에서 영문/숫자 단어 추출해 자재명과 비교
+      const words = userMsg.toLowerCase().match(/[a-z0-9]{3,}/g) || [];
+      return words.some(w => desc.includes(w));
+    };
+
     // 1. 재고 요약
     if (inv.length > 0) {
       const totalStock = inv.reduce((s, i) => s + (parseFloat(i.stock) || 0), 0);
       lines.push(`\n[재고] 총 ${inv.length}개 품목, 총 재고 ${totalStock.toLocaleString()} EA`);
-      const mentionedMats = inv.filter(i => userMsg.includes(String(i.material)));
+      const mentionedMats = inv.filter(matchesMaterial).slice(0, 20);
       if (mentionedMats.length > 0) {
         lines.push('검색된 자재 상세:');
         mentionedMats.forEach(i => {
@@ -7307,7 +7374,7 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         });
       }
       const top = [...inv].sort((a, b) => (b.stock || 0) - (a.stock || 0)).slice(0, 15);
-      lines.push('주요 재고 품목 (상위 30):');
+      lines.push('주요 재고 품목 (재고량 상위 15):');
       top.forEach(i => lines.push(`  ${i.material} | ${i.description} | ${i.stock} ${i.unit} | ${i.bin}`));
     }
 
@@ -7332,18 +7399,23 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
       }
     }
 
-    // 3. 납품 예정 + 지연
+    // 3. 납품 예정 + 지연 (부분입고 현황 포함)
     if (del.length > 0 && po.length > 0) {
       const poWithDates = po.map(item => {
         const dMatch = del.find(d => d.poNo === item.poNo && d.material === item.material);
-        return { ...item, deliveryDate: dMatch ? dMatch.deliveryDate : null };
+        return {
+          ...item,
+          deliveryDate: dMatch ? dMatch.deliveryDate : null,
+          receivedQty: dMatch?.receivedQty, orderQty: dMatch?.orderQty, remainQty: dMatch?.remainQty,
+        };
       });
+      const partialInfo = (d) => (d.receivedQty > 0 && d.orderQty > 0) ? ` | 입고: ${d.receivedQty}/${d.orderQty} (잔량 ${d.remainQty ?? d.orderQty - d.receivedQty})` : '';
       const overdue = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < today);
       const upcoming = poWithDates.filter(d => d.deliveryDate && d.deliveryDate >= today);
       lines.push(`\n[납품] 지연: ${overdue.length}건, 예정: ${upcoming.length}건`);
       if (overdue.length > 0) {
         lines.push('납기 지연:');
-        overdue.slice(0, 10).forEach(d => lines.push(`  PO:${d.poNo} | ${d.material} ${d.description} | 납기: ${d.deliveryDate} | ${d.qty} ${d.unit}`));
+        overdue.slice(0, 10).forEach(d => lines.push(`  PO:${d.poNo} | ${d.material} ${d.description} | 납기: ${d.deliveryDate} | ${d.qty} ${d.unit}${partialInfo(d)}`));
       }
       if (upcoming.length > 0) {
         lines.push('납품 예정:');
@@ -7362,8 +7434,8 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         const days = gr ? Math.floor((koNow - gr) / 86400000) : null;
         return { ...i, days };
       });
-      const over7 = withDays.filter(i => i.days >= 7).length;
-      lines.push(`\n[수입검사 대기] ${items.length}건 (7일 이상: ${over7}건)`);
+      const over8 = withDays.filter(i => i.days >= 8).length;
+      lines.push(`\n[수입검사 대기] ${items.length}건 (8일 이상 지연: ${over8}건 — 지연 기준은 8일)`);
       withDays.sort((a, b) => (b.days || 0) - (a.days || 0)).slice(0, 15).forEach(i =>
         lines.push(`  ${i.material} | ${i.description} | ${i.stock} ${i.unit} | 입고일: ${i.grDate} | ${i.days}일 경과`)
       );
@@ -8676,17 +8748,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="text-left text-xs">
                   <p className="text-indigo-200 mb-1">마지막 업데이트</p>
                   {lastUpdated && (
-                    <p title={`${getElapsedTimeDetail(lastUpdated)}\nSAP 추출: 08:20 / 14:00\nGitHub push 후 자동 반영`}>
+                    <p title={`${getElapsedTimeDetail(lastUpdated)}\nSAP ZBIN 수동 다운로드 → SAP_Drop\\zbin 폴더에 저장하면 자동 반영`}>
                       <span className="text-emerald-300 font-bold">Stock:</span> {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {openPOLastUpdated && (
-                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP 추출: 08:25 / 14:05\nGitHub push 후 자동 반영`}>
+                    <p title={`${getElapsedTimeDetail(openPOLastUpdated)}\nSAP ME2N 수동 다운로드 → SAP_Drop\\me2n 폴더에 저장하면 자동 반영`}>
                       <span className="text-amber-300 font-bold">Open PO:</span> {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
                   {deliveryLastUpdated && (
-                    <p title={`${getElapsedTimeDetail(deliveryLastUpdated)}\nSAP 추출: 08:30 / 14:10\nGitHub push 후 자동 반영`}>
+                    <p title={`${getElapsedTimeDetail(deliveryLastUpdated)}\nSAP에서 수동 다운로드 후 업로드`}>
                       <span className="text-teal-300 font-bold">Delivery:</span> {deliveryLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}
                     </p>
                   )}
@@ -8934,6 +9006,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               ...item,
               deliveryDate: bestMatch ? bestMatch.deliveryDate : null,
               supplier: item.supplier || (bestMatch ? bestMatch.supplier : ''),
+              orderQty: bestMatch?.orderQty, receivedQty: bestMatch?.receivedQty, remainQty: bestMatch?.remainQty,
             };
           });
           const todayDeliveries = poWithDates.filter(d => d.deliveryDate === todayStr && d.qty > 0);
@@ -9274,7 +9347,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {/* C3 개선: 업데이트 필요 알림 배너 */}
             {(() => {
               if (!lastUpdated) return null;
-              const lastUpdateDate = new Date(lastUpdated.replace(/\. /g, '-').replace('.', ''));
+              const lastUpdateDate = parseKoreanDate(lastUpdated);
+              if (!lastUpdateDate) return null;
               const hoursSinceUpdate = (new Date() - lastUpdateDate) / (1000 * 60 * 60);
               const needsUpdate = hoursSinceUpdate > 24;
 
@@ -9390,20 +9464,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div className="mt-3 grid grid-cols-2 md:grid-cols-5 xl:grid-cols-6 gap-2">
                     <div className="bg-white rounded-lg p-2.5 border border-emerald-200">
                       <p className="text-[10px] text-emerald-600 font-bold mb-1">ZBIN (Stock)</p>
-                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:20 / 14:00</p>
-                      <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
+                      <p className="text-xs text-slate-700 font-medium">SAP 수동 다운로드</p>
+                      <p className="text-[10px] text-slate-400">SAP_Drop\zbin 폴더 저장 → 자동 반영</p>
                       {lastUpdated && <p className="text-[10px] text-emerald-500 mt-1 font-medium">✅ {lastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-amber-200">
                       <p className="text-[10px] text-amber-600 font-bold mb-1">ME2N (Open PO)</p>
-                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:25 / 14:05</p>
-                      <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
+                      <p className="text-xs text-slate-700 font-medium">SAP 수동 다운로드</p>
+                      <p className="text-[10px] text-slate-400">SAP_Drop\me2n 폴더 저장 → 자동 반영</p>
                       {openPOLastUpdated && <p className="text-[10px] text-amber-500 mt-1 font-medium">✅ {openPOLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-teal-200">
                       <p className="text-[10px] text-teal-600 font-bold mb-1">ME2N (Delivery)</p>
-                      <p className="text-xs text-slate-700 font-medium">SAP 추출: 08:30 / 14:10</p>
-                      <p className="text-[10px] text-slate-400">매일 2회 → GitHub push 후 자동 반영</p>
+                      <p className="text-xs text-slate-700 font-medium">SAP 수동 다운로드</p>
+                      <p className="text-[10px] text-slate-400">수동 업로드 시 반영</p>
                       {deliveryLastUpdated && <p className="text-[10px] text-teal-500 mt-1 font-medium">✅ {deliveryLastUpdated.replace(/:\d{2}$/, '').replace(/^20/, '')}</p>}
                     </div>
                     <div className="bg-white rounded-lg p-2.5 border border-blue-200">
@@ -9453,8 +9527,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   {lastUpdated && (
                     <span className={`text-xs px-2 py-1 rounded ${
                       (() => {
-                        const lastUpdateDate = new Date(lastUpdated.replace(/\. /g, '-').replace('.', ''));
-                        const hoursSinceUpdate = (new Date() - lastUpdateDate) / (1000 * 60 * 60);
+                        const lastUpdateDate = parseKoreanDate(lastUpdated);
+                        const hoursSinceUpdate = lastUpdateDate ? (new Date() - lastUpdateDate) / (1000 * 60 * 60) : Infinity;
                         return hoursSinceUpdate > 24 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700';
                       })()
                     }`}>
@@ -10429,7 +10503,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           >
                             <span className="font-mono font-bold text-gray-900 shrink-0">{s.material}</span>
                             <span className="text-sm text-gray-500 truncate">{s.description}</span>
-                            <span className="text-xs text-indigo-500 shrink-0 ml-auto">{s.bin}</span>
+                            <span className="text-xs text-indigo-500 shrink-0 ml-auto">
+                              {s.bin}{Array.isArray(s.allBins) && new Set(s.allBins).size > 1 ? ` 외 ${new Set(s.allBins).size - 1}` : ''}
+                            </span>
                           </button>
                         ))}
                       </div>
@@ -10464,12 +10540,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 );
               }
 
-              // Bin별 그룹핑
+              // Bin별 그룹핑 — 여러 Bin에 나눠 보관된 자재는 모든 Bin에 표시
               const binGroups = {};
               matches.forEach(item => {
-                const bin = item.bin || 'Unknown';
-                if (!binGroups[bin]) binGroups[bin] = [];
-                binGroups[bin].push(item);
+                const bins = (Array.isArray(item.allBins) && item.allBins.length > 0)
+                  ? [...new Set(item.allBins)]
+                  : [item.bin || 'Unknown'];
+                bins.forEach(bin => {
+                  if (!binGroups[bin]) binGroups[bin] = [];
+                  binGroups[bin].push(item);
+                });
               });
 
               // 각 Bin의 위치 정보 매핑
@@ -10504,6 +10584,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <span className="text-sm px-3 py-1 bg-amber-100 text-amber-700 rounded-full font-medium">
                         총 {matches.reduce((s,i) => s + (i.stock||0), 0).toLocaleString()} EA
                       </span>
+                      {matches.length === 1 && (
+                        <button
+                          onClick={() => setLocateQrMaterial(matches[0].material)}
+                          className="text-sm px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full font-medium hover:bg-emerald-200 flex items-center gap-1 ml-auto"
+                          title="스캔하면 모바일에서 이 자재 위치가 바로 열립니다"
+                        >
+                          <Smartphone className="w-3.5 h-3.5" /> 이 자재 QR
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -12452,6 +12541,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               ...item,
               deliveryDate: bestMatch ? bestMatch.deliveryDate : null,
               supplier: item.supplier || (bestMatch ? bestMatch.supplier : ''),
+              orderQty: bestMatch?.orderQty, receivedQty: bestMatch?.receivedQty, remainQty: bestMatch?.remainQty,
             };
           });
 
@@ -12720,7 +12810,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
                           <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
                           <td className="py-1.5 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
-                          <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                          <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">
+                            {d.qty} {d.unit}
+                            {d.receivedQty > 0 && d.orderQty > 0 && (
+                              <span className="block text-[10px] font-normal text-emerald-600">입고 {d.receivedQty}/{d.orderQty}</span>
+                            )}
+                          </td>
                           <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">{stock > 0 ? `${stock} EA` : '-'}</td>
                         </tr>
                       );
@@ -19461,6 +19556,28 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           </div>
         </div>
       )}
+
+      {/* 자재별 QR 모달 — location.html?m= 딥링크 */}
+      {locateQrMaterial && (() => {
+        const qrUrl = `https://wjdwlals9545-arch.github.io/pbk-warehouse/location.html?m=${encodeURIComponent(locateQrMaterial)}`;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setLocateQrMaterial(null)}>
+            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm m-4 text-center" onClick={e => e.stopPropagation()}>
+              <h3 className="text-lg font-bold mb-2">📱 자재 위치 QR — {locateQrMaterial}</h3>
+              <p className="text-sm text-gray-500 mb-4">스캔하면 모바일에서 이 자재의 위치가 바로 표시됩니다.</p>
+              <div className="flex justify-center mb-4">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`}
+                  alt={`${locateQrMaterial} 위치 QR`}
+                  className="w-48 h-48 rounded-lg border"
+                />
+              </div>
+              <p className="text-xs text-gray-400 mb-3 break-all">{qrUrl}</p>
+              <button onClick={() => setLocateQrMaterial(null)} className="w-full px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 text-sm">닫기</button>
+            </div>
+          </div>
+        );
+      })()}
 
       {showLoginModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowLoginModal(false)}>
