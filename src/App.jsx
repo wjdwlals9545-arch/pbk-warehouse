@@ -2439,6 +2439,71 @@ export default function PBKWarehouseSystem() {
     } catch (err) { console.error(`GitHub upload error (${label}):`, err); }
   };
 
+  // ──── 폰 스캔(kitting.html) 이벤트 병합 ────
+  // kitting_scan.json의 start/end 이벤트를 Kitting 현황 + 불출 Cycle에 반영.
+  // 적용한 이벤트 id는 pbk_scan_applied에 기록 (멱등). 주문이 아직 없는 이벤트는
+  // 미적용으로 남겨서 CSV가 나중에 업로드되면 다음 주기에 자동 병합된다.
+  const applyKittingScanEvents = async () => {
+    try {
+      const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kitting_scan.json?t=${Date.now()}`);
+      if (!resp.ok) return;
+      const json = await resp.json();
+      const events = (json && Array.isArray(json.events)) ? json.events : [];
+      if (!events.length) return;
+
+      const applied = new Set(safeParse(safeStorage.getItem('pbk_scan_applied'), []));
+      const currentKitting = safeParse(safeStorage.getItem('pbk_kitting_data'), []);
+      const orderSet = new Set(currentKitting.map(k => String(k.productionOrder)));
+      const applicable = events.filter(e => e && e.id && !applied.has(e.id) && orderSet.has(String(e.order)));
+      if (!applicable.length) return;
+
+      // 주문별 start/end 정리 (같은 주문에 여러 이벤트면 마지막 것 사용)
+      const byOrder = {};
+      applicable.forEach(e => {
+        if (!byOrder[e.order]) byOrder[e.order] = {};
+        byOrder[e.order][e.type] = e;
+      });
+
+      setKittingData(prev => prev.map(k => {
+        const ev = byOrder[k.productionOrder];
+        if (!ev || k.status === 'completed') return k;
+        let u = k;
+        if (ev.start) {
+          u = { ...u, startedAt: ev.start.at, status: u.status === 'waiting' ? 'in-progress' : u.status };
+        }
+        if (ev.end) {
+          const endDate = new Date(ev.end.at);
+          const startRef = (ev.start && ev.start.at) || u.startedAt;
+          u = {
+            ...u,
+            status: 'completed',
+            completedAt: endDate.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''),
+            leadTimeDays: startRef ? getBusinessDays(new Date(startRef), endDate) : 0,
+          };
+        }
+        return u;
+      }));
+
+      // 완료 이벤트 → 불출 Cycle도 완료 처리 (completeKitting과 동일 규칙)
+      setPickCycles(prev => prev.map(p => {
+        const key = p.productionOrder || p.orderId;
+        const ev = byOrder[key];
+        if (ev && ev.end && p.status !== 'completed') {
+          const cycleMin = p.startTime ? calculateWorkingMinutes(p.startTime, ev.end.at) : 0;
+          return { ...p, completed: ev.end.at.slice(0, 16).replace('T', ' '), cycleMin, status: 'completed' };
+        }
+        return p;
+      }));
+
+      const newApplied = [...applied, ...applicable.map(e => e.id)].slice(-2000);
+      safeStorage.setItem('pbk_scan_applied', JSON.stringify(newApplied));
+      const startCnt = applicable.filter(e => e.type === 'start').length;
+      const endCnt = applicable.filter(e => e.type === 'end').length;
+      console.log(`[KitScan] 폰 스캔 이벤트 병합: 시작 ${startCnt}건, 완료 ${endCnt}건`);
+      showToast(`📱 폰 스캔 반영 — 시작 ${startCnt}건, 완료 ${endCnt}건`, 'success');
+    } catch (e) { console.log('[KitScan] merge skip:', e.message); }
+  };
+
   // ──── Dashboard State GitHub 동기화 ────
 
   // GitHub에서 dashboard_state.json 로드 → localStorage + React state 업데이트
@@ -4512,6 +4577,9 @@ export default function PBKWarehouseSystem() {
           }
         } catch (e) { console.log('Delivery JSON fetch skip:', e.message); }
       }
+
+      // 폰 스캔 이벤트 병합 (kitting.html → kitting_scan.json)
+      await applyKittingScanEvents();
     };
 
     // 먼저 대시보드 상태 로드 → 그 다음 Stock/OpenPO 로드
@@ -6538,6 +6606,17 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         if (newKittingOrders.length > 0) {
           setKittingData(prev => [...prev, ...newKittingOrders]);
         }
+
+        // 폰 스캔(kitting.html) 매칭용 슬림 주문 목록 게시
+        const allKitting = [...kittingData, ...newKittingOrders];
+        uploadDataToGitHub('public/data/kitting_orders.json', {
+          data: allKitting.map(k => ({
+            order: k.productionOrder, model: k.model, materialNum: k.materialNum,
+            desc: k.materialDesc, basicStartDate: k.basicStartDate, worker: k.worker, status: k.status
+          })),
+          updated: new Date().toLocaleString('ko-KR'),
+          count: allKitting.length
+        }, 'Kitting 주문목록');
 
         alert(`✅ Order 업로드 완료!\n\n📦 불출 Cycle: ${newPickOrders.length}개 추가\n📋 Kitting 현황: ${newKittingOrders.length}개 추가 (자동 시작됨)`);
       } catch (error) {
