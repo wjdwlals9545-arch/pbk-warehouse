@@ -6592,8 +6592,20 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
           }
         }
 
+        // 폰 스캔(kitting.html) 매칭용 슬림 주문 목록 게시
+        // 새 주문이 없어도(같은 CSV 재업로드) 게시는 수행 — 폰 목록 갱신 용도
+        const allKitting = [...kittingData, ...newKittingOrders];
+        uploadDataToGitHub('public/data/kitting_orders.json', {
+          data: allKitting.map(k => ({
+            order: k.productionOrder, model: k.model, materialNum: k.materialNum,
+            desc: k.materialDesc, basicStartDate: k.basicStartDate, worker: k.worker, status: k.status
+          })),
+          updated: new Date().toLocaleString('ko-KR'),
+          count: allKitting.length
+        }, 'Kitting 주문목록');
+
         if (newPickOrders.length === 0 && newKittingOrders.length === 0) {
-          alert('⚠️ 추가할 새로운 Order가 없습니다.\n(이미 등록된 Order이거나 유효하지 않은 데이터)');
+          alert('⚠️ 추가할 새로운 Order가 없습니다.\n(이미 등록된 Order — 폰 스캔용 주문 목록은 다시 게시했습니다)');
           return;
         }
 
@@ -6606,17 +6618,6 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         if (newKittingOrders.length > 0) {
           setKittingData(prev => [...prev, ...newKittingOrders]);
         }
-
-        // 폰 스캔(kitting.html) 매칭용 슬림 주문 목록 게시
-        const allKitting = [...kittingData, ...newKittingOrders];
-        uploadDataToGitHub('public/data/kitting_orders.json', {
-          data: allKitting.map(k => ({
-            order: k.productionOrder, model: k.model, materialNum: k.materialNum,
-            desc: k.materialDesc, basicStartDate: k.basicStartDate, worker: k.worker, status: k.status
-          })),
-          updated: new Date().toLocaleString('ko-KR'),
-          count: allKitting.length
-        }, 'Kitting 주문목록');
 
         alert(`✅ Order 업로드 완료!\n\n📦 불출 Cycle: ${newPickOrders.length}개 추가\n📋 Kitting 현황: ${newKittingOrders.length}개 추가 (자동 시작됨)`);
       } catch (error) {
