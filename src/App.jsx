@@ -40,7 +40,11 @@ const safeStorage = (() => {
       getItem: (k) => localStorage.getItem(k),
       setItem: (k, v) => {
         try { localStorage.setItem(k, v); }
-        catch (e) { console.warn(`[safeStorage] setItem 실패 (${k}, ${String(v).length}자):`, e.name); }
+        catch (e) {
+          console.warn(`[safeStorage] setItem 실패 (${k}, ${String(v).length}자):`, e.name);
+          // 조용한 실패는 데이터 소실로 이어짐 → 화면 경고용 이벤트 발행
+          try { window.dispatchEvent(new CustomEvent('pbk-storage-full', { detail: { key: k } })); } catch {}
+        }
       },
       removeItem: (k) => localStorage.removeItem(k),
     };
@@ -2041,9 +2045,9 @@ export default function PBKWarehouseSystem() {
     return safeStorage.getItem('pbk_open_po_updated') || null;
   });
   // Open PO 원본 행별 데이터 (PO별 개별 항목)
-  const [openPORawItems, setOpenPORawItems] = useState(() => {
-    try { const s = safeStorage.getItem('pbk_open_po_raw'); return s ? JSON.parse(s) : []; } catch { return []; }
-  });
+  // localStorage에 저장하지 않음 — MB급 대용량이라 5MB 쿼터를 잠식해 다른 데이터(키팅 등)
+  // 저장 실패를 유발했음. 매 로드 시 Excel에서 재파싱한다.
+  const [openPORawItems, setOpenPORawItems] = useState([]);
   const [showOpenPOModal, setShowOpenPOModal] = useState(false);
   const [openPOError, setOpenPOError] = useState(null);
   
@@ -2556,9 +2560,11 @@ export default function PBKWarehouseSystem() {
 
       // 사용자 입력 데이터(투두/키팅/KPI 등): 이 PC의 마지막 편집이 원격 스냅샷보다 최신이면 덮어쓰지 않음
       // (마스터 PC가 멈춰 원격 상태가 오래된 경우, 5분 동기화가 최근 입력을 롤백하는 것 방지)
+      // 추가 안전장치: pbk_sync_local_ts가 저장 실패(쿼터 초과 등)로 없더라도,
+      // 로컬 Excel이 원격 스냅샷보다 최신이면 그 스냅샷은 낡은 것이므로 사용자 키도 덮어쓰지 않음
       const localEditTs = parseInt(safeStorage.getItem('pbk_sync_local_ts') || '0');
-      const skipUserKeys = localEditTs > remoteTs;
-      if (skipUserKeys) console.log(`[DashSync] 로컬 편집이 더 최신 (${localEditTs} > ${remoteTs}) → 사용자 입력 키 건너뜀`);
+      const skipUserKeys = localEditTs > remoteTs || skipExcelKeys;
+      if (skipUserKeys) console.log(`[DashSync] 로컬이 더 최신 (edit=${localEditTs}, excel=${localExcelEpoch} vs remote=${remoteTs}) → 사용자 입력 키 건너뜀`);
 
       // setState 매핑
       const setterMap = {
@@ -3860,6 +3866,7 @@ export default function PBKWarehouseSystem() {
   const lastSyncHashRef = React.useRef(null);
   const fetchGitHubDataRef = React.useRef(null); // 5분 주기 Excel 재체크용
   const firstSyncRunRef = React.useRef(true); // 초기 로드 시 편집 시각 오기록 방지
+  const storageWarnRef = React.useRef(0); // 저장공간 부족 경고 스로틀
   const kpiContentRef = React.useRef(null);
   const [kpiReportLoading, setKpiReportLoading] = useState(false); // AI 월간 보고서 (새 탭) 생성 중
   const [pdfExporting, setPdfExporting] = useState(false);
@@ -4456,7 +4463,10 @@ export default function PBKWarehouseSystem() {
           const poInfo = await getFileCommitInfo('public/data/OpenPOData_latest.xlsx');
           const savedPoEpoch = parseInt(safeStorage.getItem('pbk_po_epoch') || '0');
           const poNewer = poInfo.epoch > savedPoEpoch;
-          const needRawItems = !safeStorage.getItem('pbk_open_po_raw');
+          // 과거 버전이 저장해둔 대용량 원본 블롭 제거 (쿼터 확보)
+          safeStorage.removeItem('pbk_open_po_raw');
+          // rawItems는 localStorage에 안 두므로 페이지 로드마다 재파싱 필요
+          const needRawItems = true;
           const forcePoReparse = parseVersionChanged || needRawItems;
           console.log(`[OpenPO] epoch비교: GitHub=${poInfo.epoch}(${poInfo.display}), saved=${savedPoEpoch}, newer=${poNewer}, forceReparse=${forcePoReparse}, hasLocal=${!!safeStorage.getItem('pbk_open_po')}`);
           if (poNewer || forcePoReparse || !safeStorage.getItem('pbk_open_po')) try {
@@ -4467,8 +4477,7 @@ export default function PBKWarehouseSystem() {
               const poResult = parseOpenPOExcel(buf);
               if (poResult.aggregated.length > 0) {
                 setOpenPOData(poResult.aggregated);
-                setOpenPORawItems(poResult.rawItems);
-                safeStorage.setItem('pbk_open_po_raw', JSON.stringify(poResult.rawItems));
+                setOpenPORawItems(poResult.rawItems); // 메모리만 (localStorage 저장 안 함)
                 const ts = poInfo.display || new Date().toLocaleString('ko-KR');
                 setOpenPOLastUpdated(ts);
                 safeStorage.setItem('pbk_open_po', JSON.stringify(poResult.aggregated));
@@ -4606,6 +4615,18 @@ export default function PBKWarehouseSystem() {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // ──── 저장공간 부족 경고 (safeStorage 저장 실패 시) ────
+  useEffect(() => {
+    const onStorageFull = (e) => {
+      const now = Date.now();
+      if (now - storageWarnRef.current < 60000) return; // 1분에 1번만
+      storageWarnRef.current = now;
+      showToast(`⚠️ 브라우저 저장공간 부족 — 데이터(${e.detail?.key || ''})가 저장되지 않았습니다. 새로고침 시 유실될 수 있습니다!`, 'error');
+    };
+    window.addEventListener('pbk-storage-full', onStorageFull);
+    return () => window.removeEventListener('pbk-storage-full', onStorageFull);
   }, []);
 
   // ──── Debounced 자동 동기화 (5초 디바운스) ────
@@ -5595,10 +5616,9 @@ export default function PBKWarehouseSystem() {
         throw new Error('납품 예정인 자재가 없습니다. (Still to be delivered > 0)');
       }
 
-      // 저장
+      // 저장 (rawItems는 대용량이라 메모리만 — localStorage 저장 안 함)
       setOpenPOData(openPOList);
       setOpenPORawItems(rawItems);
-      safeStorage.setItem('pbk_open_po_raw', JSON.stringify(rawItems));
       const now = new Date().toLocaleString('ko-KR');
       setOpenPOLastUpdated(now);
 
