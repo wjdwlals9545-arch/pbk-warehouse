@@ -332,9 +332,15 @@ render();
 flushQueue(false);
 setInterval(loadOrders, 5*60*1000);
 
-// mobile.html 통합 셸에 iframe으로 임베드될 때: 하단 탭바에 안 가리게 여백 확보
+// mobile.html 통합 셸에 iframe으로 임베드될 때:
+// 하단 탭바 여백 + 콘텐츠 높이를 부모에게 보고 (iOS는 iframe 내부 스크롤이 안 되므로 부모가 스크롤)
 if (new URLSearchParams(location.search).get('embed')) {
   document.body.style.paddingBottom = '72px';
+  var reportH = function(){
+    try{ parent.postMessage({pbkH: document.documentElement.scrollHeight}, '*'); }catch(e){}
+  };
+  window.addEventListener('load', reportH);
+  setInterval(reportH, 700);
 }
 </script>
 </body>
