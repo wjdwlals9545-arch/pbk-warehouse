@@ -3861,6 +3861,8 @@ export default function PBKWarehouseSystem() {
   const fetchGitHubDataRef = React.useRef(null); // 5분 주기 Excel 재체크용
   const firstSyncRunRef = React.useRef(true); // 초기 로드 시 편집 시각 오기록 방지
   const kpiContentRef = React.useRef(null);
+  const [kpiReport, setKpiReport] = useState(null);            // AI 월간 보고서 {month, metrics, aiText, generatedAt}
+  const [kpiReportLoading, setKpiReportLoading] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
   const [showKpiUploadGuide, setShowKpiUploadGuide] = useState(false);
 
@@ -7544,7 +7546,133 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
     return lines.join('\n');
   };
 
-  // 🤖 AI 챗봇: 메시지 전송
+  // ──── 🤖 AI 에이전트 도구 (읽기 전용) ────
+  // 챗봇이 스스로 골라 호출하는 조회 함수들. 숫자는 전부 코드가 계산한다.
+
+  // 자재별 가용 재고 (창고 재고 - 수입검사 대기)
+  const getAvailableStock = (material) => {
+    const inv = (Array.isArray(inventoryData) ? inventoryData : []).find(i => String(i.material) === String(material));
+    const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
+    const q = (Array.isArray(qStockData) ? qStockData : []).filter(x => String(x.material) === String(material))
+      .reduce((s, x) => s + (x.stock || 0), 0);
+    return { stock, qStock: q, available: stock - q, bin: inv?.bin || null, allBins: inv?.allBins || [], description: inv?.description || null, unit: inv?.unit || 'EA' };
+  };
+
+  const chatToolImpl = {
+    search_inventory: ({ query }) => {
+      const q = String(query || '').toUpperCase();
+      const inv = Array.isArray(inventoryData) ? inventoryData : [];
+      const hits = inv.filter(i =>
+        String(i.material).toUpperCase().includes(q) || (i.description || '').toUpperCase().includes(q)
+      ).slice(0, 30).map(i => {
+        const a = getAvailableStock(i.material);
+        return { material: i.material, description: i.description, stock: a.stock, qStock: a.qStock, available: a.available, unit: i.unit, bin: i.bin, allBins: [...new Set(i.allBins || [])] };
+      });
+      return { count: hits.length, items: hits, note: hits.length === 30 ? '30건까지만 표시' : undefined };
+    },
+    get_bom: ({ model }) => {
+      const bomSrc = customBomData && customBomData[model];
+      if (!Array.isArray(bomSrc) || bomSrc.length === 0) {
+        return { error: `${model} BOM 없음`, availableModels: customBomData ? Object.keys(customBomData) : [] };
+      }
+      return { model, parts: bomSrc.map(p => ({ material: p.material, description: p.description || p.desc, quantityPerUnit: p.quantity })) };
+    },
+    get_open_po: ({ material }) => {
+      let po = Array.isArray(openPORawItems) ? openPORawItems : [];
+      if (material) po = po.filter(i => String(i.material) === String(material));
+      return {
+        count: po.length,
+        totalQty: po.reduce((s, i) => s + (i.qty || 0), 0),
+        items: po.slice(0, 40).map(i => ({ poNo: i.poNo, material: i.material, description: i.description, qty: i.qty, unit: i.unit, supplier: i.supplier, unitPrice: i.unitPrice || null, currency: i.currency || null }))
+      };
+    },
+    get_kitting_status: ({ month, status }) => {
+      let ks = Array.isArray(kittingData) ? kittingData : [];
+      if (month) ks = ks.filter(k => (k.basicStartDate || '').startsWith(month) || (k.startedAt || '').startsWith(month));
+      if (status) ks = ks.filter(k => k.status === status);
+      const completed = ks.filter(k => k.status === 'completed' && k.leadTimeDays != null && k.leadTimeDays >= 0);
+      return {
+        count: ks.length,
+        byStatus: { waiting: ks.filter(k => k.status === 'waiting').length, inProgress: ks.filter(k => k.status === 'in-progress').length, completed: ks.filter(k => k.status === 'completed').length },
+        avgLeadTimeDays: completed.length ? +(completed.reduce((s, k) => s + k.leadTimeDays, 0) / completed.length).toFixed(2) : null,
+        records: ks.slice(-40).map(k => ({ order: k.productionOrder, model: k.model, worker: k.worker, status: k.status, basicStartDate: k.basicStartDate, startedAt: k.startedAt, completedAt: k.completedAt, leadTimeDays: k.leadTimeDays }))
+      };
+    },
+    get_qstock: () => {
+      const koNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+      const items = (Array.isArray(qStockData) ? qStockData : []).filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'))
+        .map(i => {
+          const gr = i.grDate ? new Date(i.grDate) : null;
+          return { material: i.material, description: i.description, stock: i.stock, unit: i.unit, bin: i.bin, grDate: i.grDate, daysElapsed: gr ? Math.floor((koNow - gr) / 86400000) : null };
+        }).sort((a, b) => (b.daysElapsed || 0) - (a.daysElapsed || 0));
+      return { count: items.length, over8Days: items.filter(i => i.daysElapsed >= 8).length, note: '지연 기준 8일', items: items.slice(0, 30) };
+    },
+    get_delivery_schedule: ({ days }) => {
+      const today = new Date().toISOString().slice(0, 10);
+      const horizon = new Date(Date.now() + (days || 14) * 86400000).toISOString().slice(0, 10);
+      const po = Array.isArray(openPORawItems) ? openPORawItems : [];
+      const del = Array.isArray(deliveryData) ? deliveryData : [];
+      const withDates = po.map(item => {
+        const d = del.find(x => x.poNo === item.poNo && x.material === item.material);
+        return { poNo: item.poNo, material: item.material, description: item.description, qty: item.qty, unit: item.unit, supplier: item.supplier, deliveryDate: d?.deliveryDate || null, receivedQty: d?.receivedQty, orderQty: d?.orderQty };
+      }).filter(x => x.deliveryDate);
+      return {
+        overdue: withDates.filter(x => x.deliveryDate < today).slice(0, 25),
+        upcoming: withDates.filter(x => x.deliveryDate >= today && x.deliveryDate <= horizon).sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate)).slice(0, 25)
+      };
+    },
+    calc_kitting_feasibility: ({ model, qty }) => {
+      const units = Math.max(1, parseInt(qty) || 1);
+      const bomSrc = customBomData && customBomData[model];
+      if (!Array.isArray(bomSrc) || bomSrc.length === 0) {
+        return { error: `${model} BOM 없음`, availableModels: customBomData ? Object.keys(customBomData) : [] };
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      const del = Array.isArray(deliveryData) ? deliveryData : [];
+      const parts = bomSrc.map(p => {
+        const need = (p.quantity || 0) * units;
+        const a = getAvailableStock(p.material);
+        const shortage = Math.max(0, need - a.available);
+        let incoming = null;
+        if (shortage > 0) {
+          const pos = (Array.isArray(openPORawItems) ? openPORawItems : []).filter(i => String(i.material) === String(p.material));
+          incoming = pos.map(i => {
+            const d = del.find(x => x.poNo === i.poNo && x.material === i.material);
+            return { poNo: i.poNo, qty: i.qty, deliveryDate: d?.deliveryDate || null };
+          });
+        }
+        return { material: p.material, description: p.description || p.desc, needed: need, available: a.available, stock: a.stock, inInspection: a.qStock, shortage, incomingPO: incoming };
+      });
+      const shortParts = parts.filter(p => p.shortage > 0);
+      const maxUnits = Math.min(...bomSrc.map(p => {
+        const a = getAvailableStock(p.material);
+        return p.quantity > 0 ? Math.floor(a.available / p.quantity) : Infinity;
+      }));
+      return { model, requestedQty: units, feasible: shortParts.length === 0, maxPossibleUnits: maxUnits === Infinity ? 0 : maxUnits, shortParts, allParts: parts, note: `가용 = 창고재고 - 수입검사대기, 기준일 ${today}` };
+    },
+  };
+
+  const CHAT_TOOLS = [
+    { name: 'search_inventory', description: '자재 재고 검색. 자재코드 또는 자재명 키워드로 검색해 재고량/가용량/위치를 반환.', input_schema: { type: 'object', properties: { query: { type: 'string', description: '자재코드 또는 자재명 키워드' } }, required: ['query'] } },
+    { name: 'get_bom', description: '모델의 BOM(자재 구성표) 조회. 모델 1대 생산에 필요한 자재와 수량.', input_schema: { type: 'object', properties: { model: { type: 'string', description: '모델명 (예: RSC16, RSC48, CSC48, CSC16, FSC16, HSM3.0)' } }, required: ['model'] } },
+    { name: 'get_open_po', description: '미입고 발주(Open PO) 조회. material을 주면 해당 자재만, 없으면 전체 요약.', input_schema: { type: 'object', properties: { material: { type: 'string', description: '자재코드 (선택)' } } } },
+    { name: 'get_kitting_status', description: '키팅(자재 불출) 현황 조회. 상태별 건수, 평균 리드타임, 최근 기록.', input_schema: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM (선택)' }, status: { type: 'string', enum: ['waiting', 'in-progress', 'completed'], description: '상태 필터 (선택)' } } } },
+    { name: 'get_qstock', description: '수입검사 대기(Q-Stock) 현황. 경과일 포함, 지연 기준 8일.', input_schema: { type: 'object', properties: {} } },
+    { name: 'get_delivery_schedule', description: '납품 일정 조회. 납기 지연 목록과 향후 예정 목록.', input_schema: { type: 'object', properties: { days: { type: 'number', description: '향후 조회 기간(일), 기본 14' } } } },
+    { name: 'calc_kitting_feasibility', description: '특정 모델을 지정 수량만큼 키팅(생산)할 수 있는지 계산. BOM 전개 → 가용재고 대조 → 부족 자재와 해당 자재의 입고 예정(PO)까지 반환. "X대 가능?" 질문에 사용.', input_schema: { type: 'object', properties: { model: { type: 'string' }, qty: { type: 'number', description: '수량(대)' } }, required: ['model', 'qty'] } },
+  ];
+
+  const CHAT_TOOL_LABELS = {
+    search_inventory: (i) => `🔍 재고 검색: ${i.query}`,
+    get_bom: (i) => `📋 BOM 조회: ${i.model}`,
+    get_open_po: (i) => `📦 Open PO 조회${i.material ? ': ' + i.material : ''}`,
+    get_kitting_status: (i) => `⏱️ 키팅 현황 조회${i.month ? ': ' + i.month : ''}`,
+    get_qstock: () => '🔬 수입검사 대기 조회',
+    get_delivery_schedule: () => '🚚 납품 일정 조회',
+    calc_kitting_feasibility: (i) => `🧮 키팅 가용성 계산: ${i.model} ${i.qty}대`,
+  };
+
+  // 🤖 AI 챗봇: 에이전트 루프 (도구를 스스로 골라 조회 후 답변)
   const sendChatMessage = async (userMessage) => {
     if (!userMessage.trim()) return;
     const apiKey = safeStorage.getItem('pbk_anthropic_key');
@@ -7560,18 +7688,111 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
     setChatInput('');
     setChatLoading(true);
 
+    const systemPrompt = `당신은 PBK 창고 관리 AI 어시스턴트입니다. 제공된 도구로 실제 데이터를 조회한 뒤 답변합니다.
+규칙:
+- 숫자가 필요한 질문은 반드시 도구로 확인 후 답할 것. 추측 금지.
+- "생산/키팅 가능?" 질문은 calc_kitting_feasibility 사용.
+- 데이터 기준: Stock ${lastUpdated || '미확인'}, Open PO ${openPOLastUpdated || '미확인'} — 실시간이 아닌 스냅샷임을 필요시 언급.
+- 간결한 한국어. 숫자와 단위 정확히. 데이터에 없으면 "확인할 수 없습니다"라고 답할 것.`;
+
     try {
-      const context = buildWarehouseContext(userMessage);
-      const systemPrompt = `당신은 PBK 창고 관리 AI 어시스턴트입니다. 아래 실시간 창고 데이터를 기반으로 질문에 답변합니다.
-간결하고 정확하게 한국어로 답변하세요. 숫자와 단위를 정확히 사용하세요.
-데이터에 없는 정보는 "현재 데이터에서 확인할 수 없습니다"라고 답하세요.
+      const history = chatMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content).slice(-6)
+        .map(m => ({ role: m.role, content: m.content }));
+      const messages = [...history, { role: 'user', content: userMessage }];
 
-${context}`;
+      for (let turn = 0; turn < 8; turn++) {
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-5',
+            max_tokens: 1500,
+            system: systemPrompt,
+            tools: CHAT_TOOLS,
+            messages
+          })
+        });
 
-      const messages = [
-        ...chatMessages.filter(m => m.role !== 'system').slice(-6),
-        { role: 'user', content: userMessage }
-      ];
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.error?.message || `API 오류 (${resp.status})`);
+        }
+        const data = await resp.json();
+
+        if (data.stop_reason === 'tool_use') {
+          messages.push({ role: 'assistant', content: data.content });
+          const results = [];
+          for (const block of data.content) {
+            if (block.type !== 'tool_use') continue;
+            const label = CHAT_TOOL_LABELS[block.name] ? CHAT_TOOL_LABELS[block.name](block.input || {}) : `🔧 ${block.name}`;
+            setChatMessages(prev => [...prev, { role: 'tool', content: label }]);
+            let result;
+            try { result = chatToolImpl[block.name] ? chatToolImpl[block.name](block.input || {}) : { error: '알 수 없는 도구' }; }
+            catch (e) { result = { error: e.message }; }
+            results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) });
+          }
+          messages.push({ role: 'user', content: results });
+          continue;
+        }
+
+        // 최종 텍스트 답변
+        const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n') || '(응답 없음)';
+        setChatMessages(prev => [...prev, { role: 'assistant', content: text }]);
+        break;
+      }
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'assistant', content: `❌ 오류: ${e.message}` }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  // 📄 KPI 월간 보고서 생성 — 숫자는 코드가 집계, AI는 해석/코멘트만 작성
+  const generateKpiReport = async () => {
+    const apiKey = safeStorage.getItem('pbk_anthropic_key');
+    if (!apiKey) { showToast('⚠️ Anthropic API 키 미설정 (챗봇과 동일한 키 사용)', 'error'); return; }
+    if (kpiReportLoading) return;
+    setKpiReportLoading(true);
+    try {
+      const now = new Date();
+      const ym = now.toISOString().slice(0, 7);
+      const prevYm = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7);
+
+      const kit = chatToolImpl.get_kitting_status({ month: ym });
+      const kitPrev = chatToolImpl.get_kitting_status({ month: prevYm });
+      const qs = chatToolImpl.get_qstock();
+      const dl = chatToolImpl.get_delivery_schedule({ days: 14 });
+      const cycleArr = (Array.isArray(pickCycles) ? pickCycles : [])
+        .filter(p => p.status === 'completed' && p.cycleMin && (p.completed || '').startsWith(ym)).map(p => p.cycleMin);
+
+      const metrics = {
+        기준월: ym,
+        데이터기준: { Stock: lastUpdated || null, OpenPO: openPOLastUpdated || null },
+        GR취소: {
+          당월_취소건수: kpiData.grCancel?.[ym] ?? null,
+          당월_GR수량: kpiData.grCancelQty?.[ym] ?? null,
+          전월_취소건수: kpiData.grCancel?.[prevYm] ?? null,
+          목표: '월 2건 이하'
+        },
+        재고조정률_pct: { 당월: kpiData.inventoryAdjust?.[ym] ?? null, 전월: kpiData.inventoryAdjust?.[prevYm] ?? null, 목표: '0.064% 이하' },
+        키팅: {
+          당월: { 건수: kit.count, 상태별: kit.byStatus, 평균리드타임_일: kit.avgLeadTimeDays, 목표: '3일 이내' },
+          전월: { 건수: kitPrev.count, 평균리드타임_일: kitPrev.avgLeadTimeDays }
+        },
+        키팅_평균사이클타임_분: cycleArr.length ? +(cycleArr.reduce((a, b) => a + b, 0) / cycleArr.length).toFixed(1) : null,
+        수입검사대기: { 건수: qs.count, '8일이상_지연': qs.over8Days, 최장경과_상위5: qs.items.slice(0, 5).map(i => ({ 자재: i.material, 품명: i.description, 경과일: i.daysElapsed })) },
+        납품: {
+          지연_건수: dl.overdue.length,
+          지연_상위8: dl.overdue.slice(0, 8).map(d => ({ PO: d.poNo, 자재: d.material, 납기: d.deliveryDate, 수량: d.qty, 공급사: d.supplier })),
+          '2주내_예정건수': dl.upcoming.length
+        },
+        재고_품목수: Array.isArray(inventoryData) ? inventoryData.length : 0,
+      };
 
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -7583,67 +7804,67 @@ ${context}`;
         },
         body: JSON.stringify({
           model: 'claude-sonnet-5',
-          max_tokens: 800,
-          stream: true,
-          system: systemPrompt,
-          messages: messages
+          max_tokens: 1400,
+          system: `당신은 물류창고 자재관리 KPI 월간 보고서 작성자입니다. 제공된 JSON 지표만 근거로 작성하세요.
+규칙:
+- 새로운 숫자를 만들지 말 것. JSON에 있는 수치만 인용.
+- null인 지표는 "데이터 없음"으로 처리하고 억지 해석 금지.
+- 마크다운 기호(#, *, -) 없이, 아래 섹션 제목 형식의 일반 텍스트로 작성.
+- 경영보고 문체(간결한 개조식), 한국어.
+
+구성:
+[요약] 3줄 이내 핵심 요약
+[지표 분석] GR취소 / 재고조정 / 키팅 리드타임 / 수입검사 / 납품 순으로 각 1~3줄 (전월 대비, 목표 대비 언급)
+[리스크 및 특이사항] 주의가 필요한 항목
+[권고] 다음 달 조치 제안 2~3개`,
+          messages: [{ role: 'user', content: `${ym} 월간 KPI 지표:\n${JSON.stringify(metrics, null, 1)}` }]
         })
       });
-
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error?.message || `API 오류 (${resp.status})`);
       }
-
-      // 스트리밍: 빈 assistant 메시지 추가 후 실시간 업데이트
-      setChatMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-      setChatLoading(false); // 로딩 인디케이터 끄고 텍스트가 타이핑되게
-
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const evt = JSON.parse(jsonStr);
-            if (evt.type === 'content_block_delta' && evt.delta?.text) {
-              setChatMessages(prev => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
-                if (last?.role === 'assistant') {
-                  updated[updated.length - 1] = { ...last, content: last.content + evt.delta.text };
-                }
-                return updated;
-              });
-            }
-          } catch {}
-        }
-      }
+      const data = await resp.json();
+      const aiText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+      setKpiReport({ month: ym, metrics, aiText, generatedAt: new Date().toLocaleString('ko-KR') });
     } catch (e) {
-      setChatLoading(false);
-      setChatMessages(prev => {
-        // 빈 assistant 메시지가 이미 추가됐으면 그걸 에러로 교체
-        const last = prev[prev.length - 1];
-        if (last?.role === 'assistant' && !last.content) {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: 'assistant', content: `❌ 오류: ${e.message}` };
-          return updated;
-        }
-        return [...prev, { role: 'assistant', content: `❌ 오류: ${e.message}` }];
-      });
+      showToast(`❌ 보고서 생성 실패: ${e.message}`, 'error');
     } finally {
-      setChatLoading(false);
+      setKpiReportLoading(false);
     }
+  };
+
+  // 보고서 인쇄 (새 창 → 인쇄 다이얼로그)
+  const printKpiReport = () => {
+    if (!kpiReport) return;
+    const m = kpiReport.metrics;
+    const esc = (s) => String(s ?? '-').replace(/</g, '&lt;');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>KPI 월간 보고서 ${kpiReport.month}</title>
+<style>body{font-family:'Malgun Gothic',sans-serif;max-width:800px;margin:24px auto;color:#1f2937;font-size:13px;line-height:1.6;}
+h1{font-size:20px;border-bottom:3px solid #4f46e5;padding-bottom:8px;} h2{font-size:15px;color:#4f46e5;margin-top:22px;}
+table{width:100%;border-collapse:collapse;margin:8px 0;} th,td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;font-size:12px;}
+th{background:#eef2ff;} .meta{color:#6b7280;font-size:11px;} pre{white-space:pre-wrap;font-family:inherit;background:#f9fafb;padding:14px;border-radius:8px;border:1px solid #e5e7eb;}</style></head><body>
+<h1>📊 자재관리 KPI 월간 보고서 — ${kpiReport.month}</h1>
+<p class="meta">생성: ${kpiReport.generatedAt} · 데이터 기준: Stock ${esc(m.데이터기준.Stock)} / Open PO ${esc(m.데이터기준.OpenPO)}</p>
+<h2>핵심 지표</h2>
+<table>
+<tr><th>지표</th><th>당월</th><th>전월</th><th>목표</th></tr>
+<tr><td>GR 취소 건수</td><td>${esc(m.GR취소.당월_취소건수)}건 / GR ${esc(m.GR취소.당월_GR수량)}건</td><td>${esc(m.GR취소.전월_취소건수)}건</td><td>${esc(m.GR취소.목표)}</td></tr>
+<tr><td>재고 조정률</td><td>${esc(m.재고조정률_pct.당월)}%</td><td>${esc(m.재고조정률_pct.전월)}%</td><td>${esc(m.재고조정률_pct.목표)}</td></tr>
+<tr><td>키팅 평균 리드타임</td><td>${esc(m.키팅.당월.평균리드타임_일)}일 (${esc(m.키팅.당월.건수)}건)</td><td>${esc(m.키팅.전월.평균리드타임_일)}일 (${esc(m.키팅.전월.건수)}건)</td><td>${esc(m.키팅.당월.목표)}</td></tr>
+<tr><td>키팅 평균 사이클타임</td><td>${esc(m.키팅_평균사이클타임_분)}분</td><td>-</td><td>-</td></tr>
+<tr><td>수입검사 대기</td><td>${esc(m.수입검사대기.건수)}건 (8일+ 지연 ${esc(m.수입검사대기['8일이상_지연'])}건)</td><td>-</td><td>지연 0건</td></tr>
+<tr><td>납품 지연</td><td>${esc(m.납품.지연_건수)}건 / 2주내 예정 ${esc(m.납품['2주내_예정건수'])}건</td><td>-</td><td>-</td></tr>
+</table>
+<h2>AI 분석</h2>
+<pre>${esc(kpiReport.aiText)}</pre>
+<p class="meta">본 보고서의 수치는 대시보드가 자동 집계했으며, 분석 코멘트는 AI(Claude)가 작성했습니다.</p>
+</body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { showToast('팝업이 차단되었습니다', 'error'); return; }
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
   };
 
   // 챗봇 스크롤 자동 하단
@@ -8668,6 +8889,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
             {chatMessages.map((msg, i) => (
+              msg.role === 'tool' ? (
+                <div key={i} className="flex justify-start">
+                  <div className={`max-w-[85%] px-3 py-1 rounded-lg text-xs italic ${darkMode ? 'text-gray-400 bg-gray-800' : 'text-gray-500 bg-gray-100'}`}>
+                    {msg.content}
+                  </div>
+                </div>
+              ) : (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm whitespace-pre-wrap ${
                   msg.role === 'user'
@@ -8677,6 +8905,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   {msg.content}
                 </div>
               </div>
+              )
             ))}
             {chatLoading && (
               <div className="flex justify-start">
@@ -14388,6 +14617,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                   </div>
 
+                  {/* AI 월간 보고서 */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={generateKpiReport}
+                      disabled={kpiReportLoading}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${
+                        kpiReportLoading ? 'bg-gray-300 text-gray-500 cursor-wait' : 'bg-violet-600 text-white hover:bg-violet-700'
+                      }`}
+                    >
+                      {kpiReportLoading ? <><RefreshCw className="w-4 h-4 animate-spin" /> 보고서 생성 중...</> : <><FileText className="w-4 h-4" /> 📄 AI 월간 보고서</>}
+                    </button>
+                  </div>
+
                   {/* PDF 캡처 영역 (그래프만) */}
                   <div ref={kpiContentRef} className="bg-white rounded-xl shadow-sm p-6">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
@@ -19636,6 +19878,49 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           </div>
         </div>
       )}
+
+      {/* KPI AI 월간 보고서 모달 */}
+      {kpiReport && (() => {
+        const m = kpiReport.metrics;
+        const v = (x) => (x === null || x === undefined) ? '-' : x;
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setKpiReport(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b flex justify-between items-center bg-violet-50 rounded-t-2xl">
+                <div>
+                  <h3 className="font-bold text-violet-900">📊 자재관리 KPI 월간 보고서 — {kpiReport.month}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">생성 {kpiReport.generatedAt} · Stock 기준 {v(m.데이터기준.Stock)}</p>
+                </div>
+                <button onClick={() => setKpiReport(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              </div>
+              <div className="p-6 overflow-y-auto">
+                <table className="w-full text-sm border-collapse mb-5">
+                  <thead><tr className="bg-violet-50 text-violet-900">
+                    <th className="border px-3 py-1.5 text-left">지표</th>
+                    <th className="border px-3 py-1.5 text-left">당월</th>
+                    <th className="border px-3 py-1.5 text-left">전월</th>
+                    <th className="border px-3 py-1.5 text-left">목표</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr><td className="border px-3 py-1.5">GR 취소</td><td className="border px-3 py-1.5">{v(m.GR취소.당월_취소건수)}건 / GR {v(m.GR취소.당월_GR수량)}건</td><td className="border px-3 py-1.5">{v(m.GR취소.전월_취소건수)}건</td><td className="border px-3 py-1.5">{m.GR취소.목표}</td></tr>
+                    <tr><td className="border px-3 py-1.5">재고 조정률</td><td className="border px-3 py-1.5">{v(m.재고조정률_pct.당월)}%</td><td className="border px-3 py-1.5">{v(m.재고조정률_pct.전월)}%</td><td className="border px-3 py-1.5">{m.재고조정률_pct.목표}</td></tr>
+                    <tr><td className="border px-3 py-1.5">키팅 리드타임</td><td className="border px-3 py-1.5">{v(m.키팅.당월.평균리드타임_일)}일 ({m.키팅.당월.건수}건)</td><td className="border px-3 py-1.5">{v(m.키팅.전월.평균리드타임_일)}일 ({m.키팅.전월.건수}건)</td><td className="border px-3 py-1.5">{m.키팅.당월.목표}</td></tr>
+                    <tr><td className="border px-3 py-1.5">키팅 사이클타임</td><td className="border px-3 py-1.5">{v(m.키팅_평균사이클타임_분)}분</td><td className="border px-3 py-1.5">-</td><td className="border px-3 py-1.5">-</td></tr>
+                    <tr><td className="border px-3 py-1.5">수입검사 대기</td><td className="border px-3 py-1.5">{m.수입검사대기.건수}건 (8일+ {m.수입검사대기['8일이상_지연']}건)</td><td className="border px-3 py-1.5">-</td><td className="border px-3 py-1.5">지연 0건</td></tr>
+                    <tr><td className="border px-3 py-1.5">납품 지연</td><td className="border px-3 py-1.5">{m.납품.지연_건수}건 / 2주내 {m.납품['2주내_예정건수']}건</td><td className="border px-3 py-1.5">-</td><td className="border px-3 py-1.5">-</td></tr>
+                  </tbody>
+                </table>
+                <div className="bg-gray-50 border rounded-xl p-4 text-sm whitespace-pre-wrap leading-relaxed">{kpiReport.aiText}</div>
+                <p className="text-[11px] text-gray-400 mt-3">수치는 대시보드 자동 집계, 분석 코멘트는 AI(Claude) 작성.</p>
+              </div>
+              <div className="px-6 py-3 border-t flex gap-2 justify-end">
+                <button onClick={printKpiReport} className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 flex items-center gap-1.5"><Printer className="w-4 h-4" /> 인쇄 / PDF</button>
+                <button onClick={() => setKpiReport(null)} className="px-4 py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300">닫기</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 자재별 QR 모달 — location.html?m= 딥링크 */}
       {locateQrMaterial && (() => {
