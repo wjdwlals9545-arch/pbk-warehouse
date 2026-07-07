@@ -3861,8 +3861,7 @@ export default function PBKWarehouseSystem() {
   const fetchGitHubDataRef = React.useRef(null); // 5분 주기 Excel 재체크용
   const firstSyncRunRef = React.useRef(true); // 초기 로드 시 편집 시각 오기록 방지
   const kpiContentRef = React.useRef(null);
-  const [kpiReport, setKpiReport] = useState(null);            // AI 월간 보고서 {month, metrics, aiText, generatedAt}
-  const [kpiReportLoading, setKpiReportLoading] = useState(false);
+  const [kpiReportLoading, setKpiReportLoading] = useState(false); // AI 월간 보고서 (새 탭) 생성 중
   const [pdfExporting, setPdfExporting] = useState(false);
   const [showKpiUploadGuide, setShowKpiUploadGuide] = useState(false);
 
@@ -7752,17 +7751,81 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
     }
   };
 
-  // 📄 KPI 월간 보고서 생성 — 숫자는 코드가 집계, AI는 해석/코멘트만 작성
+  // ──── 📄 KPI 월간 보고서 (새 탭) ────
+  // 숫자·그래프는 코드가 집계/생성, AI는 종합등급 판정과 해석만 작성.
+
+  // 12개월 추이 SVG 차트 (bar/line 혼합, 목표선 지원)
+  const kpiChartSvg = ({ title, labels, series, target, targetLabel }) => {
+    const W = 560, H = 210, padL = 46, padR = 14, padT = 24, padB = 28;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const all = series.flatMap(s => s.data).filter(v => v != null).concat(target != null ? [target] : []);
+    if (!all.length) return `<div class="chart"><div class="ctitle">${title}</div><div class="nochart">데이터 없음</div></div>`;
+    const maxV = (Math.max(...all) || 1) * 1.2;
+    const slotW = plotW / labels.length;
+    const bw = Math.max(6, slotW * 0.55);
+    const cx = (i) => padL + (i + 0.5) * slotW;
+    const y = (v) => padT + plotH - (v / maxV) * plotH;
+    let el = '';
+    for (let g = 0; g <= 4; g++) {
+      const gy = padT + plotH * g / 4;
+      const gv = maxV * (4 - g) / 4;
+      el += `<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" stroke="#e5e7eb"/>`;
+      el += `<text x="${padL - 6}" y="${gy + 3.5}" font-size="9" fill="#9ca3af" text-anchor="end">${gv >= 10 ? Math.round(gv) : +gv.toFixed(gv < 1 ? 3 : 1)}</text>`;
+    }
+    series.forEach(s => {
+      if (s.type === 'bar') {
+        s.data.forEach((v, i) => {
+          if (v == null) return;
+          el += `<rect x="${cx(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${Math.max(1, padT + plotH - y(v))}" rx="2" fill="${s.color}" opacity="0.8"/>`;
+          el += `<text x="${cx(i)}" y="${y(v) - 4}" font-size="8.5" fill="${s.color}" text-anchor="middle">${v}</text>`;
+        });
+      } else {
+        const pts = s.data.map((v, i) => v == null ? null : `${cx(i)},${y(v)}`).filter(Boolean);
+        if (pts.length > 1) el += `<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5"/>`;
+        s.data.forEach((v, i) => {
+          if (v == null) return;
+          el += `<circle cx="${cx(i)}" cy="${y(v)}" r="3.5" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`;
+          el += `<text x="${cx(i)}" y="${y(v) - 8}" font-size="9" font-weight="700" fill="${s.color}" text-anchor="middle">${v}</text>`;
+        });
+      }
+    });
+    if (target != null) {
+      el += `<line x1="${padL}" y1="${y(target)}" x2="${W - padR}" y2="${y(target)}" stroke="#ef4444" stroke-dasharray="5,4" stroke-width="1.5"/>`;
+      el += `<text x="${W - padR}" y="${y(target) - 4}" font-size="9" fill="#ef4444" text-anchor="end">${targetLabel || `목표 ${target}`}</text>`;
+    }
+    labels.forEach((l, i) => {
+      el += `<text x="${cx(i)}" y="${H - 8}" font-size="9" fill="#6b7280" text-anchor="middle">${l.slice(2).replace('-', '.')}</text>`;
+    });
+    const legend = series.map(s => `<span style="color:${s.color};">● ${s.name}</span>`).join('&nbsp;&nbsp;');
+    return `<div class="chart"><div class="ctitle">${title}<span class="clegend">${legend}</span></div><svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg></div>`;
+  };
+
   const generateKpiReport = async () => {
     const apiKey = safeStorage.getItem('pbk_anthropic_key');
     if (!apiKey) { showToast('⚠️ Anthropic API 키 미설정 (챗봇과 동일한 키 사용)', 'error'); return; }
     if (kpiReportLoading) return;
     setKpiReportLoading(true);
+
+    // 팝업 차단 회피: 클릭 시점에 동기적으로 창을 열어두고 내용은 나중에 채움
+    const w = window.open('', '_blank');
+    if (!w) { showToast('❌ 팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.', 'error'); setKpiReportLoading(false); return; }
+    w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>KPI 보고서 생성 중...</title></head>
+<body style="font-family:'Malgun Gothic',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:90vh;color:#455DA0;">
+<div style="width:44px;height:44px;border:4px solid #e5e7eb;border-top-color:#199AC2;border-radius:50%;animation:s .8s linear infinite;"></div>
+<p style="margin-top:18px;font-weight:600;">📊 KPI 지표 집계 및 AI 분석 중... (10초 내외)</p>
+<style>@keyframes s{to{transform:rotate(360deg)}}</style></body></html>`);
+    w.document.close();
+
     try {
       const now = new Date();
       const ym = now.toISOString().slice(0, 7);
       const prevYm = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7);
+      const last12 = [...Array(12)].map((_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      });
 
+      // ── 코드 집계 ──
       const kit = chatToolImpl.get_kitting_status({ month: ym });
       const kitPrev = chatToolImpl.get_kitting_status({ month: prevYm });
       const qs = chatToolImpl.get_qstock();
@@ -7770,15 +7833,23 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
       const cycleArr = (Array.isArray(pickCycles) ? pickCycles : [])
         .filter(p => p.status === 'completed' && p.cycleMin && (p.completed || '').startsWith(ym)).map(p => p.cycleMin);
 
+      // 12개월 시계열
+      const sGrQty = last12.map(m => kpiData.grCancelQty?.[m] ?? null);
+      const sGrCancel = last12.map(m => kpiData.grCancel?.[m] ?? null);
+      const sInvAdj = last12.map(m => kpiData.inventoryAdjust?.[m] ?? null);
+      const kitByMonth = {}, cycByMonth = {};
+      (Array.isArray(kittingData) ? kittingData : []).filter(k => k.status === 'completed' && k.leadTimeDays != null && k.leadTimeDays >= 0)
+        .forEach(k => { const m = (k.completedAt || '').slice(0, 7); if (m) { (kitByMonth[m] = kitByMonth[m] || []).push(k.leadTimeDays); } });
+      (Array.isArray(pickCycles) ? pickCycles : []).filter(p => p.status === 'completed' && p.cycleMin)
+        .forEach(p => { const m = (p.completed || '').slice(0, 7); if (m) { (cycByMonth[m] = cycByMonth[m] || []).push(p.cycleMin); } });
+      const avg = (arr) => arr && arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+      const sKitLT = last12.map(m => avg(kitByMonth[m]));
+      const sCycle = last12.map(m => avg(cycByMonth[m]));
+
       const metrics = {
         기준월: ym,
         데이터기준: { Stock: lastUpdated || null, OpenPO: openPOLastUpdated || null },
-        GR취소: {
-          당월_취소건수: kpiData.grCancel?.[ym] ?? null,
-          당월_GR수량: kpiData.grCancelQty?.[ym] ?? null,
-          전월_취소건수: kpiData.grCancel?.[prevYm] ?? null,
-          목표: '월 2건 이하'
-        },
+        GR취소: { 당월_취소건수: kpiData.grCancel?.[ym] ?? null, 당월_GR수량: kpiData.grCancelQty?.[ym] ?? null, 전월_취소건수: kpiData.grCancel?.[prevYm] ?? null, 목표: '월 2건 이하' },
         재고조정률_pct: { 당월: kpiData.inventoryAdjust?.[ym] ?? null, 전월: kpiData.inventoryAdjust?.[prevYm] ?? null, 목표: '0.064% 이하' },
         키팅: {
           당월: { 건수: kit.count, 상태별: kit.byStatus, 평균리드타임_일: kit.avgLeadTimeDays, 목표: '3일 이내' },
@@ -7786,33 +7857,26 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         },
         키팅_평균사이클타임_분: cycleArr.length ? +(cycleArr.reduce((a, b) => a + b, 0) / cycleArr.length).toFixed(1) : null,
         수입검사대기: { 건수: qs.count, '8일이상_지연': qs.over8Days, 최장경과_상위5: qs.items.slice(0, 5).map(i => ({ 자재: i.material, 품명: i.description, 경과일: i.daysElapsed })) },
-        납품: {
-          지연_건수: dl.overdue.length,
-          지연_상위8: dl.overdue.slice(0, 8).map(d => ({ PO: d.poNo, 자재: d.material, 납기: d.deliveryDate, 수량: d.qty, 공급사: d.supplier })),
-          '2주내_예정건수': dl.upcoming.length
-        },
+        납품: { 지연_건수: dl.overdue.length, 지연_상위8: dl.overdue.slice(0, 8).map(d => ({ PO: d.poNo, 자재: d.material, 납기: d.deliveryDate, 수량: d.qty, 공급사: d.supplier })), '2주내_예정건수': dl.upcoming.length },
         재고_품목수: Array.isArray(inventoryData) ? inventoryData.length : 0,
       };
 
+      // ── AI 해석 ──
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
         body: JSON.stringify({
           model: 'claude-sonnet-5',
-          max_tokens: 1400,
+          max_tokens: 1500,
           system: `당신은 물류창고 자재관리 KPI 월간 보고서 작성자입니다. 제공된 JSON 지표만 근거로 작성하세요.
 규칙:
 - 새로운 숫자를 만들지 말 것. JSON에 있는 수치만 인용.
-- null인 지표는 "데이터 없음"으로 처리하고 억지 해석 금지.
+- null인 지표는 "데이터 없음"으로 간단히 처리하고 억지 해석 금지.
 - 마크다운 기호(#, *, -) 없이, 아래 섹션 제목 형식의 일반 텍스트로 작성.
 - 경영보고 문체(간결한 개조식), 한국어.
 
-구성:
+구성 (섹션 제목 형식을 정확히 지킬 것):
+[종합등급] 양호/주의/위험 중 하나만 쓰고, 이어서 한 줄 사유
 [요약] 3줄 이내 핵심 요약
 [지표 분석] GR취소 / 재고조정 / 키팅 리드타임 / 수입검사 / 납품 순으로 각 1~3줄 (전월 대비, 목표 대비 언급)
 [리스크 및 특이사항] 주의가 필요한 항목
@@ -7826,45 +7890,117 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
       }
       const data = await resp.json();
       const aiText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-      setKpiReport({ month: ym, metrics, aiText, generatedAt: new Date().toLocaleString('ko-KR') });
+
+      // ── AI 텍스트 섹션 파싱 ──
+      const esc = (s) => String(s ?? '-').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const grade = (aiText.match(/\[종합등급\]\s*(양호|주의|위험)/) || [])[1] || null;
+      const gradeReason = (aiText.match(/\[종합등급\]\s*(?:양호|주의|위험)[\s,·—:-]*([^\n]*)/) || [])[1] || '';
+      const section = (name) => {
+        const m = aiText.match(new RegExp(`\\[${name}[^\\]]*\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`));
+        return m ? m[1].trim() : null;
+      };
+      const gradeColor = grade === '양호' ? '#10b981' : grade === '위험' ? '#ef4444' : '#f59e0b';
+
+      // ── 카드/차트/테이블 HTML ──
+      const v = (x, unit = '') => (x === null || x === undefined) ? '<span class="nodata">-</span>' : `${x}${unit}`;
+      const diffArrow = (cur, prev, goodWhenDown = true) => {
+        if (cur == null || prev == null) return '';
+        if (cur === prev) return '<span class="flat">— 전월 동일</span>';
+        const down = cur < prev;
+        const good = goodWhenDown ? down : !down;
+        return `<span style="color:${good ? '#10b981' : '#ef4444'};font-weight:700;">${down ? '▼' : '▲'} 전월 ${prev}</span>`;
+      };
+      const m = metrics;
+      const cards = [
+        { label: 'GR 취소', val: v(m.GR취소.당월_취소건수, '건'), sub: `GR ${v(m.GR취소.당월_GR수량, '건')} · ${diffArrow(m.GR취소.당월_취소건수, m.GR취소.전월_취소건수)}`, goal: '목표 2건 이하' },
+        { label: '재고 조정률', val: v(m.재고조정률_pct.당월, '%'), sub: diffArrow(m.재고조정률_pct.당월, m.재고조정률_pct.전월), goal: '목표 0.064% 이하' },
+        { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'), sub: `${m.키팅.당월.건수}건 · ${diffArrow(m.키팅.당월.평균리드타임_일, m.키팅.전월.평균리드타임_일)}`, goal: '목표 3일 이내' },
+        { label: '키팅 사이클타임', val: v(m.키팅_평균사이클타임_분, '분'), sub: `${m.키팅.당월.상태별.completed}건 완료`, goal: '' },
+        { label: '수입검사 대기', val: v(m.수입검사대기.건수, '건'), sub: `8일+ 지연 <b style="color:${m.수입검사대기['8일이상_지연'] > 0 ? '#ef4444' : '#10b981'}">${m.수입검사대기['8일이상_지연']}건</b>`, goal: '목표 지연 0건' },
+        { label: '납품 지연', val: v(m.납품.지연_건수, '건'), sub: `2주 내 예정 ${m.납품['2주내_예정건수']}건`, goal: '' },
+      ].map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval">${c.val}</div><div class="ksub">${c.sub || ''}</div><div class="kgoal">${c.goal}</div></div>`).join('');
+
+      const charts =
+        kpiChartSvg({ title: 'GR 처리량 & 취소 건수', labels: last12, series: [{ type: 'bar', name: 'GR 수량', data: sGrQty, color: '#455DA0' }, { type: 'line', name: '취소 건수', data: sGrCancel, color: '#ef4444' }], target: null }) +
+        kpiChartSvg({ title: '재고 조정률 (%)', labels: last12, series: [{ type: 'bar', name: '조정률', data: sInvAdj, color: '#713A61' }], target: 0.064, targetLabel: '목표 0.064%' }) +
+        kpiChartSvg({ title: '키팅 평균 리드타임 (일)', labels: last12, series: [{ type: 'line', name: '리드타임', data: sKitLT, color: '#199AC2' }], target: 3, targetLabel: '목표 3일' }) +
+        kpiChartSvg({ title: '키팅 평균 사이클타임 (분)', labels: last12, series: [{ type: 'line', name: '사이클타임', data: sCycle, color: '#FDB813' }], target: null });
+
+      const delayRows = m.납품.지연_상위8.map(d => `<tr><td>${esc(d.PO)}</td><td>${esc(d.자재)}</td><td>${esc(d.납기)}</td><td style="text-align:right">${esc(d.수량)}</td><td>${esc(d.공급사)}</td></tr>`).join('') || '<tr><td colspan="5" class="nodata" style="text-align:center">지연 없음</td></tr>';
+      const qsRows = m.수입검사대기.최장경과_상위5.map(q => `<tr><td>${esc(q.자재)}</td><td>${esc(q.품명)}</td><td style="text-align:right;color:${q.경과일 >= 8 ? '#ef4444' : '#374151'};font-weight:${q.경과일 >= 8 ? '700' : '400'}">${esc(q.경과일)}일</td></tr>`).join('') || '<tr><td colspan="3" class="nodata" style="text-align:center">대기 없음</td></tr>';
+
+      const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
+
+      const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KPI 월간 보고서 ${ym}</title>
+<style>
+  :root{--dg:#13294B;--sw:#455DA0;--cs:#199AC2;--sol:#FDB813;}
+  *{box-sizing:border-box;} body{font-family:'Malgun Gothic','Segoe UI',sans-serif;margin:0;background:#eef1f6;color:#1f2937;font-size:13px;line-height:1.6;}
+  .page{max-width:900px;margin:0 auto;background:#fff;min-height:100vh;box-shadow:0 0 24px rgba(0,0,0,.08);}
+  .hd{background:linear-gradient(120deg,var(--dg) 0%,var(--sw) 100%);color:#fff;padding:30px 36px 24px;position:relative;}
+  .hd::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:var(--sol);}
+  .hd h1{margin:0;font-size:22px;} .hd .sub{opacity:.75;font-size:12px;margin-top:6px;}
+  .grade{position:absolute;right:36px;top:30px;text-align:center;}
+  .gbadge{display:inline-block;padding:8px 22px;border-radius:24px;font-size:17px;font-weight:800;color:#fff;}
+  .greason{font-size:11px;opacity:.85;margin-top:6px;max-width:220px;}
+  .body{padding:26px 36px 40px;}
+  h2{font-size:15px;color:var(--sw);border-left:4px solid var(--sol);padding-left:10px;margin:30px 0 14px;}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .kcard{border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fafbfd;}
+  .klabel{font-size:11.5px;color:#6b7280;font-weight:700;} .kval{font-size:26px;font-weight:800;color:var(--dg);margin:2px 0;}
+  .ksub{font-size:11px;color:#6b7280;} .kgoal{font-size:10.5px;color:#9ca3af;margin-top:2px;}
+  .chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .chart{border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#fff;}
+  .ctitle{font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;display:flex;justify-content:space-between;}
+  .clegend{font-size:10px;font-weight:400;} .nochart{color:#9ca3af;text-align:center;padding:40px 0;font-size:12px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;} th,td{border:1px solid #e5e7eb;padding:6px 10px;text-align:left;}
+  th{background:#f3f6fb;color:var(--sw);font-size:11.5px;} .nodata{color:#9ca3af;}
+  .asec{border:1px solid #e5e7eb;border-left:4px solid var(--cs);border-radius:10px;padding:12px 16px;margin-bottom:10px;background:#fff;}
+  .atitle{font-weight:800;font-size:12.5px;color:var(--dg);margin-bottom:4px;} .abody{font-size:12.5px;}
+  .foot{padding:14px 36px;color:#9ca3af;font-size:10.5px;border-top:1px solid #eee;display:flex;justify-content:space-between;align-items:center;}
+  .printbtn{background:var(--sw);color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;}
+  @media print{ body{background:#fff;} .page{box-shadow:none;max-width:100%;} .printbtn{display:none;} .chartgrid{grid-template-columns:1fr 1fr;} .hd{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .gbadge,.kcard,th{-webkit-print-color-adjust:exact;print-color-adjust:exact;} }
+  @media (max-width:640px){ .cards{grid-template-columns:1fr 1fr;} .chartgrid{grid-template-columns:1fr;} .grade{position:static;margin-top:12px;text-align:left;} }
+</style></head><body><div class="page">
+<div class="hd">
+  <h1>📊 자재관리 KPI 월간 보고서 <span style="color:var(--sol)">${ym}</span></h1>
+  <div class="sub">Promega PBK Warehouse · 생성 ${new Date().toLocaleString('ko-KR')} · 데이터 기준: Stock ${esc(m.데이터기준.Stock)} / Open PO ${esc(m.데이터기준.OpenPO)}</div>
+  ${grade ? `<div class="grade"><span class="gbadge" style="background:${gradeColor}">${grade}</span><div class="greason">${esc(gradeReason)}</div></div>` : ''}
+</div>
+<div class="body">
+  <h2>핵심 지표</h2>
+  <div class="cards">${cards}</div>
+  <h2>12개월 추이</h2>
+  <div class="chartgrid">${charts}</div>
+  <h2>AI 분석</h2>
+  ${aiBlock('📌', '요약', section('요약'), '#455DA0')}
+  ${aiBlock('📈', '지표 분석', section('지표 분석'), '#199AC2')}
+  ${aiBlock('⚠️', '리스크 및 특이사항', section('리스크'), '#ef4444')}
+  ${aiBlock('💡', '권고', section('권고'), '#FDB813')}
+  <h2>상세 — 납품 지연</h2>
+  <table><thead><tr><th>PO</th><th>자재</th><th>납기</th><th>수량</th><th>공급사</th></tr></thead><tbody>${delayRows}</tbody></table>
+  <h2>상세 — 수입검사 장기 대기</h2>
+  <table><thead><tr><th>자재</th><th>품명</th><th>경과일</th></tr></thead><tbody>${qsRows}</tbody></table>
+</div>
+<div class="foot">
+  <span>수치·그래프는 대시보드 자동 집계 · 분석 코멘트는 AI(Claude) 작성 · 지연 기준: 수입검사 8일</span>
+  <button class="printbtn" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
+</div>
+</div></body></html>`;
+
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
     } catch (e) {
+      try {
+        w.document.open();
+        w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>보고서 생성 실패</title></head><body style="font-family:'Malgun Gothic',sans-serif;text-align:center;padding-top:80px;color:#374151;"><p style="font-size:40px;margin:0;">❌</p><h2>보고서 생성 실패</h2><p>${String(e.message).replace(/</g, '&lt;')}</p><p style="color:#9ca3af;font-size:12px;">대시보드로 돌아가 다시 시도해주세요.</p></body></html>`);
+        w.document.close();
+      } catch {}
       showToast(`❌ 보고서 생성 실패: ${e.message}`, 'error');
     } finally {
       setKpiReportLoading(false);
     }
-  };
-
-  // 보고서 인쇄 (새 창 → 인쇄 다이얼로그)
-  const printKpiReport = () => {
-    if (!kpiReport) return;
-    const m = kpiReport.metrics;
-    const esc = (s) => String(s ?? '-').replace(/</g, '&lt;');
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>KPI 월간 보고서 ${kpiReport.month}</title>
-<style>body{font-family:'Malgun Gothic',sans-serif;max-width:800px;margin:24px auto;color:#1f2937;font-size:13px;line-height:1.6;}
-h1{font-size:20px;border-bottom:3px solid #4f46e5;padding-bottom:8px;} h2{font-size:15px;color:#4f46e5;margin-top:22px;}
-table{width:100%;border-collapse:collapse;margin:8px 0;} th,td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;font-size:12px;}
-th{background:#eef2ff;} .meta{color:#6b7280;font-size:11px;} pre{white-space:pre-wrap;font-family:inherit;background:#f9fafb;padding:14px;border-radius:8px;border:1px solid #e5e7eb;}</style></head><body>
-<h1>📊 자재관리 KPI 월간 보고서 — ${kpiReport.month}</h1>
-<p class="meta">생성: ${kpiReport.generatedAt} · 데이터 기준: Stock ${esc(m.데이터기준.Stock)} / Open PO ${esc(m.데이터기준.OpenPO)}</p>
-<h2>핵심 지표</h2>
-<table>
-<tr><th>지표</th><th>당월</th><th>전월</th><th>목표</th></tr>
-<tr><td>GR 취소 건수</td><td>${esc(m.GR취소.당월_취소건수)}건 / GR ${esc(m.GR취소.당월_GR수량)}건</td><td>${esc(m.GR취소.전월_취소건수)}건</td><td>${esc(m.GR취소.목표)}</td></tr>
-<tr><td>재고 조정률</td><td>${esc(m.재고조정률_pct.당월)}%</td><td>${esc(m.재고조정률_pct.전월)}%</td><td>${esc(m.재고조정률_pct.목표)}</td></tr>
-<tr><td>키팅 평균 리드타임</td><td>${esc(m.키팅.당월.평균리드타임_일)}일 (${esc(m.키팅.당월.건수)}건)</td><td>${esc(m.키팅.전월.평균리드타임_일)}일 (${esc(m.키팅.전월.건수)}건)</td><td>${esc(m.키팅.당월.목표)}</td></tr>
-<tr><td>키팅 평균 사이클타임</td><td>${esc(m.키팅_평균사이클타임_분)}분</td><td>-</td><td>-</td></tr>
-<tr><td>수입검사 대기</td><td>${esc(m.수입검사대기.건수)}건 (8일+ 지연 ${esc(m.수입검사대기['8일이상_지연'])}건)</td><td>-</td><td>지연 0건</td></tr>
-<tr><td>납품 지연</td><td>${esc(m.납품.지연_건수)}건 / 2주내 예정 ${esc(m.납품['2주내_예정건수'])}건</td><td>-</td><td>-</td></tr>
-</table>
-<h2>AI 분석</h2>
-<pre>${esc(kpiReport.aiText)}</pre>
-<p class="meta">본 보고서의 수치는 대시보드가 자동 집계했으며, 분석 코멘트는 AI(Claude)가 작성했습니다.</p>
-</body></html>`;
-    const w = window.open('', '_blank');
-    if (!w) { showToast('팝업이 차단되었습니다', 'error'); return; }
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 400);
   };
 
   // 챗봇 스크롤 자동 하단
@@ -19878,49 +20014,6 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           </div>
         </div>
       )}
-
-      {/* KPI AI 월간 보고서 모달 */}
-      {kpiReport && (() => {
-        const m = kpiReport.metrics;
-        const v = (x) => (x === null || x === undefined) ? '-' : x;
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setKpiReport(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              <div className="px-6 py-4 border-b flex justify-between items-center bg-violet-50 rounded-t-2xl">
-                <div>
-                  <h3 className="font-bold text-violet-900">📊 자재관리 KPI 월간 보고서 — {kpiReport.month}</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">생성 {kpiReport.generatedAt} · Stock 기준 {v(m.데이터기준.Stock)}</p>
-                </div>
-                <button onClick={() => setKpiReport(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
-              </div>
-              <div className="p-6 overflow-y-auto">
-                <table className="w-full text-sm border-collapse mb-5">
-                  <thead><tr className="bg-violet-50 text-violet-900">
-                    <th className="border px-3 py-1.5 text-left">지표</th>
-                    <th className="border px-3 py-1.5 text-left">당월</th>
-                    <th className="border px-3 py-1.5 text-left">전월</th>
-                    <th className="border px-3 py-1.5 text-left">목표</th>
-                  </tr></thead>
-                  <tbody>
-                    <tr><td className="border px-3 py-1.5">GR 취소</td><td className="border px-3 py-1.5">{v(m.GR취소.당월_취소건수)}건 / GR {v(m.GR취소.당월_GR수량)}건</td><td className="border px-3 py-1.5">{v(m.GR취소.전월_취소건수)}건</td><td className="border px-3 py-1.5">{m.GR취소.목표}</td></tr>
-                    <tr><td className="border px-3 py-1.5">재고 조정률</td><td className="border px-3 py-1.5">{v(m.재고조정률_pct.당월)}%</td><td className="border px-3 py-1.5">{v(m.재고조정률_pct.전월)}%</td><td className="border px-3 py-1.5">{m.재고조정률_pct.목표}</td></tr>
-                    <tr><td className="border px-3 py-1.5">키팅 리드타임</td><td className="border px-3 py-1.5">{v(m.키팅.당월.평균리드타임_일)}일 ({m.키팅.당월.건수}건)</td><td className="border px-3 py-1.5">{v(m.키팅.전월.평균리드타임_일)}일 ({m.키팅.전월.건수}건)</td><td className="border px-3 py-1.5">{m.키팅.당월.목표}</td></tr>
-                    <tr><td className="border px-3 py-1.5">키팅 사이클타임</td><td className="border px-3 py-1.5">{v(m.키팅_평균사이클타임_분)}분</td><td className="border px-3 py-1.5">-</td><td className="border px-3 py-1.5">-</td></tr>
-                    <tr><td className="border px-3 py-1.5">수입검사 대기</td><td className="border px-3 py-1.5">{m.수입검사대기.건수}건 (8일+ {m.수입검사대기['8일이상_지연']}건)</td><td className="border px-3 py-1.5">-</td><td className="border px-3 py-1.5">지연 0건</td></tr>
-                    <tr><td className="border px-3 py-1.5">납품 지연</td><td className="border px-3 py-1.5">{m.납품.지연_건수}건 / 2주내 {m.납품['2주내_예정건수']}건</td><td className="border px-3 py-1.5">-</td><td className="border px-3 py-1.5">-</td></tr>
-                  </tbody>
-                </table>
-                <div className="bg-gray-50 border rounded-xl p-4 text-sm whitespace-pre-wrap leading-relaxed">{kpiReport.aiText}</div>
-                <p className="text-[11px] text-gray-400 mt-3">수치는 대시보드 자동 집계, 분석 코멘트는 AI(Claude) 작성.</p>
-              </div>
-              <div className="px-6 py-3 border-t flex gap-2 justify-end">
-                <button onClick={printKpiReport} className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-700 flex items-center gap-1.5"><Printer className="w-4 h-4" /> 인쇄 / PDF</button>
-                <button onClick={() => setKpiReport(null)} className="px-4 py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300">닫기</button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* 자재별 QR 모달 — location.html?m= 딥링크 */}
       {locateQrMaterial && (() => {
