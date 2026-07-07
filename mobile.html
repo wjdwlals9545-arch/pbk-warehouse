@@ -7,7 +7,10 @@
 <style>
   *{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f1f5f9;}
-  #frame{position:fixed;top:0;left:0;right:0;bottom:60px;width:100%;border:none;background:#f1f5f9;}
+  /* iOS Safari: iframe 내부 스크롤 불가 → 자식이 높이를 알려주면 iframe을 그 높이로 키우고
+     바깥 래퍼(#wrap)가 스크롤하는 방식 사용 */
+  #wrap{position:fixed;top:0;left:0;right:0;bottom:60px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  #frame{display:block;width:100%;height:100%;border:none;background:#f1f5f9;}
   #tabs{position:fixed;left:0;right:0;bottom:0;height:60px;display:flex;background:#13294B;box-shadow:0 -2px 10px rgba(0,0,0,.2);z-index:10;}
   .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
        color:#93a4c8;font-size:12px;font-weight:600;cursor:pointer;border:none;background:none;padding:6px 0;transition:color .15s;}
@@ -18,7 +21,7 @@
 </style>
 </head>
 <body>
-<iframe id="frame" allow="camera"></iframe>
+<div id="wrap"><iframe id="frame" allow="camera" scrolling="no"></iframe></div>
 <nav id="tabs">
   <button class="tab active" id="tab-locate" onclick="go('locate')"><span class="ic">📍</span>위치 조회</button>
   <button class="tab" id="tab-kit" onclick="go('kit')"><span class="ic">📦</span>키팅 스캔</button>
@@ -36,10 +39,21 @@ var current = null;
 function go(tab){
   if (tab === current) return;
   current = tab;
-  document.getElementById('frame').src = PAGES[tab];
+  var f = document.getElementById('frame');
+  f.style.height = '100%';           // 이전 탭의 높이 초기화
+  document.getElementById('wrap').scrollTop = 0;
+  f.src = PAGES[tab];
   document.getElementById('tab-locate').classList.toggle('active', tab === 'locate');
   document.getElementById('tab-kit').classList.toggle('active', tab === 'kit');
 }
+
+// 자식 페이지(embed 모드)가 보내는 콘텐츠 높이 → iframe 높이 반영 (바깥 #wrap이 스크롤)
+window.addEventListener('message', function(e){
+  if (e.data && typeof e.data.pbkH === 'number') {
+    var minH = document.getElementById('wrap').clientHeight;
+    document.getElementById('frame').style.height = Math.max(e.data.pbkH, minH) + 'px';
+  }
+});
 // 시작 탭: ?tab=kit 또는 ?m=<자재> 없으면 위치 조회 기본
 var startTab = params.get('tab') === 'kit' ? 'kit' : 'locate';
 go(startTab);

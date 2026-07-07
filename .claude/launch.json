@@ -12,6 +12,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "npm", "run", "preview", "--", "--host", "--port", "4173"],
       "port": 4173
+    },
+    {
+      "name": "static-root",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "python", "-m", "http.server", "8090"],
+      "port": 8090
     }
   ]
 }
