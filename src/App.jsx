@@ -2673,17 +2673,36 @@ export default function PBKWarehouseSystem() {
     };
 
     try {
-      // SHA 없으면 가져오기
-      if (!syncShaRef.current) {
-        try {
-          const getResp = await fetch(API, {
-            headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
-          });
-          if (getResp.ok) {
-            const info = await getResp.json();
-            syncShaRef.current = info.sha;
-          }
-        } catch { /* 새 파일 */ }
+      // 원격 상태 조회 (SHA + 데이터 급감 방어용 내용 비교)
+      let remoteState = null;
+      try {
+        const getResp = await fetch(API, {
+          headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json' }
+        });
+        if (getResp.ok) {
+          const info = await getResp.json();
+          syncShaRef.current = info.sha;
+          try {
+            remoteState = JSON.parse(decodeURIComponent(escape(atob(info.content.replace(/\n/g, '')))));
+          } catch { /* 내용 파싱 실패 시 방어 생략 */ }
+        }
+      } catch { /* 새 파일 */ }
+
+      // ⚠️ 데이터 급감 방어: 중앙 백업에 있는 사용자 데이터가 로컬보다 현저히 많으면 업로드 중단.
+      // (복원 전 상태의 마스터 PC가 빈 데이터로 중앙 백업을 날리는 사고 방지 — 2026-07-08 사건의 역방향)
+      if (remoteState) {
+        const GUARD_KEYS = ['pbk_kitting_data', 'pbk_pick_cycles', 'pbk_receive_cycles', 'pbk_todo_list'];
+        const shrunk = GUARD_KEYS.filter(k => {
+          const rc = Array.isArray(remoteState[k]) ? remoteState[k].length : 0;
+          const lc = Array.isArray(stateObj[k]) ? stateObj[k].length : 0;
+          return rc >= 5 && lc < rc * 0.5; // 원격 5건 이상인데 로컬이 절반 미만
+        });
+        if (shrunk.length > 0) {
+          const detail = shrunk.map(k => `${k}: 로컬 ${(stateObj[k] || []).length} vs 백업 ${remoteState[k].length}`).join(', ');
+          console.warn('[DashSync] 데이터 급감 감지 → 업로드 차단:', detail);
+          showToast(`🛡️ 업로드 차단 — 중앙 백업보다 데이터가 적습니다 (${detail}). Data Mgmt에서 "복원 실행" 먼저 하세요.`, 'error');
+          return;
+        }
       }
 
       let resp = await doUpload(syncShaRef.current);
