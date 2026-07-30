@@ -102,20 +102,16 @@ const simpleHash = (str) => {
 const DASHBOARD_STATE_PATH = 'public/data/dashboard_state.json';
 
 // 동기화 대상 localStorage 키 목록
+// v19.9: Excel 파생 키(inventory/open_po/delivery/qstock/epoch) 전부 제외.
+// 각 PC가 GitHub의 xlsx/JSON에서 직접 파싱하므로 state 동기화가 불필요하고,
+// 마스터가 멈추면 낡은 스냅샷이 최신 데이터를 덮어쓰는 사고의 원인이었음 (7/8 데이터 소실 사건).
+// dashboard_state.json은 이제 "사용자 입력 데이터 백업" 전용.
 const SYNC_KEYS = [
   'pbk_receive_cycles', 'pbk_pick_cycles', 'pbk_kitting_data',
   'pbk_todo_list', 'pbk_kpi_data', 'pbk_temp_humidity_data',
   'pbk_temp_humidity_recorder', 'pbk_weight_data',
   'pbk_custom_bom', 'pbk_subcom_bom', 'pbk_bom_updated',
   'pbk_notifications', 'pbk_previous_stats',
-  // v19.8: Stock, Open PO, Delivery 동기화 추가
-  // pbk_open_po_raw 제외: MB급 대용량 → dashboard_state.json이 GitHub contents API 1MB 한도를 넘으면 동기화 전체가 깨짐
-  'pbk_inventory', 'pbk_last_updated',
-  'pbk_open_po', 'pbk_open_po_updated',
-  'pbk_delivery_data', 'pbk_delivery_updated',
-  // epoch (커밋 시간 기준) — Excel 재파싱 판단용
-  'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
-  'pbk_qstock',
   'pbk_last_auto_backup',
   'pbk_tab_order',
   'pbk_tax_requested',
@@ -2511,10 +2507,11 @@ export default function PBKWarehouseSystem() {
   // ──── Dashboard State GitHub 동기화 ────
 
   // GitHub에서 dashboard_state.json 로드 → localStorage + React state 업데이트
-  const loadDashboardState = async () => {
+  // force=true: 가드(마스터/타임스탬프) 무시하고 중앙 백업을 강제 적용 — "중앙 백업에서 복원" 버튼용
+  const loadDashboardState = async (force = false) => {
     // 마스터 PC는 GitHub에서 로드하지 않음 (로컬 SAP 데이터가 항상 최신)
     const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
-    if (isMaster) {
+    if (isMaster && !force) {
       console.log('[DashSync] Master PC: skip GitHub load (local data is source of truth)');
       return;
     }
@@ -2555,7 +2552,7 @@ export default function PBKWarehouseSystem() {
         parseInt(safeStorage.getItem('pbk_po_epoch') || '0'),
         parseInt(safeStorage.getItem('pbk_del_epoch') || '0')
       );
-      const skipExcelKeys = localExcelEpoch > remoteTs;
+      const skipExcelKeys = !force && localExcelEpoch > remoteTs;
       if (skipExcelKeys) console.log(`[DashSync] 로컬 Excel 데이터가 더 최신 (${localExcelEpoch} > ${remoteTs}) → Excel 키 건너뜀`);
 
       // 사용자 입력 데이터(투두/키팅/KPI 등): 이 PC의 마지막 편집이 원격 스냅샷보다 최신이면 덮어쓰지 않음
@@ -2563,7 +2560,7 @@ export default function PBKWarehouseSystem() {
       // 추가 안전장치: pbk_sync_local_ts가 저장 실패(쿼터 초과 등)로 없더라도,
       // 로컬 Excel이 원격 스냅샷보다 최신이면 그 스냅샷은 낡은 것이므로 사용자 키도 덮어쓰지 않음
       const localEditTs = parseInt(safeStorage.getItem('pbk_sync_local_ts') || '0');
-      const skipUserKeys = localEditTs > remoteTs || skipExcelKeys;
+      const skipUserKeys = !force && (localEditTs > remoteTs || localExcelEpoch > remoteTs);
       if (skipUserKeys) console.log(`[DashSync] 로컬이 더 최신 (edit=${localEditTs}, excel=${localExcelEpoch} vs remote=${remoteTs}) → 사용자 입력 키 건너뜀`);
 
       // setState 매핑
@@ -2615,6 +2612,7 @@ export default function PBKWarehouseSystem() {
       // 로드 후 현재 해시 저장 (불필요한 업로드 방지)
       lastSyncHashRef.current = simpleHash(JSON.stringify(stateObj));
       console.log('[DashSync] 대시보드 데이터 동기화 완료');
+      if (force) showToast('☁️ 중앙 백업에서 복원 완료 — 키팅/투두/KPI 등 사용자 데이터를 백업 시점으로 되돌렸습니다', 'success');
     } catch (err) {
       console.log('[DashSync] Load error:', err.message);
     }
@@ -4570,8 +4568,8 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('OpenPO JSON fetch skip:', e.message); }
       }
 
-      // Delivery JSON fallback
-      if (!deliveryData.length) {
+      // Delivery JSON fallback (로컬에 없을 때만 — state 클로저는 mount 시점 값이라 storage로 판단)
+      if (!safeParse(safeStorage.getItem('pbk_delivery_data'), []).length) {
         try {
           const delResp = await fetch(`${BASE}/delivery_data.json?t=${Date.now()}`);
           if (delResp.ok) {
@@ -18293,6 +18291,24 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* 중앙 백업 복원 — 데이터 유실 시 GitHub dashboard_state.json에서 사용자 데이터 복구 */}
+            <div className="mb-6 p-4 bg-sky-50 border border-sky-200 rounded-lg flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-sky-800">☁️ 중앙 백업에서 복원</p>
+                <p className="text-xs text-sky-600 mt-0.5">키팅·투두·KPI 등 수기 입력 데이터가 사라졌을 때, GitHub 중앙 백업 시점으로 되돌립니다. (재고/PO는 영향 없음)</p>
+              </div>
+              <button
+                onClick={() => {
+                  if (window.confirm('현재 화면의 키팅/투두/KPI 등 사용자 입력 데이터를 GitHub 중앙 백업으로 교체합니다.\n(백업 이후의 입력은 사라질 수 있습니다)\n\n복원할까요?')) {
+                    loadDashboardState(true);
+                  }
+                }}
+                className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm font-medium hover:bg-sky-700 shrink-0"
+              >
+                복원 실행
+              </button>
             </div>
 
             {/* 업로드 섹션들 */}
