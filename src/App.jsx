@@ -110,7 +110,6 @@ const SYNC_KEYS = [
   'pbk_receive_cycles', 'pbk_pick_cycles', 'pbk_kitting_data',
   'pbk_todo_list', 'pbk_kpi_data', 'pbk_temp_humidity_data',
   'pbk_temp_humidity_recorder', 'pbk_weight_data',
-  'pbk_custom_bom', 'pbk_subcom_bom', 'pbk_bom_updated',
   'pbk_notifications', 'pbk_previous_stats',
   'pbk_last_auto_backup',
   'pbk_tab_order',
@@ -4605,6 +4604,33 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('Delivery JSON fetch skip:', e.message); }
       }
 
+      // BOM 로드 (SAP_Drop\bom 폴더 또는 대시보드 업로드로 게시된 bom_data.json)
+      // 커밋 시간이 로컬 저장본보다 새로우면 반영 → 모든 PC가 같은 BOM을 보게 됨
+      try {
+        const bomInfo = await getFileCommitInfo('public/data/bom_data.json');
+        const savedBomEpoch = parseInt(safeStorage.getItem('pbk_bom_epoch') || '0');
+        if (bomInfo.epoch === 0 || bomInfo.epoch > savedBomEpoch || !safeStorage.getItem('pbk_custom_bom')) {
+          const bomResp = await fetch(`${BASE}/bom_data.json?t=${Date.now()}`);
+          if (bomResp.ok) {
+            const bomJson = await bomResp.json();
+            const models = bomJson?.models;
+            if (models && Object.keys(models).length > 0) {
+              const subs = bomJson.subComponents || {};
+              const ts = bomJson.updated || bomInfo.display || new Date().toLocaleString('ko-KR');
+              setCustomBomData(models);
+              setSubComponentBomData(subs);
+              setBomLastUpdated(ts);
+              safeStorage.setItem('pbk_custom_bom', JSON.stringify(models));
+              safeStorage.setItem('pbk_subcom_bom', JSON.stringify(subs));
+              safeStorage.setItem('pbk_bom_updated', ts);
+              if (bomInfo.epoch) safeStorage.setItem('pbk_bom_epoch', String(bomInfo.epoch));
+              console.log(`[BOM] GitHub JSON 자동 로드 완료 (완제품 ${Object.keys(models).length}모델, Sub-com ${Object.keys(subs).length}종)`);
+              addDataHistory('bom', 'GitHub JSON 자동 로드', bomJson.count || 0);
+            }
+          }
+        }
+      } catch (e) { console.log('BOM JSON fetch skip:', e.message); }
+
       // 폰 스캔 이벤트 병합 (kitting.html → kitting_scan.json)
       await applyKittingScanEvents();
     };
@@ -5779,6 +5805,14 @@ export default function PBKWarehouseSystem() {
       safeStorage.setItem('pbk_custom_bom', JSON.stringify(modelBomData));
       safeStorage.setItem('pbk_subcom_bom', JSON.stringify(subComponentBomData));
       safeStorage.setItem('pbk_bom_updated', now);
+      // 다른 PC도 같은 BOM을 쓰도록 GitHub에 게시 (SAP_Drop\bom 경로와 동일한 파일)
+      uploadDataToGitHub('public/data/bom_data.json', {
+        models: modelBomData,
+        subComponents: subComponentBomData,
+        updated: now,
+        count: Object.values(modelBomData).reduce((s, m) => s + Object.keys(m).length, 0)
+          + Object.values(subComponentBomData).reduce((s, m) => s + Object.keys(m).length, 0),
+      }, 'BOM 데이터');
 
       const modelCount = Object.keys(modelBomData).length;
       const subComCount = Object.keys(subComponentBomData).length;
