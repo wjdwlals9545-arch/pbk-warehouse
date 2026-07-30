@@ -9738,8 +9738,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               <div className="flex items-center gap-3">
                 <span className="text-2xl">📊</span>
                 <div>
-                  <p className="font-bold text-amber-800">오늘 재고 데이터 미업로드!</p>
-                  <p className="text-sm text-amber-600">ZBIN(Stock) 데이터를 업로드해주세요.</p>
+                  <p className="font-bold text-amber-800">오늘 재고 데이터 미갱신!</p>
+                  <p className="text-sm text-amber-600">SAP에서 ZBIN 다운로드 → 바탕화면 SAP_Drop\zbin 폴더에 저장하면 자동 반영됩니다.</p>
                 </div>
               </div>
               {isAdmin && <button onClick={() => setShowDataUploadModal(true)} className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium">
@@ -9752,8 +9752,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">📋</span>
                   <div>
-                    <p className="font-bold text-orange-800">Open PO 데이터 미업로드!</p>
-                    <p className="text-sm text-orange-600">ME2N(Open PO) 데이터를 업로드해주세요.</p>
+                    <p className="font-bold text-orange-800">Open PO 데이터 미갱신!</p>
+                    <p className="text-sm text-orange-600">SAP에서 ME2N 다운로드 → 바탕화면 SAP_Drop\me2n 폴더에 저장하면 자동 반영됩니다.</p>
                   </div>
                 </div>
                 {isAdmin && <button onClick={() => setShowOpenPOModal(true)} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium">
@@ -9801,8 +9801,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">📊</span>
                   <div>
-                    <p className="font-bold text-amber-800">오늘 재고 데이터 미업로드!</p>
-                    <p className="text-sm text-amber-600">ZBIN(Stock) 데이터를 업로드해주세요.</p>
+                    <p className="font-bold text-amber-800">오늘 재고 데이터 미갱신!</p>
+                    <p className="text-sm text-amber-600">SAP에서 ZBIN 다운로드 → 바탕화면 SAP_Drop\zbin 폴더에 저장하면 자동 반영됩니다.</p>
                   </div>
                 </div>
                 <button onClick={() => setShowDataUploadModal(true)} className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 text-sm font-medium">
@@ -9816,8 +9816,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">📋</span>
                   <div>
-                    <p className="font-bold text-orange-800">Open PO 데이터 미업로드!</p>
-                    <p className="text-sm text-orange-600">ME2N(Open PO) 데이터를 업로드해주세요.</p>
+                    <p className="font-bold text-orange-800">Open PO 데이터 미갱신!</p>
+                    <p className="text-sm text-orange-600">SAP에서 ME2N 다운로드 → 바탕화면 SAP_Drop\me2n 폴더에 저장하면 자동 반영됩니다.</p>
                   </div>
                 </div>
                 <button onClick={() => setShowOpenPOModal(true)} className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-medium">
@@ -9841,7 +9841,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <AlertTriangle className="w-5 h-5 text-amber-600" />
                       <div>
                         <p className="font-medium text-amber-800">재고 데이터 갱신 필요</p>
-                        <p className="text-sm text-amber-600">마지막 업데이트: {lastUpdated} ({Math.floor(hoursSinceUpdate)}시간 전)</p>
+                        <p className="text-sm text-amber-600">
+                          마지막 업데이트: {lastUpdated} ({hoursSinceUpdate >= 48 ? `${Math.floor(hoursSinceUpdate / 24)}일 전` : `${Math.floor(hoursSinceUpdate)}시간 전`})
+                        </p>
+                        <p className="text-xs text-amber-500 mt-0.5">SAP에서 ZBIN 다운로드 → 바탕화면 SAP_Drop\zbin 폴더에 저장</p>
                       </div>
                     </div>
                     <button 
@@ -9936,8 +9939,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <Clock className="w-4 h-4 text-blue-600" />
                     </div>
                     <div>
-                      <p className="font-semibold text-slate-700 text-sm">SAP 자동 업데이트 스케줄</p>
-                      <p className="text-xs text-slate-500">Windows 스케줄러 + Python 자동 추출 → GitHub → 대시보드 자동 반영</p>
+                      <p className="font-semibold text-slate-700 text-sm">SAP 데이터 갱신 방법</p>
+                      <p className="text-xs text-slate-500">SAP에서 수동 다운로드 → 바탕화면 SAP_Drop 폴더에 저장 → 자동으로 GitHub·대시보드 반영 (파일명 무관)</p>
                     </div>
                   </div>
                   {showSapSchedule ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
@@ -14491,9 +14494,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                     <h4 className="font-semibold text-blue-800 mb-2">GR Cancel</h4>
                     <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                      <li>매월 첫번째 월요일 오전 8시 자동 실행 (Windows 스케줄러)</li>
-                      <li>Python → SAP MB51 자동 추출 → GitHub 업로드</li>
-                      <li>대시보드에서 자동 로드</li>
+                      <li>매월 첫번째 월요일: SAP MB51에서 수동 다운로드</li>
+                      <li>아래 업로드 버튼으로 대시보드에 반영</li>
+                      <li>(GR Cancel은 SAP_Drop 폴더 감시 대상이 아님 — 직접 업로드)</li>
                     </ol>
                     <button
                       onClick={async () => {
@@ -20739,8 +20742,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
               {(() => {
                 const sysAlerts = [];
                 if (showTempAlert) sysAlerts.push({ id: 'sys-temp', type: 'warning', title: '🌡️ 온습도 미입력', message: '오늘의 온도/습도가 아직 입력되지 않았습니다.', action: () => { setActiveTab('temphumidity'); setShowNotificationCenter(false); } });
-                if (showUploadAlert) sysAlerts.push({ id: 'sys-stock', type: 'error', title: '📊 재고 데이터 미업로드', message: 'ZBIN(Stock) 데이터를 업로드해주세요.', action: () => { setShowDataUploadModal(true); setShowNotificationCenter(false); } });
-                if (showOpenPOAlert) sysAlerts.push({ id: 'sys-po', type: 'error', title: '📋 Open PO 미업로드', message: 'ME2N(Open PO) 데이터를 업로드해주세요.', action: () => { setShowOpenPOModal(true); setShowNotificationCenter(false); } });
+                if (showUploadAlert) sysAlerts.push({ id: 'sys-stock', type: 'error', title: '📊 재고 데이터 미갱신', message: 'SAP에서 ZBIN 다운로드 → SAP_Drop\\zbin 폴더에 저장하면 자동 반영됩니다.', action: () => { setShowDataUploadModal(true); setShowNotificationCenter(false); } });
+                if (showOpenPOAlert) sysAlerts.push({ id: 'sys-po', type: 'error', title: '📋 Open PO 미갱신', message: 'SAP에서 ME2N 다운로드 → SAP_Drop\\me2n 폴더에 저장하면 자동 반영됩니다.', action: () => { setShowOpenPOModal(true); setShowNotificationCenter(false); } });
                 // 입고 미처리
                 const now = new Date();
                 const overdueReceives = receiveCycles.filter(r => {
