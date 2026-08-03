@@ -114,6 +114,7 @@ const SYNC_KEYS = [
   'pbk_last_auto_backup',
   'pbk_tab_order',
   'pbk_tax_requested',
+  'pbk_work_issues',
 ];
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
@@ -3885,6 +3886,12 @@ export default function PBKWarehouseSystem() {
   const storageWarnRef = React.useRef(0); // 저장공간 부족 경고 스로틀
   const kpiContentRef = React.useRef(null);
   const [kpiReportLoading, setKpiReportLoading] = useState(false); // AI 월간 보고서 (새 탭) 생성 중
+  const [weeklyReportLoading, setWeeklyReportLoading] = useState(false); // 주간 운영 보고서
+  // 자재 업무 이슈 기록 (주간 보고서에 포함)
+  const [workIssues, setWorkIssues] = useState(() => safeParse(safeStorage.getItem('pbk_work_issues'), []));
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  // kind: issue(문제 발생) | improve(개선 활동) | ai(AI·시스템 작업)
+  const [newIssue, setNewIssue] = useState({ kind: 'issue', title: '', detail: '', category: '입고', severity: 'normal', status: 'open', action: '' });
   const [pdfExporting, setPdfExporting] = useState(false);
   const [showKpiUploadGuide, setShowKpiUploadGuide] = useState(false);
 
@@ -7826,49 +7833,174 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
   // 숫자·그래프는 코드가 집계/생성, AI는 종합등급 판정과 해석만 작성.
 
   // 12개월 추이 SVG 차트 (bar/line 혼합, 목표선 지원)
-  const kpiChartSvg = ({ title, labels, series, target, targetLabel }) => {
-    const W = 560, H = 210, padL = 46, padR = 14, padT = 24, padB = 28;
+  // 보고서 공통 스타일 — Promega 브랜드 컬러 기반 에디토리얼 레이아웃
+  // (월간·주간 보고서가 공유. 여백 넓게, 숫자 크게, 색은 네이비+골드로 절제)
+  const REPORT_CSS = `
+  :root{--dg:#13294B;--sw:#455DA0;--cs:#199AC2;--sol:#FDB813;--pp:#713A61;
+        --ink:#1a2233;--mute:#8792a8;--line:#e8ecf3;--bg:#f6f8fb;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Malgun Gothic','Segoe UI',sans-serif;background:var(--bg);color:var(--ink);
+       font-size:13px;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  .page{max-width:1060px;margin:0 auto;background:#fff;min-height:100vh;}
+
+  /* ── 헤더 ── */
+  .hd{background:var(--dg);color:#fff;padding:44px 52px 38px;position:relative;overflow:hidden;}
+  .hd::before{content:"";position:absolute;right:-90px;top:-90px;width:320px;height:320px;
+              border-radius:50%;background:rgba(255,255,255,.035);}
+  .hd::after{content:"";position:absolute;left:52px;right:52px;bottom:0;height:3px;background:var(--sol);}
+  .hdrow{display:flex;justify-content:space-between;align-items:flex-start;gap:36px;position:relative;}
+  .eyebrow{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--sol);font-weight:700;}
+  .hd h1{font-size:31px;font-weight:800;letter-spacing:-.5px;margin-top:10px;line-height:1.25;}
+  .hd .per{font-size:31px;font-weight:300;color:rgba(255,255,255,.55);margin-left:6px;}
+  .hd .sub{font-size:11.5px;color:rgba(255,255,255,.6);margin-top:14px;line-height:1.7;}
+  .grade{flex:0 0 200px;text-align:right;}
+  .gtag{display:inline-flex;align-items:center;gap:8px;padding:9px 18px;border-radius:100px;
+        font-size:14px;font-weight:800;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);}
+  .gdot{width:9px;height:9px;border-radius:50%;}
+  .greason{font-size:11px;color:rgba(255,255,255,.62);margin-top:10px;line-height:1.55;text-align:right;}
+
+  /* ── 본문 ── */
+  .body{padding:8px 52px 46px;}
+  .sec{margin-top:44px;}
+  .sechd{display:flex;align-items:baseline;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--line);margin-bottom:22px;}
+  .secno{font-size:11px;font-weight:800;color:var(--sol);letter-spacing:.1em;}
+  .sechd h2{font-size:16.5px;font-weight:800;color:var(--dg);letter-spacing:-.2px;}
+  .sechd .note{margin-left:auto;font-size:11px;color:var(--mute);font-weight:400;}
+
+  /* ── 지표 카드 ── */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+         border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+  .kcard{background:#fff;padding:20px 22px 18px;}
+  .klabel{font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--mute);font-weight:700;}
+  .kval{font-size:38px;font-weight:800;color:var(--dg);letter-spacing:-1.5px;line-height:1.15;margin:6px 0 2px;}
+  .kval .u{font-size:15px;font-weight:600;color:var(--mute);margin-left:3px;letter-spacing:0;}
+  .ksub{font-size:11px;color:var(--mute);min-height:17px;}
+  .kgoal{font-size:10px;color:#b3bccd;margin-top:6px;}
+  .up{color:#e0483b;font-weight:700;} .dn{color:#0f9d70;font-weight:700;} .flat{color:var(--mute);}
+
+  /* ── 차트 ── */
+  .chartwrap{display:flex;flex-direction:column;gap:26px;}
+  .chart{page-break-inside:avoid;}
+  .ctitle{font-size:13px;font-weight:800;color:var(--dg);margin-bottom:2px;display:flex;
+          justify-content:space-between;align-items:baseline;}
+  .clegend{font-size:10.5px;font-weight:600;}
+  .nochart{color:#b3bccd;text-align:center;padding:44px 0;font-size:12px;background:#fbfcfe;border-radius:10px;}
+  .hov .tipbox{opacity:0;pointer-events:none;transition:opacity .12s;}
+  .hov:hover .tipbox{opacity:1;}
+  .hov:hover rect:first-child{fill:rgba(69,93,160,.05);}
+
+  /* ── 표 ── */
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);}
+  th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);font-weight:700;
+     border-bottom:1.5px solid #d9e0ec;}
+  tbody tr:last-child td{border-bottom:none;}
+  .ctab{margin-top:12px;table-layout:fixed;font-size:11px;}
+  .ctab th,.ctab td{padding:5px 4px;text-align:right;border-bottom:1px solid #f1f4f9;}
+  .ctab th{text-align:center;font-size:10px;letter-spacing:.04em;}
+  .ctab .rl{text-align:left;font-weight:700;color:#586277;width:118px;text-transform:none;letter-spacing:0;font-size:11px;}
+  .nodata{color:#b3bccd;}
+
+  /* ── AI 분석 ── */
+  .asec{padding:16px 20px;margin-bottom:10px;background:#fbfcfe;border-radius:12px;border-left:3px solid var(--cs);}
+  .atitle{font-weight:800;font-size:12px;color:var(--dg);margin-bottom:5px;letter-spacing:-.1px;}
+  .abody{font-size:12.5px;color:#3b4657;}
+
+  /* ── 푸터 ── */
+  .foot{padding:20px 52px 26px;color:#a8b2c4;font-size:10.5px;border-top:1px solid var(--line);
+        display:flex;justify-content:space-between;align-items:center;gap:20px;}
+  .printbtn{background:var(--dg);color:#fff;border:none;border-radius:100px;padding:11px 26px;
+            font-size:12.5px;font-weight:700;cursor:pointer;letter-spacing:.02em;}
+  .printbtn:hover{background:var(--sw);}
+
+  @media print{
+    body{background:#fff;} .page{max-width:100%;} .printbtn{display:none;}
+    .hd,.gtag,.gdot,th,.ctab th,.asec,.cards{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .sec{page-break-inside:avoid;}
+  }
+  @media (max-width:820px){
+    .cards{grid-template-columns:1fr 1fr;} .hdrow{flex-direction:column;}
+    .grade{text-align:left;} .greason{text-align:left;}
+    .hd,.body,.foot{padding-left:24px;padding-right:24px;}
+  }`;
+
+  // 12개월 추이 차트 + 월별 데이터 표 (hover 시 값 표시)
+  const kpiChartSvg = ({ title, labels, series, target, targetLabel, rows }) => {
+    const W = 900, H = 330, padL = 58, padR = 18, padT = 26, padB = 30;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const all = series.flatMap(s => s.data).filter(v => v != null).concat(target != null ? [target] : []);
-    if (!all.length) return `<div class="chart"><div class="ctitle">${title}</div><div class="nochart">데이터 없음</div></div>`;
+    const fmtNum = (v) => v == null ? '-' : (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (Number.isInteger(v) ? String(v) : String(+v.toFixed(v < 1 ? 3 : 1))));
+
+    // 월별 표 (차트 아래)
+    const tableHtml = !rows ? '' : `<table class="ctab"><thead><tr><th></th>${
+      labels.map(l => `<th>${l.slice(5)}월</th>`).join('')}</tr></thead><tbody>${
+      rows.map(r => `<tr><td class="rl">${r.label}</td>${
+        r.values.map(v => `<td>${r.fmt ? r.fmt(v) : fmtNum(v)}</td>`).join('')}</tr>`).join('')
+      }</tbody></table>`;
+
+    if (!all.length) {
+      return `<div class="chart"><div class="ctitle">${title}</div><div class="nochart">데이터 없음</div>${tableHtml}</div>`;
+    }
+
     const maxV = (Math.max(...all) || 1) * 1.2;
     const slotW = plotW / labels.length;
-    const bw = Math.max(6, slotW * 0.55);
+    const bw = Math.max(8, slotW * 0.5);
     const cx = (i) => padL + (i + 0.5) * slotW;
     const y = (v) => padT + plotH - (v / maxV) * plotH;
     let el = '';
+
     for (let g = 0; g <= 4; g++) {
       const gy = padT + plotH * g / 4;
       const gv = maxV * (4 - g) / 4;
       el += `<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" stroke="#e5e7eb"/>`;
-      el += `<text x="${padL - 6}" y="${gy + 3.5}" font-size="9" fill="#9ca3af" text-anchor="end">${gv >= 10 ? Math.round(gv) : +gv.toFixed(gv < 1 ? 3 : 1)}</text>`;
+      el += `<text x="${padL - 8}" y="${gy + 4}" font-size="11" fill="#9ca3af" text-anchor="end">${fmtNum(gv)}</text>`;
     }
+
     series.forEach(s => {
       if (s.type === 'bar') {
         s.data.forEach((v, i) => {
           if (v == null) return;
-          el += `<rect x="${cx(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${Math.max(1, padT + plotH - y(v))}" rx="2" fill="${s.color}" opacity="0.8"/>`;
-          el += `<text x="${cx(i)}" y="${y(v) - 4}" font-size="8.5" fill="${s.color}" text-anchor="middle">${v}</text>`;
+          el += `<rect x="${cx(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${Math.max(1, padT + plotH - y(v))}" rx="2" fill="${s.color}" opacity="0.85"/>`;
         });
       } else {
         const pts = s.data.map((v, i) => v == null ? null : `${cx(i)},${y(v)}`).filter(Boolean);
         if (pts.length > 1) el += `<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5"/>`;
         s.data.forEach((v, i) => {
           if (v == null) return;
-          el += `<circle cx="${cx(i)}" cy="${y(v)}" r="3.5" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`;
-          el += `<text x="${cx(i)}" y="${y(v) - 8}" font-size="9" font-weight="700" fill="${s.color}" text-anchor="middle">${v}</text>`;
+          el += `<circle cx="${cx(i)}" cy="${y(v)}" r="4" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`;
         });
       }
     });
+
     if (target != null) {
-      el += `<line x1="${padL}" y1="${y(target)}" x2="${W - padR}" y2="${y(target)}" stroke="#ef4444" stroke-dasharray="5,4" stroke-width="1.5"/>`;
-      el += `<text x="${W - padR}" y="${y(target) - 4}" font-size="9" fill="#ef4444" text-anchor="end">${targetLabel || `목표 ${target}`}</text>`;
+      el += `<line x1="${padL}" y1="${y(target)}" x2="${W - padR}" y2="${y(target)}" stroke="#ef4444" stroke-dasharray="6,4" stroke-width="1.5"/>`;
+      el += `<text x="${W - padR}" y="${y(target) - 5}" font-size="11" fill="#ef4444" text-anchor="end">${targetLabel || `목표 ${target}`}</text>`;
     }
+
     labels.forEach((l, i) => {
-      el += `<text x="${cx(i)}" y="${H - 8}" font-size="9" fill="#6b7280" text-anchor="middle">${l.slice(2).replace('-', '.')}</text>`;
+      el += `<text x="${cx(i)}" y="${H - 9}" font-size="11" fill="#6b7280" text-anchor="middle">${l.slice(2).replace('-', '.')}</text>`;
     });
+
+    // hover 영역 + 값 툴팁 (마우스를 올린 월의 모든 시리즈 값 표시)
+    labels.forEach((l, i) => {
+      const vals = series.map(s => ({ name: s.name, color: s.color, v: s.data[i] })).filter(x => x.v != null);
+      if (!vals.length) return;
+      const boxW = 132, lineH = 17, boxH = 20 + vals.length * lineH;
+      let bx = cx(i) + 12;
+      if (bx + boxW > W - padR) bx = cx(i) - boxW - 12;
+      const by = padT + 8;
+      let tip = `<rect x="${bx}" y="${by}" width="${boxW}" height="${boxH}" rx="6" fill="#13294B" opacity="0.95"/>`;
+      tip += `<text x="${bx + 10}" y="${by + 16}" font-size="11" font-weight="700" fill="#FDB813">${l}</text>`;
+      vals.forEach((x, k) => {
+        tip += `<circle cx="${bx + 14}" cy="${by + 28 + k * lineH}" r="3.5" fill="${x.color}"/>`;
+        tip += `<text x="${bx + 23}" y="${by + 32 + k * lineH}" font-size="11" fill="#fff">${x.name} ${fmtNum(x.v)}</text>`;
+      });
+      el += `<g class="hov"><rect x="${padL + i * slotW}" y="${padT}" width="${slotW}" height="${plotH}" fill="transparent"/><g class="tipbox">${tip}</g></g>`;
+    });
+
     const legend = series.map(s => `<span style="color:${s.color};">● ${s.name}</span>`).join('&nbsp;&nbsp;');
-    return `<div class="chart"><div class="ctitle">${title}<span class="clegend">${legend}</span></div><svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg></div>`;
+    return `<div class="chart"><div class="ctitle">${title}<span class="clegend">${legend}</span></div>`
+      + `<svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg>${tableHtml}</div>`;
   };
 
   const generateKpiReport = async () => {
@@ -7917,6 +8049,8 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
       const sKitLT = last12.map(m => avg(kitByMonth[m]));
       const sCycle = last12.map(m => avg(cycByMonth[m]));
 
+      // 월간 보고서는 자재담당 고유 KPI 4종만 다룬다
+      // (수입검사=QA, 납품지연=구매 소관 → 주간 운영 보고서로 분리)
       const metrics = {
         기준월: ym,
         데이터기준: { Stock: lastUpdated || null, OpenPO: openPOLastUpdated || null },
@@ -7927,8 +8061,10 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
           전월: { 건수: kitPrev.count, 평균리드타임_일: kitPrev.avgLeadTimeDays }
         },
         키팅_평균사이클타임_분: cycleArr.length ? +(cycleArr.reduce((a, b) => a + b, 0) / cycleArr.length).toFixed(1) : null,
-        수입검사대기: { 건수: qs.count, '8일이상_지연': qs.over8Days, 최장경과_상위5: qs.items.slice(0, 5).map(i => ({ 자재: i.material, 품명: i.description, 경과일: i.daysElapsed })) },
-        납품: { 지연_건수: dl.overdue.length, 지연_상위8: dl.overdue.slice(0, 8).map(d => ({ PO: d.poNo, 자재: d.material, 납기: d.deliveryDate, 수량: d.qty, 공급사: d.supplier })), '2주내_예정건수': dl.upcoming.length },
+        연간누계: {
+          GR수량: last12.filter((_, i) => last12[i].startsWith(String(now.getFullYear()))).reduce((s, m) => s + (kpiData.grCancelQty?.[m] ?? 0), 0),
+          GR취소건수: last12.filter((_, i) => last12[i].startsWith(String(now.getFullYear()))).reduce((s, m) => s + (kpiData.grCancel?.[m] ?? 0), 0),
+        },
         재고_품목수: Array.isArray(inventoryData) ? inventoryData.length : 0,
       };
 
@@ -7987,75 +8123,106 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         { label: '재고 조정률', val: v(m.재고조정률_pct.당월, '%'), sub: diffArrow(m.재고조정률_pct.당월, m.재고조정률_pct.전월), goal: '목표 0.064% 이하' },
         { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'), sub: `${m.키팅.당월.건수}건 · ${diffArrow(m.키팅.당월.평균리드타임_일, m.키팅.전월.평균리드타임_일)}`, goal: '목표 3일 이내' },
         { label: '키팅 사이클타임', val: v(m.키팅_평균사이클타임_분, '분'), sub: `${m.키팅.당월.상태별.completed}건 완료`, goal: '' },
-        { label: '수입검사 대기', val: v(m.수입검사대기.건수, '건'), sub: `8일+ 지연 <b style="color:${m.수입검사대기['8일이상_지연'] > 0 ? '#ef4444' : '#10b981'}">${m.수입검사대기['8일이상_지연']}건</b>`, goal: '목표 지연 0건' },
-        { label: '납품 지연', val: v(m.납품.지연_건수, '건'), sub: `2주 내 예정 ${m.납품['2주내_예정건수']}건`, goal: '' },
       ].map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval">${c.val}</div><div class="ksub">${c.sub || ''}</div><div class="kgoal">${c.goal}</div></div>`).join('');
 
-      const charts =
-        kpiChartSvg({ title: 'GR 처리량 & 취소 건수', labels: last12, series: [{ type: 'bar', name: 'GR 수량', data: sGrQty, color: '#455DA0' }, { type: 'line', name: '취소 건수', data: sGrCancel, color: '#ef4444' }], target: null }) +
-        kpiChartSvg({ title: '재고 조정률 (%)', labels: last12, series: [{ type: 'bar', name: '조정률', data: sInvAdj, color: '#713A61' }], target: 0.064, targetLabel: '목표 0.064%' }) +
-        kpiChartSvg({ title: '키팅 평균 리드타임 (일)', labels: last12, series: [{ type: 'line', name: '리드타임', data: sKitLT, color: '#199AC2' }], target: 3, targetLabel: '목표 3일' }) +
-        kpiChartSvg({ title: '키팅 평균 사이클타임 (분)', labels: last12, series: [{ type: 'line', name: '사이클타임', data: sCycle, color: '#FDB813' }], target: null });
+      // 월별 표: 12월 PPT 형식(GR Qty/Pass/Cancel/월별·누적률)을 그대로 따름
+      const pct = (x) => x == null ? '-' : `${(+x).toFixed(x < 0.01 ? 4 : 3)}%`;
+      const cumGrRate = (() => {
+        let q = 0, c = 0;
+        return sGrQty.map((qty, i) => {
+          if (qty == null && sGrCancel[i] == null) return null;
+          q += qty || 0; c += sGrCancel[i] || 0;
+          return q > 0 ? +(c / q * 100).toFixed(3) : null;
+        });
+      })();
+      const cumAdjRate = (() => {
+        let v = 0, s = 0, any = false;
+        return sInvAdj.map((r, i) => {
+          const st = kpiData.invAdjustDetail?.[last12[i]];
+          if (!st) return any ? +(v / s * 100).toFixed(4) : null;
+          any = true; v += st.variance || 0; s += st.stock || 0;
+          return s > 0 ? +(v / s * 100).toFixed(4) : null;
+        });
+      })();
 
-      const delayRows = m.납품.지연_상위8.map(d => `<tr><td>${esc(d.PO)}</td><td>${esc(d.자재)}</td><td>${esc(d.납기)}</td><td style="text-align:right">${esc(d.수량)}</td><td>${esc(d.공급사)}</td></tr>`).join('') || '<tr><td colspan="5" class="nodata" style="text-align:center">지연 없음</td></tr>';
-      const qsRows = m.수입검사대기.최장경과_상위5.map(q => `<tr><td>${esc(q.자재)}</td><td>${esc(q.품명)}</td><td style="text-align:right;color:${q.경과일 >= 8 ? '#ef4444' : '#374151'};font-weight:${q.경과일 >= 8 ? '700' : '400'}">${esc(q.경과일)}일</td></tr>`).join('') || '<tr><td colspan="3" class="nodata" style="text-align:center">대기 없음</td></tr>';
+      const charts =
+        kpiChartSvg({
+          title: 'GR 처리량 & 취소 건수', labels: last12,
+          series: [{ type: 'bar', name: 'GR 수량', data: sGrQty, color: '#455DA0' }, { type: 'line', name: '취소 건수', data: sGrCancel, color: '#ef4444' }],
+          target: null,
+          rows: [
+            { label: 'GR Qty.', values: sGrQty },
+            { label: 'GR Pass', values: sGrQty.map((q, i) => q == null ? null : q - (sGrCancel[i] || 0)) },
+            { label: 'GR Cancel', values: sGrCancel },
+            { label: 'Cancel (Cum.)', values: cumGrRate, fmt: pct },
+          ]
+        }) +
+        kpiChartSvg({
+          title: '재고 조정률 (%)', labels: last12,
+          series: [{ type: 'bar', name: '조정률', data: sInvAdj, color: '#713A61' }],
+          target: 0.064, targetLabel: '목표 0.064%',
+          rows: [
+            { label: 'Total value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.stock ?? null) },
+            { label: 'Fail value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.variance ?? null) },
+            { label: '(Month.)', values: sInvAdj, fmt: pct },
+            { label: '(Cum.)', values: cumAdjRate, fmt: pct },
+          ]
+        }) +
+        kpiChartSvg({
+          title: '키팅 평균 리드타임 (일)', labels: last12,
+          series: [{ type: 'line', name: '리드타임', data: sKitLT, color: '#199AC2' }],
+          target: 3, targetLabel: '목표 3일',
+          rows: [
+            { label: '완료 건수', values: last12.map(mm => (kitByMonth[mm] || []).length || null) },
+            { label: '평균 (일)', values: sKitLT },
+          ]
+        }) +
+        kpiChartSvg({
+          title: '키팅 평균 사이클타임 (분)', labels: last12,
+          series: [{ type: 'line', name: '사이클타임', data: sCycle, color: '#FDB813' }],
+          target: null,
+          rows: [
+            { label: '완료 건수', values: last12.map(mm => (cycByMonth[mm] || []).length || null) },
+            { label: '평균 (분)', values: sCycle },
+          ]
+        });
 
       const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
 
       const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KPI 월간 보고서 ${ym}</title>
-<style>
-  :root{--dg:#13294B;--sw:#455DA0;--cs:#199AC2;--sol:#FDB813;}
-  *{box-sizing:border-box;} body{font-family:'Malgun Gothic','Segoe UI',sans-serif;margin:0;background:#eef1f6;color:#1f2937;font-size:13px;line-height:1.6;}
-  .page{max-width:900px;margin:0 auto;background:#fff;min-height:100vh;box-shadow:0 0 24px rgba(0,0,0,.08);}
-  .hd{background:linear-gradient(120deg,var(--dg) 0%,var(--sw) 100%);color:#fff;padding:30px 36px 24px;position:relative;}
-  .hd::after{content:"";position:absolute;left:0;right:0;bottom:0;height:5px;background:var(--sol);}
-  .hd h1{margin:0;font-size:22px;} .hd .sub{opacity:.75;font-size:12px;margin-top:6px;}
-  .grade{position:absolute;right:36px;top:30px;text-align:center;}
-  .gbadge{display:inline-block;padding:8px 22px;border-radius:24px;font-size:17px;font-weight:800;color:#fff;}
-  .greason{font-size:11px;opacity:.85;margin-top:6px;max-width:220px;}
-  .body{padding:26px 36px 40px;}
-  h2{font-size:15px;color:var(--sw);border-left:4px solid var(--sol);padding-left:10px;margin:30px 0 14px;}
-  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-  .kcard{border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;background:#fafbfd;}
-  .klabel{font-size:11.5px;color:#6b7280;font-weight:700;} .kval{font-size:26px;font-weight:800;color:var(--dg);margin:2px 0;}
-  .ksub{font-size:11px;color:#6b7280;} .kgoal{font-size:10.5px;color:#9ca3af;margin-top:2px;}
-  .chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-  .chart{border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#fff;}
-  .ctitle{font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;display:flex;justify-content:space-between;}
-  .clegend{font-size:10px;font-weight:400;} .nochart{color:#9ca3af;text-align:center;padding:40px 0;font-size:12px;}
-  table{width:100%;border-collapse:collapse;font-size:12px;} th,td{border:1px solid #e5e7eb;padding:6px 10px;text-align:left;}
-  th{background:#f3f6fb;color:var(--sw);font-size:11.5px;} .nodata{color:#9ca3af;}
-  .asec{border:1px solid #e5e7eb;border-left:4px solid var(--cs);border-radius:10px;padding:12px 16px;margin-bottom:10px;background:#fff;}
-  .atitle{font-weight:800;font-size:12.5px;color:var(--dg);margin-bottom:4px;} .abody{font-size:12.5px;}
-  .foot{padding:14px 36px;color:#9ca3af;font-size:10.5px;border-top:1px solid #eee;display:flex;justify-content:space-between;align-items:center;}
-  .printbtn{background:var(--sw);color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;}
-  @media print{ body{background:#fff;} .page{box-shadow:none;max-width:100%;} .printbtn{display:none;} .chartgrid{grid-template-columns:1fr 1fr;} .hd{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .gbadge,.kcard,th{-webkit-print-color-adjust:exact;print-color-adjust:exact;} }
-  @media (max-width:640px){ .cards{grid-template-columns:1fr 1fr;} .chartgrid{grid-template-columns:1fr;} .grade{position:static;margin-top:12px;text-align:left;} }
-</style></head><body><div class="page">
-<div class="hd">
-  <h1>📊 자재관리 KPI 월간 보고서 <span style="color:var(--sol)">${ym}</span></h1>
-  <div class="sub">Promega PBK Warehouse · 생성 ${new Date().toLocaleString('ko-KR')} · 데이터 기준: Stock ${esc(m.데이터기준.Stock)} / Open PO ${esc(m.데이터기준.OpenPO)}</div>
-  ${grade ? `<div class="grade"><span class="gbadge" style="background:${gradeColor}">${grade}</span><div class="greason">${esc(gradeReason)}</div></div>` : ''}
-</div>
+<title>자재관리 KPI 월간 보고서 ${ym}</title>
+<style>${REPORT_CSS}</style></head><body><div class="page">
+<div class="hd"><div class="hdrow">
+  <div>
+    <div class="eyebrow">Promega PBK · Material Management</div>
+    <h1>KPI 월간 보고서<span class="per">${ym}</span></h1>
+    <div class="sub">생성 ${new Date().toLocaleString('ko-KR')}<br>데이터 기준 · Stock ${esc(m.데이터기준.Stock)} / Open PO ${esc(m.데이터기준.OpenPO)}</div>
+  </div>
+  ${grade ? `<div class="grade">
+    <span class="gtag"><span class="gdot" style="background:${gradeColor}"></span>${grade}</span>
+    <div class="greason">${esc(gradeReason)}</div>
+  </div>` : ''}
+</div></div>
 <div class="body">
-  <h2>핵심 지표</h2>
-  <div class="cards">${cards}</div>
-  <h2>12개월 추이</h2>
-  <div class="chartgrid">${charts}</div>
-  <h2>AI 분석</h2>
-  ${aiBlock('📌', '요약', section('요약'), '#455DA0')}
-  ${aiBlock('📈', '지표 분석', section('지표 분석'), '#199AC2')}
-  ${aiBlock('⚠️', '리스크 및 특이사항', section('리스크'), '#ef4444')}
-  ${aiBlock('💡', '권고', section('권고'), '#FDB813')}
-  <h2>상세 — 납품 지연</h2>
-  <table><thead><tr><th>PO</th><th>자재</th><th>납기</th><th>수량</th><th>공급사</th></tr></thead><tbody>${delayRows}</tbody></table>
-  <h2>상세 — 수입검사 장기 대기</h2>
-  <table><thead><tr><th>자재</th><th>품명</th><th>경과일</th></tr></thead><tbody>${qsRows}</tbody></table>
+  <div class="sec">
+    <div class="sechd"><span class="secno">01</span><h2>핵심 지표</h2><span class="note">${ym} 기준 · 전월 대비</span></div>
+    <div class="cards">${cards}</div>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">02</span><h2>12개월 추이</h2><span class="note">그래프에 마우스를 올리면 월별 값이 표시됩니다</span></div>
+    <div class="chartwrap">${charts}</div>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">03</span><h2>분석 및 권고</h2><span class="note">AI 작성</span></div>
+    ${aiBlock('📌', '요약', section('요약'), '#455DA0')}
+    ${aiBlock('📈', '지표 분석', section('지표 분석'), '#199AC2')}
+    ${aiBlock('⚠️', '리스크 및 특이사항', section('리스크'), '#e0483b')}
+    ${aiBlock('💡', '권고', section('권고'), '#FDB813')}
+  </div>
 </div>
 <div class="foot">
-  <span>수치·그래프는 대시보드 자동 집계 · 분석 코멘트는 AI(Claude) 작성 · 지연 기준: 수입검사 8일</span>
-  <button class="printbtn" onclick="window.print()">🖨️ 인쇄 / PDF 저장</button>
+  <span>수치·그래프 대시보드 자동 집계 · 분석 코멘트 AI(Claude) 작성<br>납품 지연 · 수입검사 현황은 주간 운영 보고서 참조</span>
+  <button class="printbtn" onclick="window.print()">인쇄 / PDF 저장</button>
 </div>
 </div></body></html>`;
 
@@ -8072,6 +8239,238 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
     } finally {
       setKpiReportLoading(false);
     }
+  };
+
+  // 📅 주간 운영 보고서 — 실무 공유용 (조치 필요 항목 중심)
+  // 월간(공식 KPI)과 분리: 납품 지연=구매, 수입검사=QA 공유 항목 + 자재 이슈 기록
+  const generateWeeklyReport = async () => {
+    const apiKey = safeStorage.getItem('pbk_anthropic_key');
+    if (weeklyReportLoading) return;
+    setWeeklyReportLoading(true);
+
+    const w = window.open('', '_blank');
+    if (!w) { showToast('❌ 팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.', 'error'); setWeeklyReportLoading(false); return; }
+    w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>주간 보고서 생성 중...</title></head>
+<body style="font-family:'Malgun Gothic',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:90vh;color:#455DA0;">
+<div style="width:44px;height:44px;border:4px solid #e8ecf3;border-top-color:#199AC2;border-radius:50%;animation:s .8s linear infinite;"></div>
+<p style="margin-top:18px;font-weight:600;">주간 운영 현황 집계 중...</p>
+<style>@keyframes s{to{transform:rotate(360deg)}}</style></body></html>`);
+    w.document.close();
+
+    try {
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      // 이번 주(월~일) 범위
+      const dow = (now.getDay() + 6) % 7; // 월=0
+      const mon = new Date(now); mon.setDate(now.getDate() - dow); mon.setHours(0, 0, 0, 0);
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      const weekStart = mon.toISOString().slice(0, 10);
+      const weekEnd = sun.toISOString().slice(0, 10);
+
+      const qs = chatToolImpl.get_qstock();
+      const dl = chatToolImpl.get_delivery_schedule({ days: 14 });
+      const kit = chatToolImpl.get_kitting_status({});
+
+      // 이번 주 실적 (완료된 키팅)
+      const kitDone = (Array.isArray(kittingData) ? kittingData : []).filter(k =>
+        k.status === 'completed' && k.completedAt && k.completedAt >= weekStart && k.completedAt <= weekEnd);
+      const kitOpen = (Array.isArray(kittingData) ? kittingData : []).filter(k => k.status !== 'completed');
+      const allIssues = Array.isArray(workIssues) ? workIssues : [];
+      const inWeek = (i) => ((i.closedAt || i.createdAt || '').slice(0, 10) >= weekStart);
+      // 문제(issue)는 미해결 + 금주 해결분, 개선/AI는 금주 활동분
+      const issuesOpen = allIssues.filter(i => (i.kind || 'issue') === 'issue' && i.status !== 'closed');
+      const issuesClosedWeek = allIssues.filter(i => (i.kind || 'issue') === 'issue' && i.status === 'closed' && inWeek(i));
+      const issueRowsSrc = [...issuesOpen, ...issuesClosedWeek];
+      const improveRows_ = allIssues.filter(i => i.kind === 'improve' && (i.status !== 'closed' || inWeek(i)));
+      const aiRows_ = allIssues.filter(i => i.kind === 'ai' && (i.status !== 'closed' || inWeek(i)));
+
+      const esc = (s) => String(s ?? '-').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      const overdue = dl.overdue;
+      const upcoming = dl.upcoming.filter(d => d.deliveryDate <= weekEnd);
+      const qsLate = qs.items.filter(i => i.daysElapsed >= 8);
+
+      // ── AI 요약 (키 없으면 건너뜀) ──
+      let aiText = '';
+      if (apiKey) {
+        try {
+          const payload = {
+            기준주: `${weekStart} ~ ${weekEnd}`,
+            납품지연: { 건수: overdue.length, 상위: overdue.slice(0, 10).map(d => ({ PO: d.poNo, 자재: d.material, 품명: d.description, 납기: d.deliveryDate, 수량: d.qty, 공급사: d.supplier })) },
+            이번주_납품예정: upcoming.length,
+            수입검사대기: { 건수: qs.count, '8일이상': qs.over8Days, 상위: qsLate.slice(0, 8).map(i => ({ 자재: i.material, 품명: i.description, 경과일: i.daysElapsed })) },
+            키팅: { 이번주완료: kitDone.length, 진행중_대기: kitOpen.length },
+            자재이슈: issueRowsSrc.map(i => ({ 제목: i.title, 구분: i.category, 심각도: i.severity, 내용: i.detail, 조치: i.action, 상태: i.status })),
+            개선활동: improveRows_.map(i => ({ 제목: i.title, 내용: i.detail, 진행: i.action, 상태: i.status })),
+            AI_시스템: aiRows_.map(i => ({ 제목: i.title, 내용: i.detail, 진행: i.action, 상태: i.status })),
+          };
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-5', max_tokens: 900,
+              system: `당신은 자재담당의 주간 운영 보고서 작성자입니다. 제공된 JSON만 근거로 작성하세요.
+규칙: 새 숫자 만들지 말 것. 마크다운 기호 없이 아래 형식으로. 간결한 개조식 한국어.
+[금주 요약] 2~3줄 (업무 처리 실적 + 개선/AI 활동이 있으면 함께 언급)
+[조치 요청] 타부서에 요청할 항목 (구매/QA 등 대상 명시), 없으면 "없음"`,
+              messages: [{ role: 'user', content: JSON.stringify(payload, null, 1) }]
+            })
+          });
+          if (resp.ok) {
+            const d = await resp.json();
+            aiText = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+          }
+        } catch { /* AI 실패해도 보고서는 생성 */ }
+      }
+      const section = (name) => {
+        const mt = aiText.match(new RegExp(`\\[${name}[^\\]]*\\]\\s*([\\s\\S]*?)(?=\\n\\[|$)`));
+        return mt ? mt[1].trim() : null;
+      };
+      const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
+
+      const cards = [
+        { label: '납품 지연', val: overdue.length, unit: '건', sub: overdue.length ? '구매 공유 필요' : '지연 없음', danger: overdue.length > 0 },
+        { label: '수입검사 8일+', val: qs.over8Days, unit: '건', sub: `전체 대기 ${qs.count}건`, danger: qs.over8Days > 0 },
+        { label: '금주 키팅 완료', val: kitDone.length, unit: '건', sub: `진행/대기 ${kitOpen.length}건` },
+        { label: '미해결 이슈', val: issuesOpen.length, unit: '건', sub: issuesClosedWeek.length ? `금주 ${issuesClosedWeek.length}건 해결` : '', danger: issuesOpen.some(i => i.severity === 'high') },
+      ].map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval" ${c.danger ? 'style="color:#e0483b"' : ''}>${c.val}<span class="u">${c.unit}</span></div><div class="ksub">${c.sub || ''}</div></div>`).join('');
+
+      const sevTag = (s) => s === 'high' ? '<span class="tag hi">긴급</span>' : s === 'low' ? '<span class="tag lo">참고</span>' : '<span class="tag md">보통</span>';
+      const stTag = (s) => s === 'closed' ? '<span class="tag ok">완료</span>' : '<span class="tag md">진행중</span>';
+      const issueRows = issueRowsSrc.length ? issueRowsSrc.map(i => `<tr${i.status === 'closed' ? ' class="done"' : ''}>
+        <td>${sevTag(i.severity)}</td><td>${esc(i.category)}</td>
+        <td><b>${esc(i.title)}</b>${i.detail ? `<div class="sm">${esc(i.detail)}</div>` : ''}</td>
+        <td>${esc(i.action) || '<span class="nodata">-</span>'}</td>
+        <td>${stTag(i.status)}</td>
+        <td class="sm">${esc((i.createdAt || '').slice(0, 10))}</td></tr>`).join('')
+        : '<tr><td colspan="6" class="nodata" style="text-align:center;padding:18px">등록된 이슈 없음</td></tr>';
+
+      const actRows = (list, empty) => list.length ? list.map(i => `<tr${i.status === 'closed' ? ' class="done"' : ''}>
+        <td><b>${esc(i.title)}</b>${i.detail ? `<div class="sm">${esc(i.detail)}</div>` : ''}</td>
+        <td>${esc(i.action) || '<span class="nodata">-</span>'}</td>
+        <td>${stTag(i.status)}</td>
+        <td class="sm">${esc((i.createdAt || '').slice(0, 10))}</td></tr>`).join('')
+        : `<tr><td colspan="4" class="nodata" style="text-align:center;padding:18px">${empty}</td></tr>`;
+      const improveRows = actRows(improveRows_, '금주 등록된 개선 활동 없음');
+      const aiActRows = actRows(aiRows_, '금주 등록된 AI·시스템 작업 없음');
+
+      const overdueRows = overdue.length ? overdue.slice(0, 15).map(d => {
+        const days = Math.floor((new Date(today) - new Date(d.deliveryDate)) / 86400000);
+        return `<tr><td>${esc(d.poNo)}</td><td>${esc(d.material)}</td><td class="sm">${esc(d.description)}</td>
+        <td>${esc(d.deliveryDate)} <span class="lateb">${days}일</span></td>
+        <td style="text-align:right">${esc(d.qty)}</td><td>${esc(d.supplier)}</td></tr>`;
+      }).join('') : '<tr><td colspan="6" class="nodata" style="text-align:center;padding:18px">지연 없음</td></tr>';
+
+      const qsRows = qsLate.length ? qsLate.slice(0, 15).map(i =>
+        `<tr><td>${esc(i.material)}</td><td class="sm">${esc(i.description)}</td><td>${esc(i.bin)}</td>
+         <td>${esc(i.grDate)}</td><td style="text-align:right"><b style="color:#e0483b">${esc(i.daysElapsed)}일</b></td></tr>`
+      ).join('') : '<tr><td colspan="5" class="nodata" style="text-align:center;padding:18px">8일 이상 지연 없음</td></tr>';
+
+      const upRows = upcoming.length ? upcoming.slice(0, 15).map(d =>
+        `<tr><td>${esc(d.deliveryDate)}</td><td>${esc(d.poNo)}</td><td>${esc(d.material)}</td>
+         <td class="sm">${esc(d.description)}</td><td style="text-align:right">${esc(d.qty)}</td><td>${esc(d.supplier)}</td></tr>`
+      ).join('') : '<tr><td colspan="6" class="nodata" style="text-align:center;padding:18px">예정 없음</td></tr>';
+
+      let secNo = 1;
+      const no = () => String(secNo++).padStart(2, '0');
+      const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>자재 주간 운영 보고서 ${weekStart}</title>
+<style>${REPORT_CSS}
+  .tag{display:inline-block;padding:2px 9px;border-radius:100px;font-size:10px;font-weight:800;white-space:nowrap;}
+  .tag.hi{background:#fdecea;color:#c0392b;} .tag.md{background:#fff6e0;color:#9a6b00;} .tag.lo{background:#eef1f6;color:#65718a;}
+  .tag.ok{background:#e6f7f0;color:#0f7a58;}
+  tr.done td{opacity:.62;}
+  .lateb{display:inline-block;margin-left:5px;padding:1px 7px;border-radius:100px;font-size:10px;font-weight:800;background:#fdecea;color:#c0392b;}
+  .sm{font-size:11px;color:var(--mute);}
+</style></head><body><div class="page">
+<div class="hd"><div class="hdrow">
+  <div>
+    <div class="eyebrow">Promega PBK · Material Weekly</div>
+    <h1>주간 운영 보고서<span class="per">${weekStart.slice(5)} ~ ${weekEnd.slice(5)}</span></h1>
+    <div class="sub">생성 ${now.toLocaleString('ko-KR')}<br>데이터 기준 · Stock ${esc(lastUpdated)} / Open PO ${esc(openPOLastUpdated)}</div>
+  </div>
+  <div class="grade">
+    <span class="gtag"><span class="gdot" style="background:${(overdue.length + qs.over8Days + issuesOpen.length) === 0 ? '#0f9d70' : '#FDB813'}"></span>조치 ${overdue.length + qs.over8Days + issuesOpen.length}건</span>
+    <div class="greason">납품 지연 ${overdue.length} · 검사 지연 ${qs.over8Days} · 이슈 ${issuesOpen.length}</div>
+  </div>
+</div></div>
+<div class="body">
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>금주 현황</h2><span class="note">${weekStart} ~ ${weekEnd}</span></div>
+    <div class="cards">${cards}</div>
+  </div>
+  ${aiText ? `<div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>요약 및 조치 요청</h2><span class="note">AI 작성</span></div>
+    ${aiBlock('📌', '금주 요약', section('금주 요약'), '#455DA0')}
+    ${aiBlock('📣', '조치 요청', section('조치 요청'), '#e0483b')}
+  </div>` : ''}
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>자재 업무 이슈</h2><span class="note">미해결 ${issuesOpen.length}건${issuesClosedWeek.length ? ` · 금주 해결 ${issuesClosedWeek.length}건` : ''}</span></div>
+    <table><thead><tr><th style="width:56px">중요도</th><th style="width:70px">분류</th><th>발생 내용</th><th style="width:26%">조치 내역</th><th style="width:66px">상태</th><th style="width:82px">등록일</th></tr></thead><tbody>${issueRows}</tbody></table>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>개선 활동</h2><span class="note">${improveRows_.length}건</span></div>
+    <table><thead><tr><th>활동</th><th style="width:32%">진행 내용</th><th style="width:66px">상태</th><th style="width:82px">등록일</th></tr></thead><tbody>${improveRows}</tbody></table>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>AI · 시스템</h2><span class="note">${aiRows_.length}건</span></div>
+    <table><thead><tr><th>작업</th><th style="width:32%">진행 내용</th><th style="width:66px">상태</th><th style="width:82px">등록일</th></tr></thead><tbody>${aiActRows}</tbody></table>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>납품 지연</h2><span class="note">구매 공유 · ${overdue.length}건</span></div>
+    <table><thead><tr><th>PO</th><th>자재</th><th>품명</th><th>납기</th><th style="text-align:right">수량</th><th>공급사</th></tr></thead><tbody>${overdueRows}</tbody></table>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>수입검사 장기 대기</h2><span class="note">QA 공유 · 8일 이상 ${qs.over8Days}건</span></div>
+    <table><thead><tr><th>자재</th><th>품명</th><th>위치</th><th>입고일</th><th style="text-align:right">경과</th></tr></thead><tbody>${qsRows}</tbody></table>
+  </div>
+  <div class="sec">
+    <div class="sechd"><span class="secno">${no()}</span><h2>금주 납품 예정</h2><span class="note">${upcoming.length}건</span></div>
+    <table><thead><tr><th>납기</th><th>PO</th><th>자재</th><th>품명</th><th style="text-align:right">수량</th><th>공급사</th></tr></thead><tbody>${upRows}</tbody></table>
+  </div>
+</div>
+<div class="foot">
+  <span>자재담당 주간 운영 현황 · 대시보드 자동 집계${aiText ? ' · 요약 AI(Claude) 작성' : ''}<br>공식 KPI 지표는 월간 보고서 참조</span>
+  <button class="printbtn" onclick="window.print()">인쇄 / PDF 저장</button>
+</div>
+</div></body></html>`;
+
+      w.document.open();
+      w.document.write(html);
+      w.document.close();
+    } catch (e) {
+      try {
+        w.document.open();
+        w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>보고서 생성 실패</title></head><body style="font-family:'Malgun Gothic',sans-serif;text-align:center;padding-top:80px;color:#374151;"><p style="font-size:40px;margin:0;">❌</p><h2>주간 보고서 생성 실패</h2><p>${String(e.message).replace(/</g, '&lt;')}</p></body></html>`);
+        w.document.close();
+      } catch {}
+      showToast(`❌ 주간 보고서 실패: ${e.message}`, 'error');
+    } finally {
+      setWeeklyReportLoading(false);
+    }
+  };
+
+  // 자재 업무 이슈 저장/삭제
+  const saveWorkIssue = () => {
+    if (!newIssue.title.trim()) { showToast('이슈 제목을 입력하세요', 'error'); return; }
+    const item = { ...newIssue, id: Date.now(), createdAt: new Date().toISOString(), closedAt: null };
+    const next = [item, ...workIssues];
+    setWorkIssues(next);
+    safeStorage.setItem('pbk_work_issues', JSON.stringify(next));
+    setNewIssue({ title: '', detail: '', category: '입고', severity: 'normal', status: 'open', action: '' });
+    setShowIssueModal(false);
+    showToast('📝 이슈가 등록되었습니다 (주간 보고서에 포함)', 'success');
+  };
+  const toggleIssueStatus = (id) => {
+    const next = workIssues.map(i => i.id === id
+      ? { ...i, status: i.status === 'closed' ? 'open' : 'closed', closedAt: i.status === 'closed' ? null : new Date().toISOString() }
+      : i);
+    setWorkIssues(next);
+    safeStorage.setItem('pbk_work_issues', JSON.stringify(next));
+  };
+  const deleteWorkIssue = (id) => {
+    const next = workIssues.filter(i => i.id !== id);
+    setWorkIssues(next);
+    safeStorage.setItem('pbk_work_issues', JSON.stringify(next));
   };
 
   // 챗봇 스크롤 자동 하단
@@ -14827,8 +15226,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     </div>
                   </div>
 
-                  {/* AI 월간 보고서 */}
-                  <div className="flex justify-end">
+                  {/* 보고서 생성 (월간 KPI / 주간 운영) + 이슈 기록 */}
+                  <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap items-center gap-2">
+                    <div className="flex-1 min-w-[200px]">
+                      <p className="font-semibold text-slate-800 text-sm">📑 보고서</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        월간 = 공식 KPI 4종 추이 · 주간 = 운영 현황(납품·검사·이슈)
+                        {workIssues.filter(i => i.status !== 'closed').length > 0 &&
+                          <span className="ml-1 text-amber-600 font-medium">· 미해결 이슈 {workIssues.filter(i => i.status !== 'closed').length}건</span>}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowIssueModal(true)}
+                      className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    >
+                      <Plus className="w-4 h-4" /> 이슈·활동 기록
+                    </button>
+                    <button
+                      onClick={generateWeeklyReport}
+                      disabled={weeklyReportLoading}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${
+                        weeklyReportLoading ? 'bg-gray-300 text-gray-500 cursor-wait' : 'bg-cyan-600 text-white hover:bg-cyan-700'
+                      }`}
+                    >
+                      {weeklyReportLoading ? <><RefreshCw className="w-4 h-4 animate-spin" /> 생성 중...</> : <><Calendar className="w-4 h-4" /> 주간 운영 보고서</>}
+                    </button>
                     <button
                       onClick={generateKpiReport}
                       disabled={kpiReportLoading}
@@ -14836,7 +15258,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         kpiReportLoading ? 'bg-gray-300 text-gray-500 cursor-wait' : 'bg-violet-600 text-white hover:bg-violet-700'
                       }`}
                     >
-                      {kpiReportLoading ? <><RefreshCw className="w-4 h-4 animate-spin" /> 보고서 생성 중...</> : <><FileText className="w-4 h-4" /> 📄 AI 월간 보고서</>}
+                      {kpiReportLoading ? <><RefreshCw className="w-4 h-4 animate-spin" /> 생성 중...</> : <><FileText className="w-4 h-4" /> KPI 월간 보고서</>}
                     </button>
                   </div>
 
@@ -20106,6 +20528,139 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           </div>
         </div>
       )}
+
+      {/* 자재 업무 이슈·개선활동 기록 모달 (주간 보고서에 반영) */}
+      {showIssueModal && (() => {
+        const KINDS = [
+          { v: 'issue', label: '⚠️ 이슈 발생', desc: '문제·사고·불량' },
+          { v: 'improve', label: '🔧 개선 활동', desc: '프로세스·환경 개선' },
+          { v: 'ai', label: '🤖 AI·시스템', desc: '자동화·대시보드 작업' },
+        ];
+        const CATS = ['입고', '보관', '불출', '재고', '검사연계', '설비/환경', '기타'];
+        const openList = workIssues.filter(i => i.status !== 'closed');
+        const closedList = workIssues.filter(i => i.status === 'closed').slice(0, 8);
+        const kindTag = (k) => k === 'improve' ? '🔧' : k === 'ai' ? '🤖' : '⚠️';
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowIssueModal(false)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-800">📝 이슈 · 개선활동 기록</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">등록한 내용은 주간 운영 보고서에 자동으로 들어갑니다</p>
+                </div>
+                <button onClick={() => setShowIssueModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-5">
+                {/* 입력 폼 */}
+                <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+                  <div className="flex gap-2">
+                    {KINDS.map(k => (
+                      <button key={k.v} onClick={() => setNewIssue(p => ({ ...p, kind: k.v }))}
+                        className={`flex-1 px-3 py-2 rounded-lg text-sm border transition ${
+                          newIssue.kind === k.v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+                        }`}>
+                        <div className="font-medium">{k.label}</div>
+                        <div className={`text-[10px] ${newIssue.kind === k.v ? 'text-indigo-100' : 'text-gray-400'}`}>{k.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="text" value={newIssue.title}
+                    onChange={e => setNewIssue(p => ({ ...p, title: e.target.value }))}
+                    placeholder={newIssue.kind === 'issue' ? '무슨 일이 있었나요? (예: 71242 라벨 수량 부족 입고)' : newIssue.kind === 'improve' ? '무엇을 개선했나요? (예: A1 랙 FIFO 정리)' : '어떤 작업을 했나요? (예: 키팅 바코드 스캐너 도입)'}
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  />
+                  <textarea
+                    value={newIssue.detail} rows={2}
+                    onChange={e => setNewIssue(p => ({ ...p, detail: e.target.value }))}
+                    placeholder="상세 내용 (선택)"
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+                  />
+                  <textarea
+                    value={newIssue.action} rows={2}
+                    onChange={e => setNewIssue(p => ({ ...p, action: e.target.value }))}
+                    placeholder={newIssue.kind === 'issue' ? '어떻게 조치했나요? (예: 공급사 재발송 요청, 생산 일정 조정)' : '진행 내용 / 결과'}
+                    className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+                  />
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {newIssue.kind === 'issue' && (
+                      <>
+                        <select value={newIssue.category} onChange={e => setNewIssue(p => ({ ...p, category: e.target.value }))}
+                          className="border rounded-lg px-3 py-2 text-sm">
+                          {CATS.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <select value={newIssue.severity} onChange={e => setNewIssue(p => ({ ...p, severity: e.target.value }))}
+                          className="border rounded-lg px-3 py-2 text-sm">
+                          <option value="high">긴급</option>
+                          <option value="normal">보통</option>
+                          <option value="low">참고</option>
+                        </select>
+                      </>
+                    )}
+                    <label className="flex items-center gap-1.5 text-sm text-gray-600 ml-auto">
+                      <input type="checkbox" checked={newIssue.status === 'closed'}
+                        onChange={e => setNewIssue(p => ({ ...p, status: e.target.checked ? 'closed' : 'open' }))} />
+                      완료됨
+                    </label>
+                    <button onClick={saveWorkIssue} className="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+                      등록
+                    </button>
+                  </div>
+                </div>
+
+                {/* 목록 */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">진행 중 ({openList.length})</p>
+                  <div className="space-y-1.5">
+                    {openList.length === 0 && <p className="text-sm text-gray-400 py-3 text-center bg-gray-50 rounded-lg">진행 중인 항목이 없습니다</p>}
+                    {openList.map(i => (
+                      <div key={i.id} className="flex items-start gap-2 border rounded-lg px-3 py-2">
+                        <span className="text-base leading-6">{kindTag(i.kind)}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium text-slate-800">
+                            {i.title}
+                            {i.kind === 'issue' && <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded ${
+                              i.severity === 'high' ? 'bg-red-100 text-red-700' : i.severity === 'low' ? 'bg-gray-100 text-gray-600' : 'bg-amber-100 text-amber-700'
+                            }`}>{i.severity === 'high' ? '긴급' : i.severity === 'low' ? '참고' : '보통'}</span>}
+                            {i.kind === 'issue' && <span className="ml-1 text-[10px] text-gray-400">{i.category}</span>}
+                          </div>
+                          {i.detail && <div className="text-xs text-gray-500 mt-0.5">{i.detail}</div>}
+                          {i.action && <div className="text-xs text-cyan-700 mt-0.5">→ {i.action}</div>}
+                          <div className="text-[10px] text-gray-400 mt-0.5">{(i.createdAt || '').slice(0, 10)}</div>
+                        </div>
+                        <button onClick={() => toggleIssueStatus(i.id)} className="text-xs px-2 py-1 bg-emerald-50 text-emerald-700 rounded hover:bg-emerald-100 whitespace-nowrap">완료</button>
+                        <button onClick={() => deleteWorkIssue(i.id)} className="text-gray-300 hover:text-red-500"><X className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                  {closedList.length > 0 && (
+                    <>
+                      <p className="text-xs font-semibold text-gray-500 mt-4 mb-2">최근 완료</p>
+                      <div className="space-y-1">
+                        {closedList.map(i => (
+                          <div key={i.id} className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-400">
+                            <span>{kindTag(i.kind)}</span>
+                            <span className="line-through flex-1 truncate">{i.title}</span>
+                            <span className="text-[10px]">{(i.closedAt || '').slice(0, 10)}</span>
+                            <button onClick={() => toggleIssueStatus(i.id)} className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded hover:bg-gray-200">되돌리기</button>
+                            <button onClick={() => deleteWorkIssue(i.id)} className="text-gray-300 hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="px-6 py-3 border-t flex justify-end">
+                <button onClick={() => setShowIssueModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg text-sm hover:bg-gray-300">닫기</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 자재별 QR 모달 — location.html?m= 딥링크 */}
       {locateQrMaterial && (() => {
