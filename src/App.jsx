@@ -6379,6 +6379,7 @@ export default function PBKWarehouseSystem() {
 
   // 온습도 점검표(QP604-4) HTML 생성 — Word(.doc) / PDF 공통 양식
   // 원본 서식(2026.01.ESD_Check sheet.docx)의 표 폭·행 높이·글자 크기를 그대로 재현
+  // 문서번호/시행일/ECO 문구는 현행판 REV:03 (Effective 2026-01-09) 기준
   //   · A4 세로, 여백 상/좌/우 1.27cm, 하 0.76cm
   //   · 상단 제목표 4열 = 68.4 / 10.7 / 11.2 / 9.8 %
   //   · 일자표 폭 = 본문의 51%, 4열 = 20.2 / 29.4 / 26.5 / 23.9 %, 행 높이 16.5pt
@@ -6480,13 +6481,14 @@ ${tableRows}</tbody>
 <p class="note"><span class="mk">&#8594;</span>Equipment &amp; Tool :&nbsp;&nbsp;NS-205B,</p>
 <p class="note"><span class="mk">&#8594;</span>Check method : write down the digit</p>
 <p class="note"><span class="mk">&#10003;</span>Spec. : <b>Temp : +5~40&#8451;, Humidity: 0%~75%</b></p>
+<p class="note"><span class="mk">&#10003;</span><i>* Each item could be changed or added without ECO.</i></p>
 </td>
 </tr>
 </table>
 
 <div class="ftr">
-<p>QP604-4&nbsp; REV : 02<span class="mid">Promega Biosystems Korea</span></p>
-<p>Effective Date : 10/01/2019</p>
+<p>QP604-4&nbsp; REV : 03<span class="mid">Promega Biosystems Korea</span></p>
+<p>Effective Date : 1/9/2026</p>
 </div>`;
 
     const htmlContent = `
