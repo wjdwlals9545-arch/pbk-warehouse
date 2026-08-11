@@ -6385,6 +6385,7 @@ export default function PBKWarehouseSystem() {
   //           열 7352/1148/1204/1050tw = 129.6/20.3/21.2/18.6mm, 행 높이 333/629tw = 5.9/11.1mm
   //   일자표: 폭 5344tw(94.2mm), 열 1080/1571/1417/1276tw = 19.0/27.7/25.0/22.5mm,
   //           셀 좌우 여백 99tw(1.75mm), 표 우측 본문 간격 142tw(2.5mm)
+  //   Month 표기: 원본 점검표와 동일하게 'Month :' + 여백 + YYYY.MM
   //   안내문: 목록 들여쓰기 left 800tw(14.1mm) / hanging 400tw(7.06mm)
   //           → 기호 x=114.7mm, 본문 x=121.7mm (원본 PDF 실측 114.9 / 121.9와 일치)
   //           ECO 문구는 목록이 아니므로 기호 없이 표 오른쪽(107.6mm)에서 시작
@@ -6466,7 +6467,7 @@ div.ftr p { margin: 0 0 3.6mm 0; line-height: 3.5mm; }`;
 </tr>
 </table>
 
-<p class="month">Month :${mm}/${year}</p>
+<p class="month">Month :&nbsp;&nbsp;&nbsp;<span style="padding-left:0.8mm">${year}.${mm}</span></p>
 
 <table class="layout">
 <tr>
