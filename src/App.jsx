@@ -6377,89 +6377,92 @@ export default function PBKWarehouseSystem() {
   };
 
 
-  // 온습도 점검표(QP604-4) HTML 생성 — Word(.doc) / PDF 공통 양식
-  // 원본 서식(2026.01.ESD_Check sheet.docx)의 표 폭·행 높이·글자 크기를 그대로 재현
-  // 문서번호/시행일/ECO 문구는 현행판 REV:03 (Effective 2026-01-09) 기준
-  //   · A4 세로, 여백 상/좌/우 1.27cm, 하 0.76cm
-  //   · 상단 제목표 4열 = 68.4 / 10.7 / 11.2 / 9.8 %
-  //   · 일자표 폭 = 본문의 51%, 4열 = 20.2 / 29.4 / 26.5 / 23.9 %, 행 높이 16.5pt
-  //   · 일자표 오른쪽에 Equipment / Check method / Spec. 안내문
+  // 온습도 점검표 — 사내 현행 서식 QP604-4 REV:03 재현
+  // 원본: SOP & WI (PBK)/CURRENT Documents/Form/QP604-4 ESD_Check sheet(Temp,Humidity)_Rev3.docx
+  // docx 실측값 (twip → mm, 1440tw = 25.4mm)
+  //   용지 A4, 여백 상/좌/우 720tw(12.7mm), 하 432tw(7.6mm)
+  //   제목표: 폭 10754tw(189.7mm) 가운데 정렬, 위로 240tw(4.2mm),
+  //           열 7352/1148/1204/1050tw = 129.6/20.3/21.2/18.6mm, 행 높이 333/629tw = 5.9/11.1mm
+  //   일자표: 폭 5344tw(94.2mm), 열 1080/1571/1417/1276tw = 19.0/27.7/25.0/22.5mm,
+  //           셀 좌우 여백 99tw(1.75mm), 표 우측 본문 간격 142tw(2.5mm)
+  //   안내문: 목록 들여쓰기 left 800tw(14.1mm) / hanging 400tw(7.06mm)
+  //           → 기호 x=114.7mm, 본문 x=121.7mm (원본 PDF 실측 114.9 / 121.9와 일치)
+  //           ECO 문구는 목록이 아니므로 기호 없이 표 오른쪽(107.6mm)에서 시작
   const buildTempHumiditySheetHtml = () => {
     const [year, month] = tempHumidityMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const mm = String(month).padStart(2, '0');
 
-    // 일자 행 — 원본과 동일하게 그 달의 일수만큼만 생성
+    // 원본 서식은 30행까지만 있으나, 31일까지 있는 달은 기록 누락을 막기 위해 31행 생성
     let tableRows = '';
     for (let day = 1; day <= daysInMonth; day++) {
       const dateKey = tempHumidityMonth + '-' + String(day).padStart(2, '0');
       const data = tempHumidityData[dateKey] || { temp: '', humidity: '' };
       const tempNum = parseFloat(data.temp);
       const humidNum = parseFloat(data.humidity);
-      // 규격 이탈값은 빨간 굵은 글씨 (원본 양식에는 없지만 검토 편의를 위해 유지)
+      // 규격 이탈값만 빨간 굵은 글씨 (정상값은 원본과 동일한 검정)
       const tempStyle = !isNaN(tempNum) && (tempNum < 5 || tempNum > 40) ? ' style="color:#c00;font-weight:bold"' : '';
       const humidStyle = !isNaN(humidNum) && (humidNum < 0 || humidNum > 75) ? ' style="color:#c00;font-weight:bold"' : '';
       const tempVal = data.temp || '&nbsp;';
       const humidVal = data.humidity || '&nbsp;';
       const recorder = (data.temp || data.humidity) ? tempHumidityRecorder : '&nbsp;';
-      tableRows += '<tr><td class="d">' + day + '</td><td' + tempStyle + '>' + tempVal + '</td><td' + humidStyle + '>' + humidVal + '</td><td>' + recorder + '</td></tr>\n';
+      tableRows += '<tr><td>' + day + '</td><td' + tempStyle + '>' + tempVal + '</td><td' + humidStyle + '>' + humidVal + '</td><td>' + recorder + '</td></tr>\n';
     }
 
     const style = `
 @page { size: 21cm 29.7cm; margin: 1.27cm 1.27cm 0.76cm 1.27cm; }
 body { font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; font-size: 10pt; color: #000; margin: 0; }
 table { border-collapse: collapse; }
-/* 상단 제목 + 결재란 */
-table.hdr { width: 100%; table-layout: fixed; margin-bottom: 6pt; }
-table.hdr td { border: 1px solid #000; text-align: center; vertical-align: middle; }
-table.hdr col.h1 { width: 68.3%; }
-table.hdr col.h2 { width: 10.7%; }
-table.hdr col.h3 { width: 11.2%; }
-table.hdr col.h4 { width: 9.8%; }
-td.htitle { padding: 3pt 0; }
-td.htitle .t1 { font-size: 16pt; font-weight: bold; line-height: 1.25; }
-td.htitle .t2 { font-size: 14pt; font-weight: bold; line-height: 1.25; }
-td.hsign { font-size: 10pt; height: 16pt; }
-td.hbox { height: 30pt; font-size: 10pt; }
+
+/* 제목 + 결재란 */
+table.hdr { width: 189.7mm; margin: -4.2mm 0 0 -2.6mm; table-layout: fixed; }
+table.hdr td { border: 1px solid #000; text-align: center; vertical-align: middle; padding: 0; font-size: 10pt; }
+tr.hr1 td { height: 5.9mm; }
+tr.hr2 td { height: 11.9mm; }
+td.htitle .t1 { font-size: 16pt; font-weight: bold; line-height: 1.05; margin: 0 0 4mm 0; }
+td.htitle .t2 { font-size: 14pt; font-weight: bold; line-height: 1.05; margin: 0; }
+
 /* Month */
-p.month { font-size: 16pt; font-weight: bold; margin: 4pt 0 5pt 0; }
-/* 좌: 일자표 / 우: 안내문 (테두리 없는 2열 배치) */
-table.layout { width: 100%; table-layout: fixed; border: 0; }
+p.month { font-size: 16pt; font-weight: bold; margin: 1.3mm 0 2.4mm 0; line-height: 1.1; }
+
+/* 좌: 일자표 / 우: 안내문 */
+table.layout { width: 100%; margin-left: -1.8mm; table-layout: fixed; border: 0; }
 table.layout > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
-td.colL { width: 51%; }
-td.colR { width: 49%; padding-left: 16pt; }
+table.layout > tbody > tr > td.colL { width: 94.2mm; }
+table.layout > tbody > tr > td.colR { padding: 0.7mm 0 0 2.5mm; }
+
 /* 일자표 */
-table.days { width: 100%; table-layout: fixed; }
-table.days td, table.days th { border: 1px solid #000; text-align: center; vertical-align: middle; font-size: 11pt; height: 16.5pt; padding: 0 2pt; line-height: 1.15; }
-table.days th { font-weight: normal; }
-table.days col.c1 { width: 20.2%; }
-table.days col.c2 { width: 29.4%; }
-table.days col.c3 { width: 26.5%; }
-table.days col.c4 { width: 23.9%; }
-/* 우측 안내문 */
-p.note { font-size: 10pt; margin: 0 0 9pt 0; line-height: 1.35; text-indent: -14pt; padding-left: 14pt; }
-p.note span.mk { display: inline-block; width: 14pt; }
+table.days { width: 94.2mm; table-layout: fixed; }
+table.days td, table.days th { border: 1px solid #000; text-align: center; vertical-align: middle; font-size: 11pt; height: 6.7mm; padding: 0 1.75mm; line-height: 1.15; }
+table.days th { font-weight: normal; height: 12.7mm; }
+
+/* 안내문 목록 : 기호 7.06mm 들여쓰기 + 본문 */
+table.notes { border: 0; width: 100%; margin: 0 0 0 7.06mm; }
+table.notes td { border: 0; padding: 0 0 3.5mm 0; font-size: 10pt; line-height: 3.5mm; vertical-align: top; }
+td.nmk { width: 7.05mm; }
+table.notes tr:last-child td { padding-bottom: 0; }
+p.eco { margin: 0; font-size: 10pt; line-height: 7mm; }
+
 /* 하단 문서번호 */
-div.ftr { margin-top: 10pt; font-size: 10pt; }
-div.ftr p { margin: 0 0 2pt 0; }
-div.ftr span.mid { margin-left: 42pt; }`;
+div.ftr { margin-top: 3.5mm; font-size: 10pt; }
+div.ftr p { margin: 0 0 3.6mm 0; line-height: 3.5mm; }`;
 
     const body = `
 <table class="hdr">
-<colgroup><col class="h1" width="68.3%"><col class="h2" width="10.7%"><col class="h3" width="11.2%"><col class="h4" width="9.8%"></colgroup>
-<tr>
+<colgroup><col width="129.6mm"><col width="20.3mm"><col width="21.2mm"><col width="18.6mm"></colgroup>
+<tr class="hr1">
 <td class="htitle" rowspan="2">
 <div class="t1">Temp. &amp; Humidity Check Log(Daily)</div>
 <div class="t2">ESD Protected Work Area Check log</div>
 </td>
-<td class="hsign">Writer</td>
-<td class="hsign">Reviewer</td>
-<td class="hsign">Approver</td>
+<td>Writer</td>
+<td>Reviewer</td>
+<td>Approver</td>
 </tr>
-<tr>
-<td class="hbox">${tempHumidityRecorder}</td>
-<td class="hbox">&nbsp;</td>
-<td class="hbox">&nbsp;</td>
+<tr class="hr2">
+<td>${tempHumidityRecorder}</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
 </tr>
 </table>
 
@@ -6469,7 +6472,7 @@ div.ftr span.mid { margin-left: 42pt; }`;
 <tr>
 <td class="colL">
 <table class="days">
-<colgroup><col class="c1" width="20.2%"><col class="c2" width="29.4%"><col class="c3" width="26.5%"><col class="c4" width="23.9%"></colgroup>
+<colgroup><col width="19mm"><col width="27.7mm"><col width="25mm"><col width="22.5mm"></colgroup>
 <thead>
 <tr><th>Day</th><th>Temp</th><th>Humidity</th><th>Recorded by</th></tr>
 </thead>
@@ -6478,16 +6481,18 @@ ${tableRows}</tbody>
 </table>
 </td>
 <td class="colR">
-<p class="note"><span class="mk">&#8594;</span>Equipment &amp; Tool :&nbsp;&nbsp;NS-205B,</p>
-<p class="note"><span class="mk">&#8594;</span>Check method : write down the digit</p>
-<p class="note"><span class="mk">&#10003;</span>Spec. : <b>Temp : +5~40&#8451;, Humidity: 0%~75%</b></p>
-<p class="note"><span class="mk">&#10003;</span><i>* Each item could be changed or added without ECO.</i></p>
+<table class="notes">
+<tr><td class="nmk">&#8594;</td><td>Equipment &amp; Tool :&nbsp;&nbsp;NS-205B,</td></tr>
+<tr><td class="nmk">&#8594;</td><td>Check method : write down the digit</td></tr>
+<tr><td class="nmk">&#10003;</td><td>Spec. : <b>Temp : +5~40&#8451;, Humidity: 0%~75%</b></td></tr>
+</table>
+<p class="eco"><i>* Each item could be changed or added without ECO.</i></p>
 </td>
 </tr>
 </table>
 
 <div class="ftr">
-<p>QP604-4&nbsp; REV : 03<span class="mid">Promega Biosystems Korea</span></p>
+<p>QP604-4&nbsp; REV : 03&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Promega Biosystems Korea</p>
 <p>Effective Date : 1/9/2026</p>
 </div>`;
 
