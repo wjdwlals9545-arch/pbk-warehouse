@@ -6378,103 +6378,139 @@ export default function PBKWarehouseSystem() {
 
 
   // 온습도 점검표(QP604-4) HTML 생성 — Word(.doc) / PDF 공통 양식
+  // 원본 서식(2026.01.ESD_Check sheet.docx)의 표 폭·행 높이·글자 크기를 그대로 재현
+  //   · A4 세로, 여백 상/좌/우 1.27cm, 하 0.76cm
+  //   · 상단 제목표 4열 = 68.4 / 10.7 / 11.2 / 9.8 %
+  //   · 일자표 폭 = 본문의 51%, 4열 = 20.2 / 29.4 / 26.5 / 23.9 %, 행 높이 16.5pt
+  //   · 일자표 오른쪽에 Equipment / Check method / Spec. 안내문
   const buildTempHumiditySheetHtml = () => {
     const [year, month] = tempHumidityMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
+    const mm = String(month).padStart(2, '0');
 
-    // 테이블 행 생성
+    // 일자 행 — 원본과 동일하게 그 달의 일수만큼만 생성
     let tableRows = '';
-    for (let day = 1; day <= 31; day++) {
+    for (let day = 1; day <= daysInMonth; day++) {
       const dateKey = tempHumidityMonth + '-' + String(day).padStart(2, '0');
       const data = tempHumidityData[dateKey] || { temp: '', humidity: '' };
       const tempNum = parseFloat(data.temp);
       const humidNum = parseFloat(data.humidity);
-      const tempStyle = !isNaN(tempNum) && (tempNum < 5 || tempNum > 40) ? 'color:red;font-weight:bold;' : '';
-      const humidStyle = !isNaN(humidNum) && (humidNum < 0 || humidNum > 75) ? 'color:red;font-weight:bold;' : '';
-
-      if (day > daysInMonth) {
-        tableRows += '<tr><td>' + day + '</td><td>-</td><td>-</td><td>-</td></tr>';
-      } else {
-        const tempVal = data.temp || '';
-        const humidVal = data.humidity || '';
-        const recorder = (data.temp || data.humidity) ? tempHumidityRecorder : '';
-        tableRows += '<tr><td>' + day + '</td><td style="' + tempStyle + '">' + tempVal + '</td><td style="' + humidStyle + '">' + humidVal + '</td><td>' + recorder + '</td></tr>';
-      }
+      // 규격 이탈값은 빨간 굵은 글씨 (원본 양식에는 없지만 검토 편의를 위해 유지)
+      const tempStyle = !isNaN(tempNum) && (tempNum < 5 || tempNum > 40) ? ' style="color:#c00;font-weight:bold"' : '';
+      const humidStyle = !isNaN(humidNum) && (humidNum < 0 || humidNum > 75) ? ' style="color:#c00;font-weight:bold"' : '';
+      const tempVal = data.temp || '&nbsp;';
+      const humidVal = data.humidity || '&nbsp;';
+      const recorder = (data.temp || data.humidity) ? tempHumidityRecorder : '&nbsp;';
+      tableRows += '<tr><td class="d">' + day + '</td><td' + tempStyle + '>' + tempVal + '</td><td' + humidStyle + '>' + humidVal + '</td><td>' + recorder + '</td></tr>\n';
     }
 
-    // Word 호환 HTML 생성 (mso 스타일 포함)
+    const style = `
+@page { size: 21cm 29.7cm; margin: 1.27cm 1.27cm 0.76cm 1.27cm; }
+body { font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; font-size: 10pt; color: #000; margin: 0; }
+table { border-collapse: collapse; }
+/* 상단 제목 + 결재란 */
+table.hdr { width: 100%; table-layout: fixed; margin-bottom: 6pt; }
+table.hdr td { border: 1px solid #000; text-align: center; vertical-align: middle; }
+table.hdr col.h1 { width: 68.3%; }
+table.hdr col.h2 { width: 10.7%; }
+table.hdr col.h3 { width: 11.2%; }
+table.hdr col.h4 { width: 9.8%; }
+td.htitle { padding: 3pt 0; }
+td.htitle .t1 { font-size: 16pt; font-weight: bold; line-height: 1.25; }
+td.htitle .t2 { font-size: 14pt; font-weight: bold; line-height: 1.25; }
+td.hsign { font-size: 10pt; height: 16pt; }
+td.hbox { height: 30pt; font-size: 10pt; }
+/* Month */
+p.month { font-size: 16pt; font-weight: bold; margin: 4pt 0 5pt 0; }
+/* 좌: 일자표 / 우: 안내문 (테두리 없는 2열 배치) */
+table.layout { width: 100%; table-layout: fixed; border: 0; }
+table.layout > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
+td.colL { width: 51%; }
+td.colR { width: 49%; padding-left: 16pt; }
+/* 일자표 */
+table.days { width: 100%; table-layout: fixed; }
+table.days td, table.days th { border: 1px solid #000; text-align: center; vertical-align: middle; font-size: 11pt; height: 16.5pt; padding: 0 2pt; line-height: 1.15; }
+table.days th { font-weight: normal; }
+table.days col.c1 { width: 20.2%; }
+table.days col.c2 { width: 29.4%; }
+table.days col.c3 { width: 26.5%; }
+table.days col.c4 { width: 23.9%; }
+/* 우측 안내문 */
+p.note { font-size: 10pt; margin: 0 0 9pt 0; line-height: 1.35; text-indent: -14pt; padding-left: 14pt; }
+p.note span.mk { display: inline-block; width: 14pt; }
+/* 하단 문서번호 */
+div.ftr { margin-top: 10pt; font-size: 10pt; }
+div.ftr p { margin: 0 0 2pt 0; }
+div.ftr span.mid { margin-left: 42pt; }`;
+
+    const body = `
+<table class="hdr">
+<colgroup><col class="h1" width="68.3%"><col class="h2" width="10.7%"><col class="h3" width="11.2%"><col class="h4" width="9.8%"></colgroup>
+<tr>
+<td class="htitle" rowspan="2">
+<div class="t1">Temp. &amp; Humidity Check Log(Daily)</div>
+<div class="t2">ESD Protected Work Area Check log</div>
+</td>
+<td class="hsign">Writer</td>
+<td class="hsign">Reviewer</td>
+<td class="hsign">Approver</td>
+</tr>
+<tr>
+<td class="hbox">${tempHumidityRecorder}</td>
+<td class="hbox">&nbsp;</td>
+<td class="hbox">&nbsp;</td>
+</tr>
+</table>
+
+<p class="month">Month :${mm}/${year}</p>
+
+<table class="layout">
+<tr>
+<td class="colL">
+<table class="days">
+<colgroup><col class="c1" width="20.2%"><col class="c2" width="29.4%"><col class="c3" width="26.5%"><col class="c4" width="23.9%"></colgroup>
+<thead>
+<tr><th>Day</th><th>Temp</th><th>Humidity</th><th>Recorded by</th></tr>
+</thead>
+<tbody>
+${tableRows}</tbody>
+</table>
+</td>
+<td class="colR">
+<p class="note"><span class="mk">&#8594;</span>Equipment &amp; Tool :&nbsp;&nbsp;NS-205B,</p>
+<p class="note"><span class="mk">&#8594;</span>Check method : write down the digit</p>
+<p class="note"><span class="mk">&#10003;</span>Spec. : <b>Temp : +5~40&#8451;, Humidity: 0%~75%</b></p>
+</td>
+</tr>
+</table>
+
+<div class="ftr">
+<p>QP604-4&nbsp; REV : 02<span class="mid">Promega Biosystems Korea</span></p>
+<p>Effective Date : 10/01/2019</p>
+</div>`;
+
     const htmlContent = `
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
 <meta charset="UTF-8">
-<title>ESD Check Sheet - ${year}년 ${month}월</title>
+<title>ESD Check Sheet - ${year}.${mm}</title>
 <!--[if gte mso 9]>
 <xml>
 <w:WordDocument>
 <w:View>Print</w:View>
 <w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
 </w:WordDocument>
 </xml>
 <![endif]-->
-<style>
-@page { size: A4; margin: 1.5cm; }
-body { font-family: 'Malgun Gothic', Arial, sans-serif; font-size: 9pt; }
-h1 { text-align: center; font-size: 13pt; margin-bottom: 3px; }
-h2 { text-align: center; font-size: 10pt; color: #666; margin-top: 0; margin-bottom: 8px; }
-table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
-td, th { border: 1px solid #000; padding: 1px 6px; text-align: center; line-height: 1.2; }
-th { background-color: #e8e8e8; font-weight: bold; }
-.header-table td { padding: 4px; }
-.title-cell { font-weight: bold; background-color: #f5f5f5; width: 40%; font-size: 9pt; }
-.signature-cell { width: 20%; }
+<style>${style}
 </style>
 </head>
-<body>
-<h1>Temp. & Humidity Check Log (Daily)</h1>
-<h2>ESD Protected Work Area Check log - ${year}년 ${String(month).padStart(2, '0')}월</h2>
-
-<table class="header-table">
-<tr>
-<td class="title-cell" rowspan="2">Temp. & Humidity Check Log(Daily)<br/>ESD Protected Work Area Check log</td>
-<td class="signature-cell">Writer</td>
-<td class="signature-cell">Reviewer</td>
-<td class="signature-cell">Approver</td>
-</tr>
-<tr>
-<td class="signature-cell">${tempHumidityRecorder}</td>
-<td class="signature-cell"></td>
-<td class="signature-cell"></td>
-</tr>
-</table>
-
-<table>
-<thead>
-<tr>
-<th style="width:12%">Day</th>
-<th style="width:28%">Temp (℃)</th>
-<th style="width:28%">Humidity (%)</th>
-<th style="width:32%">Recorded by</th>
-</tr>
-</thead>
-<tbody>
-${tableRows}
-</tbody>
-</table>
-
-<p style="font-size:9pt;margin-top:10px;">
-Month : ${year}년 ${String(month).padStart(2, '0')}월 &nbsp;&nbsp;&nbsp;&nbsp;
-Equipment &amp; Tool : NS-205B &nbsp;&nbsp;&nbsp;&nbsp;
-Check method : write down the digit<br/>
-Spec. : Temp : +5~40℃, Humidity: 0%~75%
-</p>
-<p style="font-size:8pt;color:#666;margin-top:5px;">
-* Each item could be changed or added without ECO.<br/>
-* Generated: ${new Date().toLocaleString('ko-KR')}
-</p>
+<body>${body}
 </body>
 </html>`;
 
-    return { htmlContent, fileBase: year + '_' + String(month).padStart(2, '0') + '_ESD_Check_Sheet' };
+    return { htmlContent, fileBase: year + '.' + mm + '.ESD_Check sheet' };
   };
 
   // 온습도 점검표 → Word(.doc) 다운로드
@@ -6510,8 +6546,8 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         .replace(/@page[^}]*}/g, '')                      // @page는 캡처에 불필요
         .replace(/\bbody\b/g, '.th-sheet');               // body 셀렉터를 컨테이너로 치환
 
-      // A4 세로 본문 폭: 210mm - 좌우 15mm = 180mm ≈ 680px @96dpi
-      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:680px;background:#fff;z-index:-1;';
+      // A4 세로 본문 폭: 210mm - 좌우 12.7mm = 184.6mm ≈ 698px @96dpi (원본 서식과 동일)
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:698px;background:#fff;z-index:-1;';
       holder.innerHTML = '<style>' + sheetCss + '</style><div class="th-sheet">' + (bodyMatch ? bodyMatch[1] : '') + '</div>';
       document.body.appendChild(holder);
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
@@ -6522,7 +6558,7 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
-        windowWidth: 680,
+        windowWidth: 698,
         windowHeight: holder.scrollHeight,
       });
 
@@ -6531,15 +6567,17 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
       const pageW = pdf.internal.pageSize.getWidth();   // 210
       const pageH = pdf.internal.pageSize.getHeight();  // 297
-      const margin = 15;
-      let drawW = pageW - margin * 2;
+      // 원본 서식과 동일한 여백: 상/좌/우 12.7mm, 하 7.6mm
+      const mL = 12.7, mT = 12.7, mB = 7.6;
+      let drawW = pageW - mL * 2;
       let drawH = (canvas.height / canvas.width) * drawW;
+      const availH = pageH - mT - mB;
       // 점검표는 1페이지 양식 → 넘치면 높이에 맞춰 축소
-      if (drawH > pageH - margin * 2) {
-        drawH = pageH - margin * 2;
+      if (drawH > availH) {
+        drawH = availH;
         drawW = (canvas.width / canvas.height) * drawH;
       }
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, margin, drawW, drawH, undefined, 'FAST');
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, mT, drawW, drawH, undefined, 'FAST');
       pdf.save(fileBase + '.pdf');
       showToast(fileBase + '.pdf 다운로드 완료', 'success');
     } catch (e) {
