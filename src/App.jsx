@@ -6391,18 +6391,22 @@ export default function PBKWarehouseSystem() {
   //   Month 표기: 원본 점검표와 동일하게 'Month :' + 여백 + YYYY.MM
   //   안내문: 목록 들여쓰기 left 800tw(14.1mm) / hanging 400tw(7.06mm)
   //           → 기호 x=114.7mm, 본문 x=121.7mm (원본 PDF 실측 114.9 / 121.9와 일치)
-  //           ECO 문구는 목록이 아니므로 기호 없이 표 오른쪽(107.6mm)에서 시작
+  //           ECO 문구는 목록이 아니어서 Word에서 표 옆에 못 들어가고 표 아래로 밀림
+  //           → 표 아래 왼쪽 여백(12.7mm), 표 하단에서 2.3mm 간격
   const buildTempHumiditySheetHtml = (ym = tempHumidityMonth) => {
     const [year, month] = ym.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const mm = String(month).padStart(2, '0');
-    // 하단 문서번호는 원본이 페이지 푸터라 항상 같은 높이(266.1mm)에 온다.
-    // 31행 기준 여백 2.7mm + 빠진 행 수 x 행높이(6.888mm) 만큼 밀어 위치를 고정.
-    const ftrTop = (2.7 + (31 - daysInMonth) * 6.888).toFixed(2);
+    // 원본 서식의 일자표는 항상 30행 → 28·29·30일 달은 30행 그대로,
+    // 31일 있는 달만 기록 누락을 막기 위해 31행으로 늘림
+    const rowCount = Math.max(30, daysInMonth);
+    // ECO 문구는 원본에서 표 아래 왼쪽 여백에 오고, 하단 문서번호는 Word 페이지 푸터라
+    // 266.1mm 고정(31행이면 한 행만큼 아래). 표 하단 = 36.87 + 13.00 + 행수 x 6.888mm
+    const tableBottom = 36.87 + 13.0 + rowCount * 6.888;
+    const ftrTop = Math.max(2, (rowCount >= 31 ? 272.99 : 266.1) - (tableBottom + 2.3 + 3.5)).toFixed(2);
 
-    // 원본 서식은 30행까지만 있으나, 31일까지 있는 달은 기록 누락을 막기 위해 31행 생성
     let tableRows = '';
-    for (let day = 1; day <= daysInMonth; day++) {
+    for (let day = 1; day <= rowCount; day++) {
       const dateKey = ym + '-' + String(day).padStart(2, '0');
       const data = tempHumidityData[dateKey] || { temp: '', humidity: '' };
       const tempNum = parseFloat(data.temp);
@@ -6447,7 +6451,7 @@ table.days th { font-weight: normal; height: 13.14mm; }
 table.notes { border: 0; width: 100%; margin: 0 0 0 7.06mm; }
 table.notes td { border: 0; padding: 0 0 3.5mm 0; font-size: 10pt; line-height: 3.5mm; vertical-align: top; }
 td.nmk { width: 7.05mm; }
-p.eco { margin: 0; font-size: 10pt; line-height: 7mm; }
+p.eco { margin: 1.95mm 0 0 0; font-size: 10pt; line-height: 3.5mm; }
 
 /* 하단 문서번호 */
 div.ftr { font-size: 10pt; }
@@ -6492,10 +6496,11 @@ ${tableRows}</tbody>
 <tr><td class="nmk">&#8594;</td><td>Check method : write down the digit</td></tr>
 <tr><td class="nmk">&#10003;</td><td>Spec. : <b>Temp : +5~40&#8451;, Humidity: 0%~75%</b></td></tr>
 </table>
-<p class="eco"><i>* Each item could be changed or added without ECO.</i></p>
 </td>
 </tr>
 </table>
+
+<p class="eco"><i>* Each item could be changed or added without ECO.</i></p>
 
 <div class="ftr" style="margin-top:${ftrTop}mm">
 <p>QP604-4&nbsp; REV : 03&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Promega Biosystems Korea</p>
