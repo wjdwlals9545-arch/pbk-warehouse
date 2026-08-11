@@ -3495,6 +3495,8 @@ export default function PBKWarehouseSystem() {
 
   // 온습도 Excel 내보내기 모달
   const [showTempHumidityExportModal, setShowTempHumidityExportModal] = useState(false);
+  // 온습도 점검표 PDF 생성 중 여부
+  const [thPdfExporting, setThPdfExporting] = useState(false);
 
   // 온습도 관리 상태
   const [tempHumidityData, setTempHumidityData] = useState(() => {
@@ -6375,8 +6377,8 @@ export default function PBKWarehouseSystem() {
   };
 
 
-  // 온습도 PDF 생성 함수
-  const generateTempHumidityPDF = () => {
+  // 온습도 점검표(QP604-4) HTML 생성 — Word(.doc) / PDF 공통 양식
+  const buildTempHumiditySheetHtml = () => {
     const [year, month] = tempHumidityMonth.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
 
@@ -6472,18 +6474,81 @@ Spec. : Temp : +5~40℃, Humidity: 0%~75%
 </body>
 </html>`;
 
+    return { htmlContent, fileBase: year + '_' + String(month).padStart(2, '0') + '_ESD_Check_Sheet' };
+  };
+
+  // 온습도 점검표 → Word(.doc) 다운로드
+  const generateTempHumidityDoc = () => {
+    const { htmlContent, fileBase } = buildTempHumiditySheetHtml();
     // Blob으로 doc 파일 다운로드 (Word에서 열 수 있는 HTML)
     const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = year + '_' + String(month).padStart(2, '0') + '_ESD_Check_Sheet.doc';
+    a.download = fileBase + '.doc';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    alert('파일이 다운로드되었습니다!\\n\\n' + year + '_' + String(month).padStart(2, '0') + '_ESD_Check_Sheet.doc\\n\\nWord에서 열어 PDF로 저장하거나 바로 인쇄하세요.');
+    showToast(fileBase + '.doc 다운로드 완료', 'success');
+  };
+
+  // 온습도 점검표 → PDF 다운로드 (Word 없이 바로 저장/인쇄)
+  const generateTempHumiditySheetPdf = async () => {
+    if (thPdfExporting) return;
+    setThPdfExporting(true);
+    const holder = document.createElement('div');
+    try {
+      showToast('PDF 생성 중...', 'info');
+      const { htmlContent, fileBase } = buildTempHumiditySheetHtml();
+
+      // Word용 전체 문서에서 style/body만 뽑아 화면 밖에 렌더 (mso 조건부 주석은 브라우저가 무시)
+      const styleMatch = htmlContent.match(/<style>([\s\S]*?)<\/style>/);
+      const bodyMatch = htmlContent.match(/<body>([\s\S]*?)<\/body>/);
+      const sheetCss = (styleMatch ? styleMatch[1] : '')
+        .replace(/@page[^}]*}/g, '')                      // @page는 캡처에 불필요
+        .replace(/\bbody\b/g, '.th-sheet');               // body 셀렉터를 컨테이너로 치환
+
+      // A4 세로 본문 폭: 210mm - 좌우 15mm = 180mm ≈ 680px @96dpi
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:680px;background:#fff;z-index:-1;';
+      holder.innerHTML = '<style>' + sheetCss + '</style><div class="th-sheet">' + (bodyMatch ? bodyMatch[1] : '') + '</div>';
+      document.body.appendChild(holder);
+      if (document.fonts && document.fonts.ready) await document.fonts.ready;
+
+      const { default: html2canvas } = await import('html2canvas-pro');
+      const canvas = await html2canvas(holder, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 680,
+        windowHeight: holder.scrollHeight,
+      });
+
+      const { default: jsPDF } = await import('jspdf');
+      // compress: true → 표(흰 배경 + 검은 선) 이미지가 잘 압축돼 파일 크기가 크게 줄어듦
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      const pageW = pdf.internal.pageSize.getWidth();   // 210
+      const pageH = pdf.internal.pageSize.getHeight();  // 297
+      const margin = 15;
+      let drawW = pageW - margin * 2;
+      let drawH = (canvas.height / canvas.width) * drawW;
+      // 점검표는 1페이지 양식 → 넘치면 높이에 맞춰 축소
+      if (drawH > pageH - margin * 2) {
+        drawH = pageH - margin * 2;
+        drawW = (canvas.width / canvas.height) * drawH;
+      }
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, margin, drawW, drawH, undefined, 'FAST');
+      pdf.save(fileBase + '.pdf');
+      showToast(fileBase + '.pdf 다운로드 완료', 'success');
+    } catch (e) {
+      console.error('[온습도 PDF]', e);
+      showToast('PDF 생성 실패: ' + e.message, 'error');
+    } finally {
+      if (holder.parentNode) holder.parentNode.removeChild(holder);
+      setThPdfExporting(false);
+    }
   };
 
   // CSV 내보내기 함수 (원본 docx 템플릿용)
@@ -14561,12 +14626,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   >
                     오늘
                   </button>
+                  {/* 문서 출력 — Excel / Word / PDF 3종 */}
                   <button
                     type="button"
                     onClick={() => setShowTempHumidityExportModal(true)}
                     className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 text-sm"
+                    title="Excel(CSV)로 저장 — 선택 월 또는 전체 데이터"
                   >
-                    <Download className="w-4 h-4" />
+                    <FileSpreadsheet className="w-4 h-4" />
                     Excel
                   </button>
                   <button
@@ -14574,12 +14641,27 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      generateTempHumidityPDF();
+                      generateTempHumidityDoc();
                     }}
-                    className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                    title="QP604-4 점검표 양식으로 Word(.doc) 저장"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Word
+                  </button>
+                  <button
+                    type="button"
+                    disabled={thPdfExporting}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      generateTempHumiditySheetPdf();
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+                    title="QP604-4 점검표 양식으로 PDF 저장 (Word 불필요)"
                   >
                     <Printer className="w-4 h-4" />
-                    문서 출력
+                    {thPdfExporting ? '생성 중...' : 'PDF'}
                   </button>
                 </div>
               </div>
