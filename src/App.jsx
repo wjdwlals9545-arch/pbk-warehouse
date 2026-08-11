@@ -6566,7 +6566,11 @@ ${tableRows}</tbody>
     const holder = document.createElement('div');
     try {
       showToast(months.length > 1 ? `PDF 생성 중... (${months.length}개월)` : 'PDF 생성 중...', 'info');
-      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:698px;background:#fff;z-index:-1;';
+      // A4 한 장을 그대로 만든다 (210x297mm = 794x1123px @96dpi)
+      // 제목표에 음수 여백(위 -4.2mm, 좌 -2.6mm)이 있으므로 반드시 용지 여백을 실제로 확보해야
+      // 상단/좌측이 잘리지 않는다. box-sizing:border-box → 여백 포함 전체가 A4 크기.
+      holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;min-height:1123px;'
+        + 'padding:12.7mm 12.7mm 7.6mm 12.7mm;box-sizing:border-box;background:#fff;z-index:-1;';
       document.body.appendChild(holder);
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
 
@@ -6576,8 +6580,6 @@ ${tableRows}</tbody>
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
       const pageW = pdf.internal.pageSize.getWidth();   // 210
       const pageH = pdf.internal.pageSize.getHeight();  // 297
-      // 원본 서식과 동일한 여백: 상/좌/우 12.7mm, 하 7.6mm
-      const mL = 12.7, mT = 12.7, mB = 7.6;
 
       for (let i = 0; i < months.length; i++) {
         const { htmlContent } = buildTempHumiditySheetHtml(months[i]);
@@ -6596,20 +6598,20 @@ ${tableRows}</tbody>
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
-          windowWidth: 698,
+          windowWidth: 794,
           windowHeight: holder.scrollHeight,
         });
 
-        let drawW = pageW - mL * 2;
+        // 캡처한 이미지가 A4 한 장 전체 → 여백 없이 (0,0)부터 꽉 채워 배치
+        let drawW = pageW;
         let drawH = (canvas.height / canvas.width) * drawW;
-        const availH = pageH - mT - mB;
-        // 점검표는 1페이지 양식 → 넘치면 높이에 맞춰 축소
-        if (drawH > availH) {
-          drawH = availH;
+        // 내용이 A4보다 길어지면(예: 서식 변경) 높이에 맞춰 축소
+        if (drawH > pageH) {
+          drawH = pageH;
           drawW = (canvas.width / canvas.height) * drawH;
         }
         if (i > 0) pdf.addPage();
-        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, mT, drawW, drawH, undefined, 'FAST');
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, 0, drawW, drawH, undefined, 'FAST');
       }
 
       const fileBase = months.length > 1
