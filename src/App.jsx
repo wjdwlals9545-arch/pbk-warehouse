@@ -3497,6 +3497,9 @@ export default function PBKWarehouseSystem() {
   const [showTempHumidityExportModal, setShowTempHumidityExportModal] = useState(false);
   // 온습도 점검표 PDF 생성 중 여부
   const [thPdfExporting, setThPdfExporting] = useState(false);
+  // 온습도 점검표 월별 일괄 출력 모달
+  const [showTempHumidityBatchModal, setShowTempHumidityBatchModal] = useState(false);
+  const [thBatchMonths, setThBatchMonths] = useState([]);
 
   // 온습도 관리 상태
   const [tempHumidityData, setTempHumidityData] = useState(() => {
@@ -6389,15 +6392,15 @@ export default function PBKWarehouseSystem() {
   //   안내문: 목록 들여쓰기 left 800tw(14.1mm) / hanging 400tw(7.06mm)
   //           → 기호 x=114.7mm, 본문 x=121.7mm (원본 PDF 실측 114.9 / 121.9와 일치)
   //           ECO 문구는 목록이 아니므로 기호 없이 표 오른쪽(107.6mm)에서 시작
-  const buildTempHumiditySheetHtml = () => {
-    const [year, month] = tempHumidityMonth.split('-').map(Number);
+  const buildTempHumiditySheetHtml = (ym = tempHumidityMonth) => {
+    const [year, month] = ym.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const mm = String(month).padStart(2, '0');
 
     // 원본 서식은 30행까지만 있으나, 31일까지 있는 달은 기록 누락을 막기 위해 31행 생성
     let tableRows = '';
     for (let day = 1; day <= daysInMonth; day++) {
-      const dateKey = tempHumidityMonth + '-' + String(day).padStart(2, '0');
+      const dateKey = ym + '-' + String(day).padStart(2, '0');
       const data = tempHumidityData[dateKey] || { temp: '', humidity: '' };
       const tempNum = parseFloat(data.temp);
       const humidNum = parseFloat(data.humidity);
@@ -6461,7 +6464,7 @@ div.ftr p { margin: 0 0 3.6mm 0; line-height: 3.5mm; }`;
 <td>Approver</td>
 </tr>
 <tr class="hr2">
-<td>${tempHumidityRecorder}</td>
+<td>&nbsp;</td>
 <td>&nbsp;</td>
 <td>&nbsp;</td>
 </tr>
@@ -6521,9 +6524,26 @@ ${tableRows}</tbody>
     return { htmlContent, fileBase: year + '.' + mm + '.ESD_Check sheet' };
   };
 
-  // 온습도 점검표 → Word(.doc) 다운로드
-  const generateTempHumidityDoc = () => {
-    const { htmlContent, fileBase } = buildTempHumiditySheetHtml();
+  // 온습도 점검표 → Word(.doc) 다운로드 (여러 달을 고르면 한 파일에 달마다 새 페이지)
+  const generateTempHumidityDoc = (ymList) => {
+    const months = (ymList && ymList.length ? ymList : [tempHumidityMonth]).slice().sort();
+    const first = buildTempHumiditySheetHtml(months[0]);
+    let htmlContent = first.htmlContent;
+
+    if (months.length > 1) {
+      // 두 번째 달부터는 페이지 나눔 후 본문만 이어 붙임
+      const bodies = months.slice(1).map(ym => {
+        const b = buildTempHumiditySheetHtml(ym).htmlContent.match(/<body>([\s\S]*?)<\/body>/);
+        return b ? b[1] : '';
+      });
+      const pageBreak = '\n<br clear="all" style="mso-special-character:line-break;page-break-before:always">\n';
+      htmlContent = htmlContent.replace('</body>', pageBreak + bodies.join(pageBreak) + '\n</body>');
+    }
+
+    const fileBase = months.length > 1
+      ? months[0].replace('-', '.') + '~' + months[months.length - 1].replace('-', '.') + '.ESD_Check sheet'
+      : first.fileBase;
+
     // Blob으로 doc 파일 다운로드 (Word에서 열 수 있는 HTML)
     const blob = new Blob(['\ufeff' + htmlContent], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
@@ -6535,41 +6555,22 @@ ${tableRows}</tbody>
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    showToast(fileBase + '.doc 다운로드 완료', 'success');
+    showToast(fileBase + '.doc 다운로드 완료 (' + months.length + '개월)', 'success');
   };
 
-  // 온습도 점검표 → PDF 다운로드 (Word 없이 바로 저장/인쇄)
-  const generateTempHumiditySheetPdf = async () => {
+  // 온습도 점검표 → PDF 다운로드 (Word 없이 바로 저장/인쇄, 달마다 1페이지)
+  const generateTempHumiditySheetPdf = async (ymList) => {
     if (thPdfExporting) return;
     setThPdfExporting(true);
+    const months = (ymList && ymList.length ? ymList : [tempHumidityMonth]).slice().sort();
     const holder = document.createElement('div');
     try {
-      showToast('PDF 생성 중...', 'info');
-      const { htmlContent, fileBase } = buildTempHumiditySheetHtml();
-
-      // Word용 전체 문서에서 style/body만 뽑아 화면 밖에 렌더 (mso 조건부 주석은 브라우저가 무시)
-      const styleMatch = htmlContent.match(/<style>([\s\S]*?)<\/style>/);
-      const bodyMatch = htmlContent.match(/<body>([\s\S]*?)<\/body>/);
-      const sheetCss = (styleMatch ? styleMatch[1] : '')
-        .replace(/@page[^}]*}/g, '')                      // @page는 캡처에 불필요
-        .replace(/\bbody\b/g, '.th-sheet');               // body 셀렉터를 컨테이너로 치환
-
-      // A4 세로 본문 폭: 210mm - 좌우 12.7mm = 184.6mm ≈ 698px @96dpi (원본 서식과 동일)
+      showToast(months.length > 1 ? `PDF 생성 중... (${months.length}개월)` : 'PDF 생성 중...', 'info');
       holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:698px;background:#fff;z-index:-1;';
-      holder.innerHTML = '<style>' + sheetCss + '</style><div class="th-sheet">' + (bodyMatch ? bodyMatch[1] : '') + '</div>';
       document.body.appendChild(holder);
       if (document.fonts && document.fonts.ready) await document.fonts.ready;
 
       const { default: html2canvas } = await import('html2canvas-pro');
-      const canvas = await html2canvas(holder, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        windowWidth: 698,
-        windowHeight: holder.scrollHeight,
-      });
-
       const { default: jsPDF } = await import('jspdf');
       // compress: true → 표(흰 배경 + 검은 선) 이미지가 잘 압축돼 파일 크기가 크게 줄어듦
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
@@ -6577,17 +6578,45 @@ ${tableRows}</tbody>
       const pageH = pdf.internal.pageSize.getHeight();  // 297
       // 원본 서식과 동일한 여백: 상/좌/우 12.7mm, 하 7.6mm
       const mL = 12.7, mT = 12.7, mB = 7.6;
-      let drawW = pageW - mL * 2;
-      let drawH = (canvas.height / canvas.width) * drawW;
-      const availH = pageH - mT - mB;
-      // 점검표는 1페이지 양식 → 넘치면 높이에 맞춰 축소
-      if (drawH > availH) {
-        drawH = availH;
-        drawW = (canvas.width / canvas.height) * drawH;
+
+      for (let i = 0; i < months.length; i++) {
+        const { htmlContent } = buildTempHumiditySheetHtml(months[i]);
+        // Word용 전체 문서에서 style/body만 뽑아 화면 밖에 렌더 (mso 조건부 주석은 브라우저가 무시)
+        const styleMatch = htmlContent.match(/<style>([\s\S]*?)<\/style>/);
+        const bodyMatch = htmlContent.match(/<body>([\s\S]*?)<\/body>/);
+        const sheetCss = (styleMatch ? styleMatch[1] : '')
+          .replace(/@page[^}]*}/g, '')                     // @page는 캡처에 불필요
+          .replace(/\bbody\b/g, '.th-sheet');              // body 셀렉터를 컨테이너로 치환
+
+        // A4 세로 본문 폭: 210mm - 좌우 12.7mm = 184.6mm ≈ 698px @96dpi (원본 서식과 동일)
+        holder.innerHTML = '<style>' + sheetCss + '</style><div class="th-sheet">' + (bodyMatch ? bodyMatch[1] : '') + '</div>';
+
+        const canvas = await html2canvas(holder, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: 698,
+          windowHeight: holder.scrollHeight,
+        });
+
+        let drawW = pageW - mL * 2;
+        let drawH = (canvas.height / canvas.width) * drawW;
+        const availH = pageH - mT - mB;
+        // 점검표는 1페이지 양식 → 넘치면 높이에 맞춰 축소
+        if (drawH > availH) {
+          drawH = availH;
+          drawW = (canvas.width / canvas.height) * drawH;
+        }
+        if (i > 0) pdf.addPage();
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, mT, drawW, drawH, undefined, 'FAST');
       }
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', (pageW - drawW) / 2, mT, drawW, drawH, undefined, 'FAST');
+
+      const fileBase = months.length > 1
+        ? months[0].replace('-', '.') + '~' + months[months.length - 1].replace('-', '.') + '.ESD_Check sheet'
+        : buildTempHumiditySheetHtml(months[0]).fileBase;
       pdf.save(fileBase + '.pdf');
-      showToast(fileBase + '.pdf 다운로드 완료', 'success');
+      showToast(fileBase + '.pdf 다운로드 완료 (' + months.length + '페이지)', 'success');
     } catch (e) {
       console.error('[온습도 PDF]', e);
       showToast('PDF 생성 실패: ' + e.message, 'error');
@@ -14709,6 +14738,21 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <Printer className="w-4 h-4" />
                     {thPdfExporting ? '생성 중...' : 'PDF'}
                   </button>
+                  <button
+                    type="button"
+                    disabled={thPdfExporting}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setThBatchMonths([tempHumidityMonth]);
+                      setShowTempHumidityBatchModal(true);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed text-sm"
+                    title="여러 달을 골라 한 파일로 저장"
+                  >
+                    <Calendar className="w-4 h-4" />
+                    월별 일괄
+                  </button>
                 </div>
               </div>
 
@@ -20503,6 +20547,102 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           </div>
         </div>
       )}
+
+      {/* 온습도 점검표 월별 일괄 출력 모달 */}
+      {showTempHumidityBatchModal && (() => {
+        // 기록이 있는 달 + 현재 선택 달을 최신순으로 나열
+        const monthSet = new Set(Object.keys(tempHumidityData)
+          .filter(k => tempHumidityData[k] && (tempHumidityData[k].temp || tempHumidityData[k].humidity))
+          .map(k => k.slice(0, 7)));
+        monthSet.add(tempHumidityMonth);
+        const allMonths = [...monthSet].sort().reverse();
+        const byYear = allMonths.reduce((acc, ym) => {
+          const y = ym.slice(0, 4);
+          (acc[y] = acc[y] || []).push(ym);
+          return acc;
+        }, {});
+        const countOf = (ym) => Object.keys(tempHumidityData)
+          .filter(k => k.startsWith(ym) && tempHumidityData[k] && (tempHumidityData[k].temp || tempHumidityData[k].humidity)).length;
+        const toggle = (ym) => setThBatchMonths(prev => prev.includes(ym) ? prev.filter(m => m !== ym) : [...prev, ym]);
+        const selected = thBatchMonths.slice().sort();
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowTempHumidityBatchModal(false)}>
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="px-6 py-4 border-b flex justify-between items-center">
+                <div>
+                  <h3 className="font-semibold text-lg">🗓️ 월별 일괄 출력</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">고른 달이 한 파일에 달마다 한 장씩 들어갑니다</p>
+                </div>
+                <button onClick={() => setShowTempHumidityBatchModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+              </div>
+
+              <div className="px-6 py-3 border-b flex gap-2 text-sm">
+                <button onClick={() => setThBatchMonths(allMonths)} className="px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200">전체 선택</button>
+                <button onClick={() => setThBatchMonths([])} className="px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200">전체 해제</button>
+                <span className="ml-auto self-center text-gray-500">{selected.length}개월 선택</span>
+              </div>
+
+              <div className="px-6 py-4 overflow-y-auto space-y-4">
+                {Object.keys(byYear).sort().reverse().map(y => (
+                  <div key={y}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-semibold text-slate-700">{y}년</span>
+                      <button
+                        onClick={() => setThBatchMonths(prev => {
+                          const rest = prev.filter(m => !m.startsWith(y));
+                          return byYear[y].every(m => prev.includes(m)) ? rest : [...rest, ...byYear[y]];
+                        })}
+                        className="text-xs px-2 py-0.5 border rounded text-gray-500 hover:bg-gray-50"
+                      >
+                        {byYear[y].every(m => thBatchMonths.includes(m)) ? '해제' : '이 해 전체'}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {byYear[y].map(ym => {
+                        const on = thBatchMonths.includes(ym);
+                        const n = countOf(ym);
+                        return (
+                          <button
+                            key={ym}
+                            onClick={() => toggle(ym)}
+                            className={`px-3 py-2 rounded-lg border text-left transition ${on ? 'bg-blue-50 border-blue-400' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${on ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'}`}>{on ? '✓' : ''}</span>
+                              <span className="font-medium text-sm">{parseInt(ym.slice(5), 10)}월</span>
+                            </div>
+                            <p className="text-[11px] text-gray-500 mt-0.5 pl-6">{n > 0 ? n + '일 기록' : '기록 없음'}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-6 py-4 border-t flex gap-2">
+                <button
+                  disabled={!selected.length || thPdfExporting}
+                  onClick={() => { setShowTempHumidityBatchModal(false); generateTempHumiditySheetPdf(selected); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  <Printer className="w-4 h-4" />
+                  PDF로 저장 ({selected.length}장)
+                </button>
+                <button
+                  disabled={!selected.length}
+                  onClick={() => { setShowTempHumidityBatchModal(false); generateTempHumidityDoc(selected); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  <FileText className="w-4 h-4" />
+                  Word로 저장
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showTempHumidityExportModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
