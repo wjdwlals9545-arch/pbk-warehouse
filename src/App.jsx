@@ -6396,6 +6396,9 @@ export default function PBKWarehouseSystem() {
     const [year, month] = ym.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const mm = String(month).padStart(2, '0');
+    // 하단 문서번호는 원본이 페이지 푸터라 항상 같은 높이(266.1mm)에 온다.
+    // 31행 기준 여백 2.7mm + 빠진 행 수 x 행높이(6.888mm) 만큼 밀어 위치를 고정.
+    const ftrTop = (2.7 + (31 - daysInMonth) * 6.888).toFixed(2);
 
     // 원본 서식은 30행까지만 있으나, 31일까지 있는 달은 기록 누락을 막기 위해 31행 생성
     let tableRows = '';
@@ -6419,41 +6422,40 @@ body { font-family: 'Malgun Gothic', '맑은 고딕', Arial, sans-serif; font-si
 table { border-collapse: collapse; }
 
 /* 제목 + 결재란 */
-table.hdr { width: 189.7mm; margin: -4.2mm 0 0 -2.6mm; table-layout: fixed; }
+table.hdr { width: 190.05mm; margin: -4.33mm 0 0 -2.72mm; table-layout: fixed; }
 table.hdr td { border: 1px solid #000; text-align: center; vertical-align: middle; padding: 0; font-size: 10pt; }
-tr.hr1 td { height: 5.9mm; }
-tr.hr2 td { height: 11.9mm; }
+tr.hr1 td { height: 6.35mm; }
+tr.hr2 td { height: 12.25mm; }
 td.htitle .t1 { font-size: 16pt; font-weight: bold; line-height: 1.05; margin: 0 0 4mm 0; }
 td.htitle .t2 { font-size: 14pt; font-weight: bold; line-height: 1.05; margin: 0; }
 
 /* Month */
-p.month { font-size: 16pt; font-weight: bold; margin: 1.3mm 0 2.4mm 0; line-height: 1.1; }
+p.month { font-size: 16pt; font-weight: bold; margin: 1.3mm 0 2.1mm 0; line-height: 1.1; }
 
 /* 좌: 일자표 / 우: 안내문 */
-table.layout { width: 100%; margin-left: -1.8mm; table-layout: fixed; border: 0; }
+table.layout { width: 100%; margin-left: -1.93mm; table-layout: fixed; border: 0; }
 table.layout > tbody > tr > td { border: 0; padding: 0; vertical-align: top; }
-table.layout > tbody > tr > td.colL { width: 94.2mm; }
+table.layout > tbody > tr > td.colL { width: 94.62mm; }
 table.layout > tbody > tr > td.colR { padding: 0.7mm 0 0 2.5mm; }
 
 /* 일자표 */
-table.days { width: 94.2mm; table-layout: fixed; }
-table.days td, table.days th { border: 1px solid #000; text-align: center; vertical-align: middle; font-size: 11pt; height: 6.7mm; padding: 0 1.75mm; line-height: 1.15; }
-table.days th { font-weight: normal; height: 12.7mm; }
+table.days { width: 94.62mm; table-layout: fixed; }
+table.days td, table.days th { border: 1px solid #000; text-align: center; vertical-align: middle; font-size: 11pt; height: 6.89mm; padding: 0 1.75mm; line-height: 1.15; }
+table.days th { font-weight: normal; height: 13.14mm; }
 
 /* 안내문 목록 : 기호 7.06mm 들여쓰기 + 본문 */
 table.notes { border: 0; width: 100%; margin: 0 0 0 7.06mm; }
 table.notes td { border: 0; padding: 0 0 3.5mm 0; font-size: 10pt; line-height: 3.5mm; vertical-align: top; }
 td.nmk { width: 7.05mm; }
-table.notes tr:last-child td { padding-bottom: 0; }
 p.eco { margin: 0; font-size: 10pt; line-height: 7mm; }
 
 /* 하단 문서번호 */
-div.ftr { margin-top: 3.5mm; font-size: 10pt; }
+div.ftr { font-size: 10pt; }
 div.ftr p { margin: 0 0 3.6mm 0; line-height: 3.5mm; }`;
 
     const body = `
 <table class="hdr">
-<colgroup><col width="129.6mm"><col width="20.3mm"><col width="21.2mm"><col width="18.6mm"></colgroup>
+<colgroup><col width="68.36%"><col width="10.68%"><col width="11.20%"><col width="9.76%"></colgroup>
 <tr class="hr1">
 <td class="htitle" rowspan="2">
 <div class="t1">Temp. &amp; Humidity Check Log(Daily)</div>
@@ -6476,7 +6478,7 @@ div.ftr p { margin: 0 0 3.6mm 0; line-height: 3.5mm; }`;
 <tr>
 <td class="colL">
 <table class="days">
-<colgroup><col width="19mm"><col width="27.7mm"><col width="25mm"><col width="22.5mm"></colgroup>
+<colgroup><col width="20.21%"><col width="29.40%"><col width="26.51%"><col width="23.88%"></colgroup>
 <thead>
 <tr><th>Day</th><th>Temp</th><th>Humidity</th><th>Recorded by</th></tr>
 </thead>
@@ -6495,7 +6497,7 @@ ${tableRows}</tbody>
 </tr>
 </table>
 
-<div class="ftr">
+<div class="ftr" style="margin-top:${ftrTop}mm">
 <p>QP604-4&nbsp; REV : 03&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Promega Biosystems Korea</p>
 <p>Effective Date : 1/9/2026</p>
 </div>`;
