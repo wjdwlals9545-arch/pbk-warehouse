@@ -1907,51 +1907,53 @@ const KR_HOLIDAYS = new Set([
 function parseTs(v) {
   if (v instanceof Date) return v;
   if (typeof v === 'string') {
-    const m = v.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)$/);
+    // 'YYYY-MM-DD HH:mm' — toISOString().slice(0,16).replace('T',' ') 산출값 → UTC
+    let m = v.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)$/);
     if (m) return new Date(`${m[1]}T${m[2]}${m[2].length === 5 ? ':00' : ''}Z`);
+    // 'YYYY-MM-DD-HH:mm' — toLocaleString('ko-KR', Asia/Seoul) 산출값 → 한국시간
+    m = v.match(/^(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2}(?::\d{2})?)$/);
+    if (m) return new Date(`${m[1]}T${m[2]}${m[2].length === 5 ? ':00' : ''}+09:00`);
   }
   return new Date(v);
 }
 
-// 영업일 수 계산 (주말 + 공휴일 제외)
-function getBusinessDays(startDate, endDate) {
+// 근무시간 기준 계산 — 평일(주말·공휴일 제외) 07:00~12:30 + 13:30~16:00 = 하루 480분(8시간)
+// 점심 12:30~13:30 은 제외. 리드타임과 사이클타임이 같은 기준을 쓰도록 이 함수로 통일했다.
+const WORK_SEGMENTS = [[7 * 60, 12 * 60 + 30], [13 * 60 + 30, 16 * 60]];
+const WORK_MINUTES_PER_DAY = 480;
+
+// 두 시각 사이의 실제 근무 분(minute). 근무시간 밖(야근·새벽·주말·공휴일)은 세지 않는다.
+function getWorkingMinutes(startDate, endDate) {
   const start = parseTs(startDate);
   const end = parseTs(endDate);
   if (isNaN(start) || isNaN(end) || end <= start) return 0;
-  
-  // 한국시간 기준 날짜 문자열 (YYYY-MM-DD)
-  function toKRDate(d) {
-    const kr = new Date(d.getTime() + 9 * 60 * 60 * 1000); // UTC+9
-    return kr.toISOString().slice(0, 10);
-  }
-  function getKRDay(d) {
-    const kr = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-    return kr.getUTCDay();
-  }
-  
-  // 시작일 ~ 완료일 사이 영업일 카운트
-  let count = 0;
-  const cur = new Date(start);
-  cur.setDate(cur.getDate() + 1);
-  while (cur <= end) {
-    const day = getKRDay(cur);
-    const dateStr = toKRDate(cur);
-    if (day !== 0 && day !== 6 && !KR_HOLIDAYS.has(dateStr)) {
-      count++;
+
+  const KR = 9 * 60 * 60 * 1000;      // UTC+9
+  const DAY = 24 * 60 * 60 * 1000;
+  const sKr = new Date(start.getTime() + KR);
+  // 시작일의 한국시간 00:00 (UTC 타임스탬프)
+  let midnight = Date.UTC(sKr.getUTCFullYear(), sKr.getUTCMonth(), sKr.getUTCDate()) - KR;
+
+  let total = 0;
+  for (let guard = 0; guard < 400 && midnight <= end.getTime(); guard++, midnight += DAY) {
+    const kr = new Date(midnight + KR);
+    const dow = kr.getUTCDay();
+    if (dow === 0 || dow === 6) continue;                       // 주말 제외
+    const dateStr = kr.toISOString().slice(0, 10);
+    if (KR_HOLIDAYS.has(dateStr)) continue;                     // 공휴일 제외
+    for (let sg = 0; sg < WORK_SEGMENTS.length; sg++) {
+      const lo = Math.max(start.getTime(), midnight + WORK_SEGMENTS[sg][0] * 60000);
+      const hi = Math.min(end.getTime(), midnight + WORK_SEGMENTS[sg][1] * 60000);
+      if (hi > lo) total += (hi - lo) / 60000;
     }
-    cur.setDate(cur.getDate() + 1);
   }
-  
-  // 시작일이 영업일이면 시작일 남은 근무시간 비율 추가
-  const startDay = getKRDay(start);
-  const startDateStr = toKRDate(start);
-  if (startDay !== 0 && startDay !== 6 && !KR_HOLIDAYS.has(startDateStr)) {
-    const krHour = (start.getUTCHours() + 9) % 24;
-    const hoursWorked = Math.max(0, 17 - krHour); // 17시(퇴근)까지 남은 시간
-    count += Math.min(hoursWorked / 8, 1);
-  }
-  
-  return Math.round(count * 10) / 10;
+  return Math.round(total);
+}
+
+// 리드타임(일) = 실제 근무시간 ÷ 8시간, 소수 한 자리
+// 예: 2/3 08:00 시작 → 2/4 17:55 완료 = 7.0h + 8.0h = 15h ÷ 8 = 1.9일
+function getLeadTimeDays(startDate, endDate) {
+  return Math.round(getWorkingMinutes(startDate, endDate) / WORK_MINUTES_PER_DAY * 10) / 10;
 }
 
 export default function PBKWarehouseSystem() {
@@ -2166,7 +2168,8 @@ export default function PBKWarehouseSystem() {
               try {
                 const start = new Date(p.startTime);
                 const end = new Date(start.getTime() + p.cycleMin * 60000);
-                p.completed = end.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\. /g, '-').replace('.', '');
+                // 다른 경로와 같은 형식으로 저장 (UTC, 공백 구분) — 시간대가 섞이면 리드타임이 어긋남
+                p.completed = end.toISOString().slice(0, 16).replace('T', ' ');
               } catch(e) { p.completed = '-'; }
             } else {
               p.completed = '-';
@@ -2285,13 +2288,13 @@ export default function PBKWarehouseSystem() {
             let endTime = null;
             if (k.completedAt) {
               endTime = (typeof k.completedAt === 'string' && k.completedAt.length <= 10) 
-                ? new Date(k.completedAt + 'T17:00:00+09:00')
+                ? new Date(k.completedAt + 'T16:00:00+09:00')
                 : new Date(k.completedAt);
             } else {
               endTime = new Date();
             }
             if (startTime && endTime && !isNaN(startTime.getTime()) && !isNaN(endTime.getTime()) && endTime > startTime) {
-              const newLT = getBusinessDays(startTime, endTime);
+              const newLT = getLeadTimeDays(startTime, endTime);
               if (Math.abs(newLT - (k.leadTimeDays || 0)) > 0.05) {
                 k.leadTimeDays = newLT;
                 needSave = true;
@@ -2515,7 +2518,7 @@ export default function PBKWarehouseSystem() {
             ...u,
             status: 'completed',
             completedAt: endDate.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''),
-            leadTimeDays: startRef ? getBusinessDays(new Date(startRef), endDate) : 0,
+            leadTimeDays: startRef ? getLeadTimeDays(new Date(startRef), endDate) : 0,
           };
         }
         return u;
@@ -4960,7 +4963,7 @@ export default function PBKWarehouseSystem() {
         const startTime = parseTs(pickInfo.startTime);
         const endTime = pickInfo.completed ? parseTs(pickInfo.completed) : new Date();
         if (!isNaN(startTime.getTime()) && !isNaN(endTime.getTime()) && endTime > startTime) {
-          const newLeadTime = getBusinessDays(startTime, endTime);
+          const newLeadTime = getLeadTimeDays(startTime, endTime);
           if (newLeadTime >= 0 && Math.abs(newLeadTime - (k.leadTimeDays || 0)) > 0.05) {
             updated.leadTimeDays = newLeadTime;
             if (pickInfo.startTime) {
@@ -6233,7 +6236,7 @@ export default function PBKWarehouseSystem() {
           let leadTimeDays = 0;
           if (k.startedAt) {
             const startTime = parseTs(k.startedAt);
-            leadTimeDays = getBusinessDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
+            leadTimeDays = getLeadTimeDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
           }
           return { ...k, status: 'completed', completedAt: koreaDate, leadTimeDays };
         }
@@ -6995,65 +6998,8 @@ ${tableRows}</tbody>
     }
   };
 
-  // 근무시간만 계산하는 함수 (평일 07:00~16:00, 한국 시간 기준)
-  const calculateWorkingMinutes = (startTime, endTime) => {
-    const start = parseTs(startTime);
-    const end = parseTs(endTime);
-
-    const WORK_START_HOUR = 7;   // 오전 7시
-    const WORK_END_HOUR = 16;    // 오후 4시
-    const LUNCH_START = 12.5;    // 점심 시작 12:30
-    const LUNCH_END = 13.5;      // 점심 종료 13:30
-
-    let totalMinutes = 0;
-    let current = new Date(start);
-
-    // 한국 시간대 오프셋 (UTC+9)
-    const getKoreaHour = (date) => {
-      const koreaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-      return koreaTime.getHours();
-    };
-
-    const getKoreaMinute = (date) => {
-      const koreaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-      return koreaTime.getMinutes();
-    };
-
-    const getKoreaDay = (date) => {
-      const koreaTime = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-      return koreaTime.getDay();
-    };
-
-    while (current < end) {
-      const dayOfWeek = getKoreaDay(current); // 0=일, 1=월, ..., 6=토
-      const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5; // 월~금
-
-      // 한국시간 기준 날짜 문자열로 공휴일 체크
-      const krDate = new Date(current.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-      const dateStr = krDate.getFullYear() + '-' + String(krDate.getMonth()+1).padStart(2,'0') + '-' + String(krDate.getDate()).padStart(2,'0');
-      const isHoliday = KR_HOLIDAYS.has(dateStr);
-
-      if (isWeekday && !isHoliday) {
-        const currentHour = getKoreaHour(current);
-        const currentMinute = getKoreaMinute(current);
-        const currentTime = currentHour + currentMinute / 60; // 시간을 소수점으로 변환
-
-        // 근무시간 내인지 확인 (07:00 ~ 16:00)
-        // 점심시간 제외 (12:30 ~ 13:30)
-        const isWorkingHour = currentHour >= WORK_START_HOUR && currentHour < WORK_END_HOUR;
-        const isLunchTime = currentTime >= LUNCH_START && currentTime < LUNCH_END;
-
-        if (isWorkingHour && !isLunchTime) {
-          totalMinutes += 1;
-        }
-      }
-
-      // 1분씩 증가
-      current = new Date(current.getTime() + 60000);
-    }
-
-    return totalMinutes;
-  };
+  // 근무시간만 계산 (평일 07:00~16:00, 점심 12:30~13:30 제외) — 모듈 상단 공통 함수에 위임
+  const calculateWorkingMinutes = (startTime, endTime) => getWorkingMinutes(startTime, endTime);
 
   const addReceive = () => {
     if (!newReceive.vendor) return;
@@ -7188,7 +7134,7 @@ ${tableRows}</tbody>
           let leadTimeDays = 0;
           if (k.startedAt) {
             const startTime = parseTs(k.startedAt);
-            leadTimeDays = getBusinessDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
+            leadTimeDays = getLeadTimeDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
           }
           return { ...k, status: 'completed', completedAt: now.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''), leadTimeDays };
         }
@@ -7287,7 +7233,7 @@ ${tableRows}</tbody>
         let leadTimeDays = 0;
         if (k.startedAt) {
           const startTime = parseTs(k.startedAt);
-          leadTimeDays = getBusinessDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
+          leadTimeDays = getLeadTimeDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
         }
         return { ...k, status: 'completed', completedAt: now.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''), leadTimeDays };
       }
@@ -7411,7 +7357,7 @@ ${tableRows}</tbody>
         let leadTimeDays = 0;
         if (k.startedAt) {
           const startTime = parseTs(k.startedAt);
-          leadTimeDays = getBusinessDays(startTime, now);
+          leadTimeDays = getLeadTimeDays(startTime, now);
         }
         return { ...k, status: 'completed', completedAt: now.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''), leadTimeDays };
       }
@@ -7447,7 +7393,7 @@ ${tableRows}</tbody>
         let leadTimeDays = 0;
         if (k.startedAt) {
           const startTime = parseTs(k.startedAt);
-          leadTimeDays = getBusinessDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
+          leadTimeDays = getLeadTimeDays(startTime, now); // 영업일 기준 (주말+공휴일 제외)
         }
         return { ...k, status: 'completed', completedAt: now.toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', ''), leadTimeDays };
       }
@@ -21590,13 +21536,13 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     const completedAt = e.target.value;
                     let leadTimeDays = null;
                     if (completedAt) {
-                      const endDate = new Date(completedAt + 'T17:00:00+09:00'); // 완료일 17시(한국시간)
+                      const endDate = new Date(completedAt + 'T16:00:00+09:00'); // 완료일 근무종료 16시(한국시간) — 불출 Cycle에 실제 완료 시각이 있으면 그 값으로 다시 계산됨
                       if (editingKitting.startedAt) {
                         // 실제 시작시간 기준 영업일 계산
-                        leadTimeDays = getBusinessDays(parseTs(editingKitting.startedAt), endDate);
+                        leadTimeDays = getLeadTimeDays(parseTs(editingKitting.startedAt), endDate);
                       } else if (editingKitting.basicStartDate) {
                         // startedAt 없으면 시작예정일 기준 fallback
-                        leadTimeDays = getBusinessDays(new Date(editingKitting.basicStartDate + 'T08:00:00+09:00'), endDate);
+                        leadTimeDays = getLeadTimeDays(new Date(editingKitting.basicStartDate + 'T08:00:00+09:00'), endDate);
                       }
                     }
                     setEditingKitting({
