@@ -6619,8 +6619,11 @@ ${tableRows}</tbody>
 
       const { default: html2canvas } = await import('html2canvas-pro');
       const { default: jsPDF } = await import('jspdf');
-      // compress: true → 표(흰 배경 + 검은 선) 이미지가 잘 압축돼 파일 크기가 크게 줄어듦
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+      // compress: true      → 표(흰 배경 + 검은 선) 이미지가 잘 압축돼 파일 크기가 크게 줄어듦
+      // putOnlyUsedFonts    → jsPDF가 기본으로 넣는 표준 글꼴 14종(Helvetica 등, 미포함 상태)을 제거.
+      //                       점검표는 전체가 이미지라 글꼴을 쓰지 않는데, 이 선언 때문에 Acrobat 서명 시
+      //                       '포함되지 않은 글꼴 / 텍스트 모양이 변경될 수 있음' 경고가 떴음
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
       const pageW = pdf.internal.pageSize.getWidth();   // 210
       const pageH = pdf.internal.pageSize.getHeight();  // 297
 
@@ -6660,7 +6663,29 @@ ${tableRows}</tbody>
       const fileBase = months.length > 1
         ? months[0].replace('-', '.') + '~' + months[months.length - 1].replace('-', '.') + '.ESD_Check sheet'
         : buildTempHumiditySheetHtml(months[0]).fileBase;
-      pdf.save(fileBase + '.pdf');
+      // jsPDF가 넣는 /OpenAction(문서 열 때 화면맞춤 지정)은 Acrobat 서명 검사에서
+      // '숨겨진 동작 / 사용하지 않는 작업'으로 잡히므로 같은 길이의 공백으로 덮어 제거한다.
+      // (바이트 수를 유지하므로 xref 오프셋이 깨지지 않음)
+      const bytes = new Uint8Array(pdf.output('arraybuffer'));
+      const pat = '/OpenAction [3 0 R';
+      const pc = [];
+      for (let i = 0; i < pat.length; i++) pc.push(pat.charCodeAt(i));
+      outer:
+      for (let i = 0; i < bytes.length - pc.length; i++) {
+        for (let j = 0; j < pc.length; j++) if (bytes[i + j] !== pc[j]) continue outer;
+        let end = i;
+        while (end < bytes.length && bytes[end] !== 0x5D) end++;   // ']' 까지
+        if (end < bytes.length) for (let k = i; k <= end; k++) bytes[k] = 0x20;
+        break;
+      }
+      const pdfUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      const pa = document.createElement('a');
+      pa.href = pdfUrl;
+      pa.download = fileBase + '.pdf';
+      document.body.appendChild(pa);
+      pa.click();
+      document.body.removeChild(pa);
+      URL.revokeObjectURL(pdfUrl);
       showToast(fileBase + '.pdf 다운로드 완료 (' + months.length + '페이지)', 'success');
     } catch (e) {
       console.error('[온습도 PDF]', e);
