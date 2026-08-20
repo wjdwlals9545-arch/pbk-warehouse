@@ -2621,8 +2621,31 @@ export default function PBKWarehouseSystem() {
   // - 없는 오더: 키팅 현황 + 불출 Cycle 레코드를 새로 생성
   // React 상태가 아니라 localStorage 스냅샷을 기준으로 병합한 뒤 저장까지 직접 한다.
   // (초기 로드/동기화의 setState 와 경쟁해서 결과가 덮이는 것을 막기 위함)
+  // 오더번호가 '1436073.0' 처럼 소수점째로 들어간 유령 레코드를 한 번 정리한다.
+  // (엑셀에서 숫자로 저장된 CSV 때문에 같은 오더가 두 건으로 들어가 있었음)
+  const cleanupGhostOrders = () => {
+    if (safeStorage.getItem('pbk_ghost_cleaned') === '1') return;
+    let removed = 0;
+    for (const key of ['pbk_kitting_data', 'pbk_pick_cycles']) {
+      const arr = safeParse(safeStorage.getItem(key), []);
+      if (!Array.isArray(arr) || !arr.length) continue;
+      const clean = new Set(arr.map(r => String(r.productionOrder || '')).filter(o => !/\.\d+$/.test(o)));
+      const kept = arr.filter(r => {
+        const o = String(r.productionOrder || '');
+        const m = o.match(/^(\d+)\.\d+$/);
+        if (m && clean.has(m[1])) { removed++; return false; }   // 정상 번호가 이미 있으면 버림
+        if (m) r.productionOrder = m[1];                          // 없으면 번호만 정정
+        return true;
+      });
+      if (kept.length !== arr.length) safeStorage.setItem(key, JSON.stringify(kept));
+    }
+    safeStorage.setItem('pbk_ghost_cleaned', '1');
+    if (removed) console.log(`[Cleanup] 소수점 오더 유령 레코드 ${removed}건 제거`);
+  };
+
   const applyKittingBackfill = async () => {
     try {
+      cleanupGhostOrders();
       // 이미 최신 버전을 적용했다면 하루에 한 번만 확인 (147KB 다운로드 절약)
       const lastChk = parseInt(safeStorage.getItem('pbk_backfill_chk') || '0');
       if (safeStorage.getItem('pbk_backfill_ver') && Date.now() - lastChk < 24 * 60 * 60 * 1000) return;
@@ -2645,6 +2668,7 @@ export default function PBKWarehouseSystem() {
       const mergedK = curK.map(k => {
         const b = map[String(k.productionOrder)];
         if (!b) return k;
+        if (k.edited) return k;      // 손으로 고친 건은 메일 복원이 덮어쓰지 않음
         const u = { ...k };
         if (b.q != null) u.qty = b.q;
         if (b.created) u.createdOn = b.created;
@@ -7127,7 +7151,8 @@ ${tableRows}</tbody>
           if (!row) continue;
 
           const values = row.map(v => v.trim().replace(/^"|"$/g, '').replace(/\r/g, ''));
-          const order = values[orderIdx];
+          // 엑셀에서 숫자로 저장돼 '1436073.0' 처럼 넘어오는 경우가 있어 소수점을 떼어낸다
+          const order = (values[orderIdx] || '').replace(/\.0+$/, '');
 
           if (!order) continue;
 
@@ -7868,7 +7893,7 @@ ${tableRows}</tbody>
   // Kitting 수정 저장
   const saveEditKitting = () => {
     if (!editingKitting) return;
-    setKittingData(prev => prev.map(k => k.id === editingKitting.id ? editingKitting : k));
+    setKittingData(prev => prev.map(k => k.id === editingKitting.id ? { ...editingKitting, edited: 1 } : k));
     setEditingKitting(null);
   };
 
@@ -13754,7 +13779,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             className={`px-2 py-1 rounded text-xs border-0 cursor-pointer font-medium ${getModelColor(k.model)}`}
                             value={k.model}
                             onChange={e => setKittingData(prev => prev.map(item => 
-                              item.id === k.id ? {...item, model: e.target.value} : item
+                              item.id === k.id ? {...item, model: e.target.value, edited: 1} : item
                             ))}
                           >
                             <option value="RSC48">RSC48</option>
@@ -13772,7 +13797,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             className="px-2 py-1 bg-slate-100 text-slate-700 rounded text-xs border-0 cursor-pointer hover:bg-slate-200 font-medium"
                             value={k.worker || ''}
                             onChange={e => setKittingData(prev => prev.map(item => 
-                              item.id === k.id ? {...item, worker: e.target.value} : item
+                              item.id === k.id ? {...item, worker: e.target.value, edited: 1} : item
                             ))}
                           >
                             <option value="">-</option>
@@ -13789,7 +13814,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               type="checkbox" 
                               checked={k.isUrgent || false}
                               onChange={e => setKittingData(prev => prev.map(item => 
-                                item.id === k.id ? {...item, isUrgent: e.target.checked} : item
+                                item.id === k.id ? {...item, isUrgent: e.target.checked, edited: 1} : item
                               ))}
                               className="hidden"
                             />
