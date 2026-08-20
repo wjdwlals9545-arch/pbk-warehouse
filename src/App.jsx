@@ -2194,19 +2194,13 @@ export default function PBKWarehouseSystem() {
         return p;
       });
     }
-    return [
-      { id: 1, orderId: 'PO-2026-001', model: 'MX48', received: '2026-01-28 09:00', completed: '2026-01-28 09:45', cycleMin: 45, status: 'completed' },
-      { id: 2, orderId: 'PO-2026-002', model: 'RSC48', received: '2026-01-28 10:30', completed: '2026-01-28 11:00', cycleMin: 30, status: 'completed' },
-    ];
+    return [];   // 샘플 데이터 없음 (오더번호가 없어 리드타임과 연결되지 않고 사이클 평균만 왜곡시킴)
   });
   
   const [receiveCycles, setReceiveCycles] = useState(() => {
     const saved = safeStorage.getItem('pbk_receive_cycles');
     const parsed = safeParse(saved, null);
-    return parsed !== null ? parsed : [
-      { id: 1, poNo: 'PUR-2026-001', vendor: 'Metal Tech', delivery: '2026-01-27 10:00', migo: '2026-01-27 11:30', cycleMin: 90, status: 'completed' },
-      { id: 2, poNo: 'PUR-2026-002', vendor: 'PCB Korea', delivery: '2026-01-28 09:30', migo: '2026-01-28 10:15', cycleMin: 45, status: 'completed' },
-    ];
+    return parsed !== null ? parsed : [];   // 샘플 데이터 없음
   });
 
   const [showPickModal, setShowPickModal] = useState(false);
@@ -2301,8 +2295,12 @@ export default function PBKWarehouseSystem() {
               startTime = new Date('2026-' + k.startedAt.replace(' ', 'T') + ':00');
             }
             let endTime = null;
-            if (k.completedAt) {
-              endTime = (typeof k.completedAt === 'string' && k.completedAt.length <= 10) 
+            if (k.completedTs) {
+              // 메일에서 받은 분 단위 완료시각이 가장 정확하다
+              endTime = parseTs(k.completedTs);
+            } else if (k.completedAt) {
+              // 날짜만 있으면 종업시각(16:00)으로 가정 — 추정값
+              endTime = (typeof k.completedAt === 'string' && k.completedAt.length <= 10)
                 ? new Date(k.completedAt + 'T16:00:00+09:00')
                 : new Date(k.completedAt);
             } else {
@@ -2640,6 +2638,17 @@ export default function PBKWarehouseSystem() {
 
   // localStorage 에 이미 들어가 있는 유령 레코드 정리 (백필이 건너뛰는 날에도 동작)
   const cleanupGhostOrders = () => {
+    // 오더번호 없는 불출 레코드(초기 샘플 PO-2026-00x)는 리드타임과 연결되지 않고
+    // 사이클타임 평균만 왜곡시키므로 제거한다
+    const pc = safeParse(safeStorage.getItem('pbk_pick_cycles'), []);
+    if (Array.isArray(pc) && pc.length) {
+      const real = pc.filter(r => r && String(r.productionOrder || '').trim());
+      if (real.length !== pc.length) {
+        safeStorage.setItem('pbk_pick_cycles', JSON.stringify(real));
+        setPickCycles(real);
+        console.log(`[Cleanup] 오더번호 없는 불출 레코드 ${pc.length - real.length}건 제거`);
+      }
+    }
     for (const key of ['pbk_kitting_data', 'pbk_pick_cycles']) {
       const arr = safeParse(safeStorage.getItem(key), []);
       const kept = dedupeGhostOrders(arr);
@@ -2735,7 +2744,27 @@ export default function PBKWarehouseSystem() {
       // ── 불출 Cycle (완료시각이 있는 오더만)
       const curP = safeParse(safeStorage.getItem('pbk_pick_cycles'), []);
       const seenP = new Set(curP.map(x => String(x.productionOrder || x.orderId)));
-      const mergedP = curP.slice();
+      // 기존 불출 레코드도 메일 기준으로 맞춘다. 그러지 않으면 같은 오더인데도
+      // 키팅 L/T 의 완료시각(메일)과 불출 Cycle 의 완료시각(예전 클릭값)이 달라진다.
+      let updatedP = 0;
+      const mergedP = curP.map(x => {
+        const b = map[String(x.productionOrder || '')];
+        if (!b || x.edited) return x;
+        const u = { ...x };
+        if (b.mat) { u.materialNum = b.mat; u.model = modelFromMaterial(b.mat); }
+        if (b.desc) u.materialDesc = b.desc;
+        if (b.q != null) u.qty = b.q;
+        if (b.sup) u.worker = b.sup;
+        if (b.pic) u.warehousePic = b.pic;
+        if (b.start && !b.startBad) { u.received = b.start; u.startTime = b.start; }
+        if (b.done) { u.completed = b.done; u.status = 'completed'; }
+        const st = u.startTime || u.received;
+        if (st && u.completed) u.cycleMin = getWorkingMinutes(parseTs(st), parseTs(u.completed));
+        u.totalPausedMs = 0;
+        u.pausedAt = null;
+        updatedP++;
+        return u;
+      });
       let createdP = 0;
       orderKeys.forEach(o => {
         if (seenP.has(o)) return;
@@ -2772,7 +2801,7 @@ export default function PBKWarehouseSystem() {
       safeStorage.setItem('pbk_backfill_ver', ver);
       setKittingData(cleanK);
       setPickCycles(cleanP);
-      console.log(`[Backfill] 메일 복원 적용 — 보강 ${updated}건, 키팅 신규 ${created}건, 불출 신규 ${createdP}건 (총 키팅 ${cleanK.length})`);
+      console.log(`[Backfill] 메일 복원 적용 — 키팅 보강 ${updated}건/신규 ${created}건, 불출 보강 ${updatedP}건/신규 ${createdP}건 (총 키팅 ${cleanK.length}, 불출 ${cleanP.length})`);
       showToast(`📥 과거 실적 복원 — 보강 ${updated}건 / 신규 ${created}건`, 'success');
     } catch (e) { console.log('[Backfill] skip:', e.message); }
   };
@@ -4391,29 +4420,13 @@ export default function PBKWarehouseSystem() {
       const updated = prev.map(p => {
         if (p.status === 'completed' && p.startTime && p.completed) {
           const oldMin = p.cycleMin || 0;
-          // 간단한 영업시간 계산 (calculateWorkingMinutes가 아직 안 됨 → 인라인)
-          const start = new Date(p.startTime);
-          const end = new Date(p.completed);
-          if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
-            let totalMin = 0;
-            const cur = new Date(start);
-            while (cur < end) {
-              const krTime = new Date(cur.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-              const day = krTime.getDay();
-              const h = krTime.getHours();
-              const m = krTime.getMinutes();
-              const t = h + m / 60;
-              const dateStr = krTime.getFullYear() + '-' + String(krTime.getMonth()+1).padStart(2,'0') + '-' + String(krTime.getDate()).padStart(2,'0');
-              const isWorkday = day >= 1 && day <= 5 && !KR_HOLIDAYS.has(dateStr);
-              const isWorkHour = h >= 7 && h < 16;
-              const isLunch = t >= 12.5 && t < 13.5;
-              if (isWorkday && isWorkHour && !isLunch) totalMin++;
-              cur.setTime(cur.getTime() + 60000);
-            }
-            if (Math.abs(totalMin - oldMin) > 5) {
-              changed = true;
-              return { ...p, cycleMin: totalMin };
-            }
+          // 리드타임과 같은 함수를 쓴다. 직접 new Date() 로 파싱하면
+          // 'YYYY-MM-DD-HH:mm'(한국시간) 은 Invalid Date, 'YYYY-MM-DD HH:mm'(UTC) 은
+          // 9시간 밀려서 사이클타임이 0 이나 엉뚱한 값이 됐다.
+          const totalMin = getWorkingMinutes(p.startTime, p.completed);
+          if (totalMin > 0 && Math.abs(totalMin - oldMin) > 5) {
+            changed = true;
+            return { ...p, cycleMin: totalMin };
           }
         }
         return p;
