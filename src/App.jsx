@@ -2495,6 +2495,127 @@ export default function PBKWarehouseSystem() {
   };
 
   // ──── 폰 스캔(kitting.html) 이벤트 병합 ────
+  // 아웃룩 감시(outlook_watcher.py)가 올린 신규 오더/완료 이벤트를 주기적으로 반영한다.
+  // - orders: 생산계획 메일의 orders_all.csv → 없는 오더는 새로 등록
+  // - done  : [Warehouse][Kitting 완료] 메일 수신시각 → 완료 처리 + 리드타임/사이클타임 계산
+  // 적용한 항목은 pbk_mail_applied 에 기록해 같은 이벤트를 두 번 반영하지 않는다.
+  const applyMailEvents = async () => {
+    try {
+      const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kitting_mail_events.json?t=${Date.now()}`);
+      if (!resp.ok) return;
+      const doc = await resp.json();
+      const omap = (doc && doc.orders) || {};
+      const dmap = (doc && doc.done) || {};
+      if (!Object.keys(omap).length && !Object.keys(dmap).length) return;
+
+      const applied = new Set(safeParse(safeStorage.getItem('pbk_mail_applied'), []));
+      const krDate = (iso) => new Date(iso).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
+      const picFor = (iso) => {
+        const d = String(iso || '').slice(0, 10);
+        return (d && d >= '2026-03-19' && d < '2026-07-01') ? 'HJ. Kim' : (tempHumidityRecorder || 'JM. Jung');
+      };
+
+      const curK = safeParse(safeStorage.getItem('pbk_kitting_data'), []);
+      const seenK = new Set(curK.map(k => String(k.productionOrder)));
+      const newlyApplied = [];
+      let addedK = 0, doneK = 0;
+
+      // 1) 신규 오더 등록
+      const mergedK = curK.slice();
+      Object.keys(omap).forEach(o => {
+        const sig = 'o:' + o;
+        if (seenK.has(o) || applied.has(sig)) return;
+        const b = omap[o];
+        mergedK.push({
+          id: 'ml-' + o,
+          productionOrder: o,
+          model: modelFromMaterial(b.mat),
+          materialNum: b.mat || '',
+          materialDesc: b.desc || '',
+          qty: b.q != null ? b.q : null,
+          createdOn: b.created || '',
+          basicStartDate: b.created || '',
+          basicFinishDate: b.finish || '',
+          worker: b.sup || '',
+          warehousePic: picFor(b.start),
+          isUrgent: !!b.urgent,
+          status: 'in-progress',
+          startedAt: b.start || null,
+          completedAt: null,
+          leadTimeDays: null,
+          createdAt: b.start || null,
+          source: 'mail-auto',
+        });
+        seenK.add(o);
+        newlyApplied.push(sig);
+        addedK++;
+      });
+
+      // 2) 완료 처리
+      const finalK = mergedK.map(k => {
+        const o = String(k.productionOrder);
+        const ts = dmap[o];
+        const sig = 'd:' + o + '@' + ts;
+        if (!ts || applied.has(sig) || k.completedTs === ts) return k;
+        const st = k.startedAt || (omap[o] && omap[o].start);
+        newlyApplied.push(sig);
+        doneK++;
+        return { ...k, status: 'completed', completedAt: krDate(ts), completedTs: ts,
+                 leadTimeDays: st ? getLeadTimeDays(parseTs(st), parseTs(ts)) : k.leadTimeDays,
+                 source: k.source || 'mail-auto' };
+      });
+
+      // 3) 불출 Cycle 동기화 (없으면 생성, 완료시각 반영)
+      const curP = safeParse(safeStorage.getItem('pbk_pick_cycles'), []);
+      const idxP = new Map(curP.map((x, i) => [String(x.productionOrder || x.orderId), i]));
+      const mergedP = curP.slice();
+      Object.keys(omap).forEach(o => {
+        const b = omap[o];
+        const ts = dmap[o];
+        if (idxP.has(o)) {
+          if (ts) {
+            const cur = mergedP[idxP.get(o)];
+            if (cur.completed !== ts) {
+              mergedP[idxP.get(o)] = { ...cur, status: 'completed', completed: ts,
+                cycleMin: cur.startTime ? getWorkingMinutes(parseTs(cur.startTime), parseTs(ts)) : cur.cycleMin };
+            }
+          }
+          return;
+        }
+        mergedP.push({
+          id: 'ml-p-' + o,
+          productionOrder: o,
+          model: modelFromMaterial(b.mat),
+          materialNum: b.mat || '',
+          materialDesc: b.desc || '',
+          qty: b.q != null ? b.q : null,
+          basicStartDate: b.created || '',
+          worker: b.sup || '',
+          warehousePic: picFor(b.start),
+          received: b.start || null,
+          startTime: b.start || null,
+          completed: ts || null,
+          cycleMin: (b.start && ts) ? getWorkingMinutes(parseTs(b.start), parseTs(ts)) : null,
+          totalPausedMs: 0,
+          pausedAt: null,
+          isUrgent: !!b.urgent,
+          status: ts ? 'completed' : 'in-progress',
+          source: 'mail-auto',
+        });
+      });
+
+      if (!newlyApplied.length) return;
+      safeStorage.setItem('pbk_kitting_data', JSON.stringify(finalK));
+      safeStorage.setItem('pbk_pick_cycles', JSON.stringify(mergedP));
+      safeStorage.setItem('pbk_mail_applied', JSON.stringify([...applied, ...newlyApplied].slice(-4000)));
+      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+      setKittingData(finalK);
+      setPickCycles(mergedP);
+      console.log(`[MailAuto] 메일 자동 반영 — 신규 ${addedK}건, 완료 ${doneK}건`);
+      if (addedK || doneK) showToast(`📨 메일 자동 반영 — 신규 ${addedK}건 / 완료 ${doneK}건`, 'success');
+    } catch (e) { console.log('[MailAuto] skip:', e.message); }
+  };
+
   // 아웃룩 메일(오더 CSV + [Kitting 완료])에서 복원한 과거 실적을 병합한다.
   // - 기존 레코드: 수량·오더발행일·자재담당 보강 + 실제 완료시각으로 리드타임 재계산
   // - 없는 오더: 키팅 현황 + 불출 Cycle 레코드를 새로 생성
@@ -4823,6 +4944,9 @@ export default function PBKWarehouseSystem() {
 
       // 아웃룩 메일 기반 과거 실적 복원 (1회)
       await applyKittingBackfill();
+
+      // 아웃룩 감시가 올린 신규 오더/완료 자동 반영
+      await applyMailEvents();
 
       // 폰 스캔 이벤트 병합 (kitting.html → kitting_scan.json)
       await applyKittingScanEvents();
