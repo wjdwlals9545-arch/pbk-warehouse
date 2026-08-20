@@ -2701,12 +2701,16 @@ export default function PBKWarehouseSystem() {
       const ver = String((doc && doc.version) || 1);
       const orderKeys = Object.keys(map);
       if (!orderKeys.length) return;
+      // 취소된 오더 — 백필 파일의 removed 목록에 있는 건은 키팅·불출에서 삭제한다
+      const removed = new Set((doc && Array.isArray(doc.removed) ? doc.removed : []).map(String));
       if (safeStorage.getItem('pbk_backfill_ver') === ver) return;   // 이미 적용됨
 
       const krDate = (iso) => new Date(iso).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
 
       // ── 키팅 현황
-      const curK = safeParse(safeStorage.getItem('pbk_kitting_data'), []);
+      const curKAll = safeParse(safeStorage.getItem('pbk_kitting_data'), []);
+      const curK = removed.size ? curKAll.filter(k => !removed.has(String(k.productionOrder))) : curKAll;
+      const removedK = curKAll.length - curK.length;
       const seenK = new Set(curK.map(k => String(k.productionOrder)));
       let updated = 0;
       const mergedK = curK.map(k => {
@@ -2781,7 +2785,9 @@ export default function PBKWarehouseSystem() {
       });
 
       // ── 불출 Cycle (완료시각이 있는 오더만)
-      const curP = safeParse(safeStorage.getItem('pbk_pick_cycles'), []);
+      const curPAll = safeParse(safeStorage.getItem('pbk_pick_cycles'), []);
+      const curP = removed.size ? curPAll.filter(x => !removed.has(String(x.productionOrder))) : curPAll;
+      const removedP = curPAll.length - curP.length;
       const seenP = new Set(curP.map(x => String(x.productionOrder || x.orderId)));
       // 기존 불출 레코드도 메일 기준으로 맞춘다. 그러지 않으면 같은 오더인데도
       // 키팅 L/T 의 완료시각(메일)과 불출 Cycle 의 완료시각(예전 클릭값)이 달라진다.
@@ -2840,7 +2846,7 @@ export default function PBKWarehouseSystem() {
       safeStorage.setItem('pbk_backfill_ver', ver);
       setKittingData(cleanK);
       setPickCycles(cleanP);
-      console.log(`[Backfill] 메일 복원 적용 — 키팅 보강 ${updated}건/신규 ${created}건, 불출 보강 ${updatedP}건/신규 ${createdP}건 (총 키팅 ${cleanK.length}, 불출 ${cleanP.length})`);
+      console.log(`[Backfill] 메일 복원 적용 — 키팅 보강 ${updated}건/신규 ${created}건, 불출 보강 ${updatedP}건/신규 ${createdP}건, 취소 오더 삭제 ${removedK + removedP}건 (총 키팅 ${cleanK.length}, 불출 ${cleanP.length})`);
       showToast(`📥 과거 실적 복원 — 보강 ${updated}건 / 신규 ${created}건`, 'success');
     } catch (e) { console.log('[Backfill] skip:', e.message); }
   };
