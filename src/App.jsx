@@ -2608,7 +2608,6 @@ export default function PBKWarehouseSystem() {
       safeStorage.setItem('pbk_kitting_data', JSON.stringify(finalK));
       safeStorage.setItem('pbk_pick_cycles', JSON.stringify(mergedP));
       safeStorage.setItem('pbk_mail_applied', JSON.stringify([...applied, ...newlyApplied].slice(-4000)));
-      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
       setKittingData(finalK);
       setPickCycles(mergedP);
       console.log(`[MailAuto] 메일 자동 반영 — 신규 ${addedK}건, 완료 ${doneK}건`);
@@ -2771,7 +2770,6 @@ export default function PBKWarehouseSystem() {
       safeStorage.setItem('pbk_kitting_data', JSON.stringify(cleanK));
       safeStorage.setItem('pbk_pick_cycles', JSON.stringify(cleanP));
       safeStorage.setItem('pbk_backfill_ver', ver);
-      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
       setKittingData(cleanK);
       setPickCycles(cleanP);
       console.log(`[Backfill] 메일 복원 적용 — 보강 ${updated}건, 키팅 신규 ${created}건, 불출 신규 ${createdP}건 (총 키팅 ${cleanK.length})`);
@@ -2939,7 +2937,17 @@ export default function PBKWarehouseSystem() {
         if (skipUserKeys && !EXCEL_KEYS.has(key)) continue;
         if (stateObj[key] !== undefined && stateObj[key] !== null) {
           // localStorage 업데이트
-          const val = stateObj[key];
+          let val = stateObj[key];
+          // 키팅/불출은 덮어쓰지 않고 합친다. 메일로 복원한 과거 실적은 백업 파일에서
+          // 제외돼 있어(kitting_backfill.json 이 정본), 그대로 덮으면 718건이 사라진다.
+          if ((key === 'pbk_kitting_data' || key === 'pbk_pick_cycles') && Array.isArray(val)) {
+            const local = safeParse(safeStorage.getItem(key), []);
+            if (Array.isArray(local) && local.length) {
+              const remoteOrders = new Set(val.map(r => String((r && r.productionOrder) || '')));
+              const extra = local.filter(r => r && !remoteOrders.has(String(r.productionOrder || '')));
+              if (extra.length) val = val.concat(extra);
+            }
+          }
           safeStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
           // React state 업데이트
           if (setterMap[key]) {
@@ -4357,10 +4365,23 @@ export default function PBKWarehouseSystem() {
     neutral: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-500', badge: 'bg-gray-500' }
   };
 
+  // 상태를 localStorage 에 저장한다.
+  // '편집 시각'(pbk_sync_local_ts)은 마스터 PC의 실제 편집일 때만 남긴다.
+  //  - 마운트 첫 실행은 편집이 아니라 초기화이므로 제외
+  //  - 읽기 전용 PC는 업로드를 하지 않으므로, 이 값이 남으면 '로컬이 더 최신'으로
+  //    판정돼 GitHub 백업(투두·입고 Cycle·온습도 등)이 영구히 복원되지 않는다
+  const persistInitRef = useRef(new Set());
+  const persistLocal = (key, value) => {
+    safeStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    if (!persistInitRef.current.has(key)) { persistInitRef.current.add(key); return; }
+    if (safeStorage.getItem('pbk_sync_master') === 'true') {
+      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+    }
+  };
+
   // safeStorage에 저장
   useEffect(() => {
-    safeStorage.setItem('pbk_pick_cycles', JSON.stringify(pickCycles));
-    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+    persistLocal('pbk_pick_cycles', pickCycles);
   }, [pickCycles]);
 
   // 마운트 시 완료된 pickCycles의 cycleMin을 영업시간 기준으로 재계산
@@ -4402,20 +4423,17 @@ export default function PBKWarehouseSystem() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    safeStorage.setItem('pbk_receive_cycles', JSON.stringify(receiveCycles));
-    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+    persistLocal('pbk_receive_cycles', receiveCycles);
   }, [receiveCycles]);
 
   useEffect(() => {
-    safeStorage.setItem('pbk_kitting_data', JSON.stringify(kittingData));
-    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+    persistLocal('pbk_kitting_data', kittingData);
   }, [kittingData]);
 
   // LT 재계산은 useState 초기화에서 처리됨
 
   useEffect(() => {
-    safeStorage.setItem('pbk_todo_list', JSON.stringify(todoList));
-    safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+    persistLocal('pbk_todo_list', todoList);
   }, [todoList]);
 
   // v15: 다크모드 저장
@@ -5051,7 +5069,9 @@ export default function PBKWarehouseSystem() {
     // 첫 실행(초기 로드 직후)은 편집이 아니므로 로컬 편집 시각을 기록하지 않음
     if (firstSyncRunRef.current) {
       firstSyncRunRef.current = false;
-    } else {
+    } else if (safeStorage.getItem('pbk_sync_master') === 'true') {
+      // 편집 시각은 마스터 PC에서만 기록한다. 읽기 전용 PC는 업로드를 하지 않으므로
+      // 이 값이 남으면 '로컬이 더 최신'으로 판정돼 GitHub 백업이 영구히 복원되지 않는다.
       safeStorage.setItem('pbk_sync_local_ts', String(Date.now()));
     }
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
