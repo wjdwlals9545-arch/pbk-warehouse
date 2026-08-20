@@ -1917,6 +1917,21 @@ function parseTs(v) {
   return new Date(v);
 }
 
+// 품번 → 모델 구분 (CSV 업로드/백필 공통)
+function modelFromMaterial(materialNum) {
+  if (!materialNum) return 'Spare Parts';
+  const m = String(materialNum).toUpperCase();
+  if (m === 'AS4500') return 'RSC16';
+  if (m === 'AS8500') return 'RSC48';
+  if (m === 'AS8000') return 'CSC48';
+  if (m === 'AS4600') return 'FSC16';
+  if (m === 'AS6000') return 'CSC16';
+  if (m === 'A2715') return 'HSM3.0';
+  if (SUBCOM_INFO[materialNum]) return 'Sub-com.';
+  if (['KB0737', 'KB0749', 'KB0724', 'KB0731'].includes(materialNum)) return 'RSC16';
+  return 'Spare Parts';
+}
+
 // 근무시간 기준 계산 — 평일(주말·공휴일 제외) 07:00~12:30 + 13:30~16:00 = 하루 480분(8시간)
 // 점심 12:30~13:30 은 제외. 리드타임과 사이클타임이 같은 기준을 쓰도록 이 함수로 통일했다.
 const WORK_SEGMENTS = [[7 * 60, 12 * 60 + 30], [13 * 60 + 30, 16 * 60]];
@@ -2480,6 +2495,120 @@ export default function PBKWarehouseSystem() {
   };
 
   // ──── 폰 스캔(kitting.html) 이벤트 병합 ────
+  // 아웃룩 메일(오더 CSV + [Kitting 완료])에서 복원한 과거 실적을 병합한다.
+  // - 기존 레코드: 수량·오더발행일·자재담당 보강 + 실제 완료시각으로 리드타임 재계산
+  // - 없는 오더: 키팅 현황 + 불출 Cycle 레코드를 새로 생성
+  // React 상태가 아니라 localStorage 스냅샷을 기준으로 병합한 뒤 저장까지 직접 한다.
+  // (초기 로드/동기화의 setState 와 경쟁해서 결과가 덮이는 것을 막기 위함)
+  const applyKittingBackfill = async () => {
+    try {
+      const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kitting_backfill.json?t=${Date.now()}`);
+      if (!resp.ok) return;
+      const doc = await resp.json();
+      const map = (doc && doc.orders) || {};
+      const ver = String((doc && doc.version) || 1);
+      const orderKeys = Object.keys(map);
+      if (!orderKeys.length) return;
+      if (safeStorage.getItem('pbk_backfill_ver') === ver) return;   // 이미 적용됨
+
+      const krDate = (iso) => new Date(iso).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
+
+      // ── 키팅 현황
+      const curK = safeParse(safeStorage.getItem('pbk_kitting_data'), []);
+      const seenK = new Set(curK.map(k => String(k.productionOrder)));
+      let updated = 0;
+      const mergedK = curK.map(k => {
+        const b = map[String(k.productionOrder)];
+        if (!b) return k;
+        const u = { ...k };
+        if (b.q != null) u.qty = b.q;
+        if (b.created) u.createdOn = b.created;
+        if (b.pic) u.warehousePic = b.pic;
+        if (b.finish) u.basicFinishDate = b.finish;
+        if (b.start && !u.startedAt) u.startedAt = b.start;
+        if (b.done) {
+          u.completedAt = krDate(b.done);
+          u.completedTs = b.done;
+          u.status = 'completed';
+          const st = b.start || u.startedAt;
+          if (st) u.leadTimeDays = getLeadTimeDays(parseTs(st), parseTs(b.done));
+        }
+        u.source = u.source || 'mail-backfill';
+        updated++;
+        return u;
+      });
+      let created = 0;
+      orderKeys.forEach(o => {
+        if (seenK.has(o)) return;
+        const b = map[o];
+        mergedK.push({
+          id: 'bf-' + o,
+          productionOrder: o,
+          model: modelFromMaterial(b.mat),
+          materialNum: b.mat || '',
+          materialDesc: b.desc || '',
+          qty: b.q != null ? b.q : null,
+          createdOn: b.created || '',
+          basicStartDate: b.created || '',
+          basicFinishDate: b.finish || '',
+          worker: b.sup || '',
+          warehousePic: b.pic || '',
+          isUrgent: false,
+          status: b.done ? 'completed' : 'waiting',
+          startedAt: b.start || null,
+          completedAt: b.done ? krDate(b.done) : null,
+          completedTs: b.done || null,
+          leadTimeDays: (b.start && b.done) ? getLeadTimeDays(parseTs(b.start), parseTs(b.done)) : null,
+          createdAt: b.start || null,
+          source: 'mail-backfill',
+        });
+        created++;
+      });
+
+      // ── 불출 Cycle (완료시각이 있는 오더만)
+      const curP = safeParse(safeStorage.getItem('pbk_pick_cycles'), []);
+      const seenP = new Set(curP.map(x => String(x.productionOrder || x.orderId)));
+      const mergedP = curP.slice();
+      let createdP = 0;
+      orderKeys.forEach(o => {
+        if (seenP.has(o)) return;
+        const b = map[o];
+        if (!b.done || !b.start) return;
+        mergedP.push({
+          id: 'bf-p-' + o,
+          productionOrder: o,
+          model: modelFromMaterial(b.mat),
+          materialNum: b.mat || '',
+          materialDesc: b.desc || '',
+          qty: b.q != null ? b.q : null,
+          basicStartDate: b.created || '',
+          worker: b.sup || '',
+          warehousePic: b.pic || '',
+          received: b.start,
+          startTime: b.start,
+          completed: b.done,
+          cycleMin: getWorkingMinutes(parseTs(b.start), parseTs(b.done)),
+          totalPausedMs: 0,
+          pausedAt: null,
+          isUrgent: false,
+          status: 'completed',
+          source: 'mail-backfill',
+        });
+        createdP++;
+      });
+
+      // 저장 먼저, 그 다음 상태 반영 (경쟁 시에도 localStorage 는 보존됨)
+      safeStorage.setItem('pbk_kitting_data', JSON.stringify(mergedK));
+      safeStorage.setItem('pbk_pick_cycles', JSON.stringify(mergedP));
+      safeStorage.setItem('pbk_backfill_ver', ver);
+      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+      setKittingData(mergedK);
+      setPickCycles(mergedP);
+      console.log(`[Backfill] 메일 복원 적용 — 보강 ${updated}건, 키팅 신규 ${created}건, 불출 신규 ${createdP}건 (총 키팅 ${mergedK.length})`);
+      showToast(`📥 과거 실적 복원 — 보강 ${updated}건 / 신규 ${created}건`, 'success');
+    } catch (e) { console.log('[Backfill] skip:', e.message); }
+  };
+
   // kitting_scan.json의 start/end 이벤트를 Kitting 현황 + 불출 Cycle에 반영.
   // 적용한 이벤트 id는 pbk_scan_applied에 기록 (멱등). 주문이 아직 없는 이벤트는
   // 미적용으로 남겨서 CSV가 나중에 업로드되면 다음 주기에 자동 병합된다.
@@ -4692,6 +4821,9 @@ export default function PBKWarehouseSystem() {
         }
       } catch (e) { console.log('BOM JSON fetch skip:', e.message); }
 
+      // 아웃룩 메일 기반 과거 실적 복원 (1회)
+      await applyKittingBackfill();
+
       // 폰 스캔 이벤트 병합 (kitting.html → kitting_scan.json)
       await applyKittingScanEvents();
     };
@@ -6795,6 +6927,11 @@ ${tableRows}</tbody>
         const startDateIdx = headers.findIndex(h => /Basic start date/i.test(h));
         // 담당자 (Prodn Supervisor) 컬럼 추가
         const supervisorIdx = headers.findIndex(h => /Prodn Supervisor/i.test(h) || /Production Supervisor/i.test(h) || /Supervisor/i.test(h));
+        // 수량·오더발행일·완료예정일·긴급 — CSV에 이미 있는 컬럼 (예: 'Order quantity (GMEIN)', 'Created on')
+        const qtyIdx = headers.findIndex(h => /^Order quantity/i.test(h) || /^Target quantity/i.test(h) || /^Order Qty/i.test(h));
+        const createdIdx = headers.findIndex(h => /^Created on/i.test(h));
+        const finishIdx = headers.findIndex(h => /Basic finish date/i.test(h));
+        const emergIdx = headers.findIndex(h => /Kitting Emergency/i.test(h));
 
         if (orderIdx === -1) {
           alert('❌ Order 컬럼을 찾을 수 없습니다.');
@@ -6855,6 +6992,12 @@ ${tableRows}</tbody>
           const model = getModelFromMaterial(materialNum);
           // 담당자 추출 (없으면 기본값 Z01)
           const worker = supervisorIdx >= 0 && values[supervisorIdx] ? values[supervisorIdx].trim() : 'Z01';
+          const qtyRaw = qtyIdx >= 0 ? (values[qtyIdx] || '').trim() : '';
+          const qty = /^\d+(\.\d+)?$/.test(qtyRaw) ? Math.round(parseFloat(qtyRaw)) : null;
+          const createdOn = createdIdx >= 0 ? normalizeDate(values[createdIdx]) : '';
+          const basicFinishDate = finishIdx >= 0 ? normalizeDate(values[finishIdx]) : '';
+          const emergRaw = emergIdx >= 0 ? (values[emergIdx] || '').trim().toUpperCase() : '';
+          const isUrgentCsv = ['X', 'Y', 'YES', 'TRUE', '1', 'O'].includes(emergRaw);
 
           // 불출 Cycle에 추가 (중복 아닌 경우)
           if (!existingPickOrders.has(order)) {
@@ -6864,6 +7007,9 @@ ${tableRows}</tbody>
               model: model,
               materialNum: materialNum,  // Part No.
               materialDesc: desc,
+              qty: qty,
+              createdOn: createdOn,
+              basicFinishDate: basicFinishDate,
               received: now,
               basicStartDate: normalizeDate(startDate),
               worker: worker,  // 담당자 자동 매핑
@@ -6888,9 +7034,13 @@ ${tableRows}</tbody>
               model: model,
               materialNum: materialNum,  // Part No.
               materialDesc: desc,
+              qty: qty,
+              createdOn: createdOn,
+              basicFinishDate: basicFinishDate,
               basicStartDate: normalizeDate(startDate) || new Date().toISOString().split('T')[0],
               worker: worker,  // 담당자 자동 매핑
-              isUrgent: false,
+              warehousePic: tempHumidityRecorder || 'JM. Jung',
+              isUrgent: isUrgentCsv,
               status: 'in-progress',
               startedAt: new Date().toISOString(),
               createdAt: new Date().toISOString(),
@@ -13412,10 +13562,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     <th className="px-2 py-3 text-center whitespace-nowrap">긴급</th>
                     <th className="px-2 py-3 text-left whitespace-nowrap">Part No.</th>
                     <th className="px-2 py-3 text-left whitespace-nowrap">Description</th>
+                    <th className="px-2 py-3 text-center whitespace-nowrap">수량</th>
                     <th className="px-2 py-3 text-center whitespace-nowrap">시작예정일</th>
                     <th className="px-2 py-3 text-center whitespace-nowrap">시작시간</th>
                     <th className="px-2 py-3 text-center whitespace-nowrap">완료일</th>
                     <th className="px-2 py-3 text-center whitespace-nowrap">Lead Time</th>
+                    <th className="px-2 py-3 text-center whitespace-nowrap">자재담당</th>
                     <th className="px-2 py-3 text-center whitespace-nowrap">상태</th>
                     <th className="px-2 py-3 text-center whitespace-nowrap">액션</th>
                   </tr>
@@ -13507,6 +13659,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           {k.materialNum || '-'}
                         </td>
                         <td className="px-2 py-2 text-sm text-gray-600 whitespace-nowrap" title={k.materialDesc || ''}>{k.materialDesc?.slice(0, 20) || '-'}</td>
+                        <td className="px-2 py-2 text-center text-xs whitespace-nowrap font-medium">{k.qty != null ? k.qty.toLocaleString() : '-'}</td>
                         <td className="px-2 py-2 text-center text-xs whitespace-nowrap">{shortDate(k.basicStartDate) || '-'}</td>
                         <td className="px-2 py-2 text-center text-xs whitespace-nowrap">
                           {k.startedAt ? (
@@ -13533,6 +13686,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               'bg-red-100 text-red-700'
                             }`}>
                               {k.leadTimeDays}일
+                            </span>
+                          ) : '-'}
+                        </td>
+                        <td className="px-2 py-2 text-center text-xs whitespace-nowrap">
+                          {k.warehousePic ? (
+                            <span className={`px-2 py-0.5 rounded ${k.warehousePic.startsWith('HJ') ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}
+                                  title={k.source === 'mail-backfill' ? '메일 이력에서 복원' : ''}>
+                              {k.warehousePic}
                             </span>
                           ) : '-'}
                         </td>
