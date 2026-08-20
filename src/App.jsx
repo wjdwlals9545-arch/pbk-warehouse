@@ -1919,7 +1919,7 @@ function parseTs(v) {
 
 // 품번 → 모델 구분 (CSV 업로드/백필 공통)
 function modelFromMaterial(materialNum) {
-  if (!materialNum) return '';        // 품번 미상 — Spare Parts 로 오분류하지 않음
+  if (!materialNum) return '';        // 품번을 모를 때만 빈값 (BOM 외 자재는 아래에서 Spare Parts)
   const m = String(materialNum).toUpperCase();
   if (m === 'AS4500') return 'RSC16';
   if (m === 'AS8500') return 'RSC48';
@@ -2623,6 +2623,10 @@ export default function PBKWarehouseSystem() {
   // (초기 로드/동기화의 setState 와 경쟁해서 결과가 덮이는 것을 막기 위함)
   const applyKittingBackfill = async () => {
     try {
+      // 이미 최신 버전을 적용했다면 하루에 한 번만 확인 (147KB 다운로드 절약)
+      const lastChk = parseInt(safeStorage.getItem('pbk_backfill_chk') || '0');
+      if (safeStorage.getItem('pbk_backfill_ver') && Date.now() - lastChk < 24 * 60 * 60 * 1000) return;
+      safeStorage.setItem('pbk_backfill_chk', String(Date.now()));
       const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kitting_backfill.json?t=${Date.now()}`);
       if (!resp.ok) return;
       const doc = await resp.json();
@@ -2646,7 +2650,14 @@ export default function PBKWarehouseSystem() {
         if (b.created) u.createdOn = b.created;
         if (b.pic) u.warehousePic = b.pic;
         if (b.finish) u.basicFinishDate = b.finish;
-        if (b.start && !b.startBad && !u.startedAt) u.startedAt = b.start;
+        // 메일이 정본이므로 값을 덮어쓴다. (이전 버전의 잘못된 접수시각을 정정하기 위해
+        //  !u.startedAt 조건을 두면 v1 오류가 그대로 남는다)
+        if (b.start && !b.startBad) u.startedAt = b.start;
+        if (b.mat) u.materialNum = b.mat;
+        if (b.desc) u.materialDesc = b.desc;
+        if (b.mat) u.model = modelFromMaterial(b.mat);
+        if (b.sup) u.worker = b.sup;
+        u.incomplete = b.incomplete ? 1 : undefined;
         if (b.done) {
           u.completedAt = krDate(b.done);
           u.completedTs = b.done;
@@ -2938,6 +2949,13 @@ export default function PBKWarehouseSystem() {
       const raw = safeStorage.getItem(key);
       if (raw !== null) {
         try { stateObj[key] = JSON.parse(raw); } catch { stateObj[key] = raw; }
+      }
+    }
+    // 메일에서 복원한 과거 실적은 kitting_backfill.json 에 이미 있으므로 백업에서 제외한다.
+    // (넣으면 동기화 파일이 3배로 커져 로딩·업로드가 느려짐. 손으로 고친 건(edited)은 유지)
+    for (const key of ['pbk_kitting_data', 'pbk_pick_cycles']) {
+      if (Array.isArray(stateObj[key])) {
+        stateObj[key] = stateObj[key].filter(r => !(r && r.source === 'mail-backfill' && !r.edited));
       }
     }
     // 타임스탬프 포함 (로컬 vs 리모트 비교용)
@@ -4039,9 +4057,9 @@ export default function PBKWarehouseSystem() {
   const fetchMigoData = useCallback(async () => {
     try {
       const [invRes, histRes, taxRes] = await Promise.all([
-        fetch(`${MIGO_API}/api/invoices`,    { signal: AbortSignal.timeout(3000) }),
-        fetch(`${MIGO_API}/api/history`,     { signal: AbortSignal.timeout(3000) }),
-        fetch(`${MIGO_API}/api/taxinvoices`, { signal: AbortSignal.timeout(3000) }),
+        fetch(`${MIGO_API}/api/invoices`,    { signal: AbortSignal.timeout(1200) }),
+        fetch(`${MIGO_API}/api/history`,     { signal: AbortSignal.timeout(1200) }),
+        fetch(`${MIGO_API}/api/taxinvoices`, { signal: AbortSignal.timeout(1200) }),
       ]);
       if (invRes.ok && histRes.ok && taxRes.ok) {
         setMigoInvoices(await invRes.json());
