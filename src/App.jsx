@@ -2621,26 +2621,35 @@ export default function PBKWarehouseSystem() {
   // - 없는 오더: 키팅 현황 + 불출 Cycle 레코드를 새로 생성
   // React 상태가 아니라 localStorage 스냅샷을 기준으로 병합한 뒤 저장까지 직접 한다.
   // (초기 로드/동기화의 setState 와 경쟁해서 결과가 덮이는 것을 막기 위함)
-  // 오더번호가 '1436073.0' 처럼 소수점째로 들어간 유령 레코드를 한 번 정리한다.
+  // 오더번호가 '1436073.0' 처럼 소수점째로 들어간 유령 레코드를 정리한다.
   // (엑셀에서 숫자로 저장된 CSV 때문에 같은 오더가 두 건으로 들어가 있었음)
+  // 정상 번호가 이미 있으면 소수점 건을 버리고, 없으면 번호만 정정한다.
+  const dedupeGhostOrders = (arr) => {
+    if (!Array.isArray(arr) || !arr.length) return arr;
+    const clean = new Set(arr.map(r => String((r && r.productionOrder) || '')).filter(o => o && !/\.\d+$/.test(o)));
+    let changed = false;
+    const kept = arr.filter(r => {
+      const m = String((r && r.productionOrder) || '').match(/^(\d+)\.\d+$/);
+      if (!m) return true;
+      changed = true;
+      if (clean.has(m[1])) return false;
+      r.productionOrder = m[1];
+      return true;
+    });
+    return changed ? kept : arr;
+  };
+
+  // localStorage 에 이미 들어가 있는 유령 레코드 정리 (백필이 건너뛰는 날에도 동작)
   const cleanupGhostOrders = () => {
-    if (safeStorage.getItem('pbk_ghost_cleaned') === '1') return;
-    let removed = 0;
     for (const key of ['pbk_kitting_data', 'pbk_pick_cycles']) {
       const arr = safeParse(safeStorage.getItem(key), []);
-      if (!Array.isArray(arr) || !arr.length) continue;
-      const clean = new Set(arr.map(r => String(r.productionOrder || '')).filter(o => !/\.\d+$/.test(o)));
-      const kept = arr.filter(r => {
-        const o = String(r.productionOrder || '');
-        const m = o.match(/^(\d+)\.\d+$/);
-        if (m && clean.has(m[1])) { removed++; return false; }   // 정상 번호가 이미 있으면 버림
-        if (m) r.productionOrder = m[1];                          // 없으면 번호만 정정
-        return true;
-      });
-      if (kept.length !== arr.length) safeStorage.setItem(key, JSON.stringify(kept));
+      const kept = dedupeGhostOrders(arr);
+      if (kept !== arr) {
+        safeStorage.setItem(key, JSON.stringify(kept));
+        console.log(`[Cleanup] ${key} 소수점 오더 ${arr.length - kept.length}건 정리`);
+        if (key === 'pbk_kitting_data') setKittingData(kept); else setPickCycles(kept);
+      }
     }
-    safeStorage.setItem('pbk_ghost_cleaned', '1');
-    if (removed) console.log(`[Cleanup] 소수점 오더 유령 레코드 ${removed}건 제거`);
   };
 
   const applyKittingBackfill = async () => {
@@ -2757,13 +2766,15 @@ export default function PBKWarehouseSystem() {
       });
 
       // 저장 먼저, 그 다음 상태 반영 (경쟁 시에도 localStorage 는 보존됨)
-      safeStorage.setItem('pbk_kitting_data', JSON.stringify(mergedK));
-      safeStorage.setItem('pbk_pick_cycles', JSON.stringify(mergedP));
+      const cleanK = dedupeGhostOrders(mergedK);
+      const cleanP = dedupeGhostOrders(mergedP);
+      safeStorage.setItem('pbk_kitting_data', JSON.stringify(cleanK));
+      safeStorage.setItem('pbk_pick_cycles', JSON.stringify(cleanP));
       safeStorage.setItem('pbk_backfill_ver', ver);
       safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
-      setKittingData(mergedK);
-      setPickCycles(mergedP);
-      console.log(`[Backfill] 메일 복원 적용 — 보강 ${updated}건, 키팅 신규 ${created}건, 불출 신규 ${createdP}건 (총 키팅 ${mergedK.length})`);
+      setKittingData(cleanK);
+      setPickCycles(cleanP);
+      console.log(`[Backfill] 메일 복원 적용 — 보강 ${updated}건, 키팅 신규 ${created}건, 불출 신규 ${createdP}건 (총 키팅 ${cleanK.length})`);
       showToast(`📥 과거 실적 복원 — 보강 ${updated}건 / 신규 ${created}건`, 'success');
     } catch (e) { console.log('[Backfill] skip:', e.message); }
   };
