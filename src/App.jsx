@@ -2712,28 +2712,40 @@ export default function PBKWarehouseSystem() {
       const mergedK = curK.map(k => {
         const b = map[String(k.productionOrder)];
         if (!b) return k;
-        if (k.edited) return k;      // 손으로 고친 건은 메일 복원이 덮어쓰지 않음
         const u = { ...k };
-        if (b.q != null) u.qty = b.q;
-        if (b.created) u.createdOn = b.created;
-        if (b.pic) u.warehousePic = b.pic;
-        if (b.finish) u.basicFinishDate = b.finish;
-        // 메일이 정본이므로 값을 덮어쓴다. (이전 버전의 잘못된 접수시각을 정정하기 위해
-        //  !u.startedAt 조건을 두면 v1 오류가 그대로 남는다)
-        if (b.start && !b.startBad) u.startedAt = b.start;
-        if (b.mat) u.materialNum = b.mat;
-        if (b.desc) u.materialDesc = b.desc;
-        if (b.mat) u.model = modelFromMaterial(b.mat);
-        if (b.sup) u.worker = b.sup;
+        // 손으로 고친 건(edited)은 사용자 값을 유지하고 빈 칸만 채운다.
+        // 메일·SAP 이 정본이지만, 사람이 확인해서 넣은 값을 되돌리지는 않는다.
+        const blank = (v) => v === undefined || v === null || v === '';
+        const put = (field, val) => {
+          if (val === undefined || val === null || val === '') return;
+          if (k.edited && !blank(u[field])) return;
+          u[field] = val;
+        };
+        put('qty', b.q);
+        put('createdOn', b.created);
+        put('warehousePic', b.pic);
+        put('basicFinishDate', b.finish);
+        // 접수시각·품번 등은 정본으로 덮어쓴다. (!u.startedAt 조건을 두면
+        //  이전 버전의 잘못된 접수시각이 그대로 남는다)
+        if (b.start && !b.startBad) put('startedAt', b.start);
+        put('materialNum', b.mat);
+        put('materialDesc', b.desc);
+        if (b.mat) put('model', modelFromMaterial(b.mat));
+        put('worker', b.sup);
         u.incomplete = b.incomplete ? 1 : undefined;
         if (b.done) {
-          u.completedAt = krDate(b.done);
-          u.completedTs = b.done;
-          u.status = 'completed';
-          const st = (b.start && !b.startBad) ? b.start : u.startedAt;
-          // 시작이 완료보다 늦은(신뢰 불가) 경우엔 리드타임을 비워 둔다
-          if (st && parseTs(st) < parseTs(b.done)) u.leadTimeDays = getLeadTimeDays(parseTs(st), parseTs(b.done));
-          else u.leadTimeDays = null;
+          // 손으로 고친 건은 완료일이 정본과 같을 때만(=사람이 확인한 결과와 일치)
+          // 분 단위 시각을 채워 준다. 날짜가 다르면 사용자 값을 그대로 둔다.
+          const applyDone = !k.edited || blank(u.completedAt) || u.completedAt === krDate(b.done);
+          if (applyDone) {
+            u.completedAt = krDate(b.done);
+            u.completedTs = b.done;
+            u.status = 'completed';
+            const st = (b.start && !b.startBad) ? b.start : u.startedAt;
+            // 시작이 완료보다 늦은(신뢰 불가) 경우엔 리드타임을 비워 둔다
+            if (st && parseTs(st) < parseTs(b.done)) u.leadTimeDays = getLeadTimeDays(parseTs(st), parseTs(b.done));
+            else u.leadTimeDays = null;
+          }
         }
         u.source = u.source || 'mail-backfill';
         updated++;
