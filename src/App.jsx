@@ -1925,6 +1925,18 @@ function parseTs(v) {
   return new Date(v);
 }
 
+// 품번 → KPI 구분 (Model / Sub-com. / Spare Parts)
+//  - Model      : 완제품 7종
+//  - Sub-com.   : KB* 조립품(ASM) 및 BOM 하위자재
+//  - Spare Parts: SP*/TS* 서비스 자재, 완제품이 아닌 AS* 부속품
+const KPI_MODEL_MATERIALS = new Set(['AS4500', 'AS4600', 'AS6000', 'AS4500X', 'AS8000', 'AS8500', 'A2715']);
+function kpiCategoryOf(materialNum) {
+  const m = String(materialNum || '').toUpperCase();
+  if (KPI_MODEL_MATERIALS.has(m)) return 'Model';
+  if (m.startsWith('KB') || SUBCOM_INFO[materialNum]) return 'Sub-com.';
+  return 'Spare Parts';
+}
+
 // 품번 → 모델 구분 (CSV 업로드/백필 공통)
 function modelFromMaterial(materialNum) {
   if (!materialNum) return '';        // 품번을 모를 때만 빈값 (BOM 외 자재는 아래에서 Spare Parts)
@@ -4348,6 +4360,8 @@ export default function PBKWarehouseSystem() {
   const [kpiInputMonth, setKpiInputMonth] = useState(new Date().toISOString().slice(0, 7));
   const [kpiInputType, setKpiInputType] = useState('grCancel'); // 'grCancel' or 'inventoryAdjust'
   const [kpiSelectedYear, setKpiSelectedYear] = useState(new Date().getFullYear()); // KPI 연도 선택
+  // KPI 리드타임·사이클타임 구분 필터 (total / Model / Sub-com. / Spare Parts)
+  const [kpiCategory, setKpiCategory] = useState('total');
 
   // KPI 점수 계산 함수
   const KPI_SCORE_TABLE = {
@@ -15670,38 +15684,41 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 : null;
               const invAdjustScore = calculateKpiScore('inventoryAdjust', invAdjustAvg);
 
-              // Kitting Lead Time 평균 (자동 집계)
-              const kittingLTByMonth = {};
-              kittingData.filter(k => k.status === 'completed' && k.leadTimeDays).forEach(k => {
+              // Kitting Lead Time — 구분(Model/Sub-com./Spare Parts)별로 나눠 담는다.
+              // 차트·표는 선택한 구분을 쓰고, KPI 점수·종합등급은 Total 을 쓴다.
+              const monthAvg = (byMonth) => {
+                const vals = Object.values(byMonth).map(arr => arr.reduce((a, b) => a + b, 0) / arr.length);
+                return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+              };
+              const ltByCat = { total: {}, 'Model': {}, 'Sub-com.': {}, 'Spare Parts': {} };
+              const kpiCatCount = { total: 0, 'Model': 0, 'Sub-com.': 0, 'Spare Parts': 0 };
+              kittingData.filter(k => k.status === 'completed' && k.leadTimeDays != null).forEach(k => {
                 const month = k.completedAt?.slice(0, 7);
-                if (month && month.startsWith(String(selectedYear))) {
-                  if (!kittingLTByMonth[month]) kittingLTByMonth[month] = [];
-                  kittingLTByMonth[month].push(k.leadTimeDays);
-                }
+                if (!month || !month.startsWith(String(selectedYear))) return;
+                const cat = kpiCategoryOf(k.materialNum);
+                [cat, 'total'].forEach(c => {
+                  if (!ltByCat[c][month]) ltByCat[c][month] = [];
+                  ltByCat[c][month].push(k.leadTimeDays);
+                });
+                kpiCatCount[cat]++; kpiCatCount.total++;
               });
-              const kittingLTValues = Object.values(kittingLTByMonth).map(arr => 
-                arr.reduce((a, b) => a + b, 0) / arr.length
-              );
-              const kittingLTAvg = kittingLTValues.length > 0 
-                ? kittingLTValues.reduce((a, b) => a + b, 0) / kittingLTValues.length 
-                : null;
+              const kittingLTByMonth = ltByCat[kpiCategory] || ltByCat.total;
+              const kittingLTAvg = monthAvg(ltByCat.total);      // 종합등급은 전체 기준
               const kittingLTScore = calculateKpiScore('kittingLeadTime', kittingLTAvg);
 
-              // Kitting Cycle Time 월별 집계
-              const kittingCTByMonth = {};
+              // Kitting Cycle Time 월별 집계 (같은 구분 필터 적용)
+              const ctByCat = { total: {}, 'Model': {}, 'Sub-com.': {}, 'Spare Parts': {} };
               pickCycles.filter(p => p.status === 'completed' && p.cycleMin).forEach(p => {
                 const month = p.completed?.slice(0, 7);
-                if (month && month.startsWith(String(selectedYear))) {
-                  if (!kittingCTByMonth[month]) kittingCTByMonth[month] = [];
-                  kittingCTByMonth[month].push(p.cycleMin);
-                }
+                if (!month || !month.startsWith(String(selectedYear))) return;
+                const cat = kpiCategoryOf(p.materialNum);
+                [cat, 'total'].forEach(c => {
+                  if (!ctByCat[c][month]) ctByCat[c][month] = [];
+                  ctByCat[c][month].push(p.cycleMin);
+                });
               });
-              const kittingCTValues = Object.values(kittingCTByMonth).map(arr => 
-                arr.reduce((a, b) => a + b, 0) / arr.length
-              );
-              const kittingCTAvg = kittingCTValues.length > 0 
-                ? kittingCTValues.reduce((a, b) => a + b, 0) / kittingCTValues.length 
-                : null;
+              const kittingCTByMonth = ctByCat[kpiCategory] || ctByCat.total;
+              const kittingCTAvg = monthAvg(ctByCat.total);
 
               // 입고 Cycle Time 월별 집계 (migo 날짜 기준)
               const receiveCTByMonth = {};
@@ -16323,6 +16340,21 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {!hasData && <span className="text-gray-400">Kitting L/T 탭 완료 건부터 집계</span>}
                             </div>
                           </div>
+                          {/* 구분 선택 — 차트와 아래 월별 표가 함께 바뀐다 */}
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {[['total','Total'],['Model','Model'],['Sub-com.','Sub-com.'],['Spare Parts','Spare Parts']].map(([key, label]) => (
+                              <button key={key} onClick={() => setKpiCategory(key)}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
+                                  kpiCategory === key
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-indigo-50 hover:border-indigo-300'}`}>
+                                {label}
+                                <span className={`ml-1.5 font-normal ${kpiCategory === key ? 'text-indigo-100' : 'text-gray-400'}`}>
+                                  {kpiCatCount[key]}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
                           {/* 요약 뱃지 */}
                           {(() => {
                             const totalOrders = Object.values(kittingLTByMonth).reduce((s,arr)=>s+arr.length,0);
@@ -16407,6 +16439,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <span className="flex items-center gap-1"><span className="inline-block w-4 border-t-2 border-purple-500"></span>꺾은선 = CT(분)</span>
                               {!hasData && <span>Kitting Cycle 탭 완료 건부터 집계</span>}
                             </div>
+                          </div>
+                          {/* 구분 선택 — 리드타임 차트와 같은 필터를 공유한다 */}
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {[['total','Total'],['Model','Model'],['Sub-com.','Sub-com.'],['Spare Parts','Spare Parts']].map(([key, label]) => (
+                              <button key={key} onClick={() => setKpiCategory(key)}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
+                                  kpiCategory === key
+                                    ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-purple-50 hover:border-purple-300'}`}>
+                                {label}
+                              </button>
+                            ))}
                           </div>
                           {/* 요약 뱃지 */}
                           {(() => {
@@ -16542,6 +16586,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div className="bg-white rounded-xl shadow-sm p-6">
                     <h3 className="font-semibold mb-4 flex items-center gap-2">
                       📋 {selectedYear}년 월별 데이터
+                      {kpiCategory !== 'total' && (
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                          Kitting L/T · CT = {kpiCategory} 기준
+                        </span>
+                      )}
                     </h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
