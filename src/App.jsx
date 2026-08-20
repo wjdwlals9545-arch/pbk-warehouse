@@ -1286,6 +1286,14 @@ const RACK_CONFIG = {
 // 무게 데이터 (원자재_무게_측정_등록_작업.xlsx 기준 - 515개 Material)
 // d: Description, w: Weight(kg), b: Bin
 // 총 515개 Material
+// 무게 정정표 — 저장된 값이 있어도 이 버전이 적용되지 않았으면 아래 값으로 덮어쓴다.
+// 기존 동기화 규칙은 "코드값이 저장값의 10% 미만일 때"만 반영돼서, 무게를 올리는
+// 정정(예: 0.05g 로 잘못 들어간 록타이트 → 500g)은 반영되지 않기 때문.
+const WEIGHT_CORRECTIONS_VER = '2026-08-20';
+const WEIGHT_CORRECTIONS = {
+  '711251': 0.5,     // Compound - Loctite 638 : 500g (2026-08-20 확인)
+};
+
 const DEFAULT_WEIGHT_DATA = {
   '712626': { d: 'LED INDICATOR BRACKET', w: 0.244, b: 'A1-01' },
   '712944': { d: 'Bracket, Main Enclosure, MX48', w: 0.086, b: 'A1-01' },
@@ -1625,7 +1633,7 @@ const DEFAULT_WEIGHT_DATA = {
   '711204': { d: 'Screw, M4×10mm, LOW SOC HD', w: 0.001185, b: 'D2' },
   '714930': { d: 'Cable clip flat c-type', w: 0.002897, b: 'D2' },
   '710390': { d: 'Flat Head Wrench Bolt SUS, M5×8', w: 0.0015, b: 'D2' },
-  '711251': { d: 'Compound - Loctite 638', w: 5e-05, b: 'D2' },
+  '711251': { d: 'Compound - Loctite 638', w: 0.5, b: 'D2' },
   '710370': { d: 'Wire Band KR5G5-100P', w: 0.0005, b: 'D2' },
   '078-9800': { d: 'Flange, #10 × 0.75\", Nylon, Ares', w: 6e-05, b: 'D2' },
   '712947': { d: 'Washer, 6mm ID', w: 0.004, b: 'D2' },
@@ -2159,6 +2167,13 @@ export default function PBKWarehouseSystem() {
           needSync = true;
         }
       });
+      // 무게 정정표 적용 (버전당 1회)
+      if (safeStorage.getItem('pbk_weight_corr_ver') !== WEIGHT_CORRECTIONS_VER) {
+        Object.entries(WEIGHT_CORRECTIONS).forEach(([mat, w]) => {
+          if (parsed[mat] && parsed[mat].w !== w) { parsed[mat].w = w; needSync = true; }
+        });
+        safeStorage.setItem('pbk_weight_corr_ver', WEIGHT_CORRECTIONS_VER);
+      }
       if (needSync) safeStorage.setItem('pbk_weight_data', JSON.stringify(parsed));
       return parsed;
     }
