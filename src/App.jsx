@@ -1925,6 +1925,16 @@ function parseTs(v) {
   return new Date(v);
 }
 
+// 표시용 'MM-DD HH:mm' (한국시간). 저장 형식이 세 가지라 parseTs 로 통일해서 쓴다.
+// 직접 문자열을 자르면 '2026-08-05T07:37:28+09:00' 이 '08-0507:37:2809:00' 처럼 깨진다.
+function fmtMdHm(v) {
+  const d = parseTs(v);
+  if (!d || isNaN(d.getTime())) return '-';
+  const kr = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const p2 = (n) => String(n).padStart(2, '0');
+  return `${p2(kr.getUTCMonth() + 1)}-${p2(kr.getUTCDate())} ${p2(kr.getUTCHours())}:${p2(kr.getUTCMinutes())}`;
+}
+
 // 품번 → KPI 구분 (Model / Sub-com. / Spare Parts)
 //  - Model      : 완제품 7종
 //  - Sub-com.   : KB* 조립품(ASM) 및 BOM 하위자재
@@ -13515,8 +13525,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         {p.startTime ? (
                           <span className="text-blue-600">
                             {(() => {
-                              const d = new Date(p.startTime);
-                              return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                              return fmtMdHm(p.startTime);
                             })()}
                           </span>
                         ) : (
@@ -13524,22 +13533,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         )}
                       </td>
                       <td className="px-2 py-2 text-center text-xs whitespace-nowrap">
-                        {p.completed ? (
-                          <span>
-                            {(() => {
-                              // 한국 형식 "2026-02-12 15:30" 그대로 표시 (MM-DD HH:MM)
-                              try {
-                                const parts = p.completed.replace(/[^\d\s:-]/g, '').trim().split(/[\s-]+/);
-                                if (parts.length >= 4) {
-                                  return `${parts[1]}-${parts[2]} ${parts[3]}`;
-                                } else if (parts.length >= 3) {
-                                  return `${parts[1]}-${parts[2]}`;
-                                }
-                                return p.completed;
-                              } catch(e) { return p.completed; }
-                            })()}
-                          </span>
-                        ) : '-'}
+                        {p.completed ? <span>{fmtMdHm(p.completed)}</span> : '-'}
                       </td>
                       <td className="px-2 py-2 text-center whitespace-nowrap">
                         {p.cycleMin ? (
@@ -13928,8 +13922,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           {k.startedAt ? (
                             <span className="text-blue-600">
                               {(() => {
-                                const d = new Date(k.startedAt);
-                                return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                                return fmtMdHm(k.startedAt);
                               })()}
                             </span>
                           ) : (
