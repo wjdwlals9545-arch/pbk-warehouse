@@ -1919,7 +1919,7 @@ function parseTs(v) {
 
 // 품번 → 모델 구분 (CSV 업로드/백필 공통)
 function modelFromMaterial(materialNum) {
-  if (!materialNum) return 'Spare Parts';
+  if (!materialNum) return '';        // 품번 미상 — Spare Parts 로 오분류하지 않음
   const m = String(materialNum).toUpperCase();
   if (m === 'AS4500') return 'RSC16';
   if (m === 'AS8500') return 'RSC48';
@@ -2646,13 +2646,15 @@ export default function PBKWarehouseSystem() {
         if (b.created) u.createdOn = b.created;
         if (b.pic) u.warehousePic = b.pic;
         if (b.finish) u.basicFinishDate = b.finish;
-        if (b.start && !u.startedAt) u.startedAt = b.start;
+        if (b.start && !b.startBad && !u.startedAt) u.startedAt = b.start;
         if (b.done) {
           u.completedAt = krDate(b.done);
           u.completedTs = b.done;
           u.status = 'completed';
-          const st = b.start || u.startedAt;
-          if (st) u.leadTimeDays = getLeadTimeDays(parseTs(st), parseTs(b.done));
+          const st = (b.start && !b.startBad) ? b.start : u.startedAt;
+          // 시작이 완료보다 늦은(신뢰 불가) 경우엔 리드타임을 비워 둔다
+          if (st && parseTs(st) < parseTs(b.done)) u.leadTimeDays = getLeadTimeDays(parseTs(st), parseTs(b.done));
+          else u.leadTimeDays = null;
         }
         u.source = u.source || 'mail-backfill';
         updated++;
@@ -2674,12 +2676,13 @@ export default function PBKWarehouseSystem() {
           basicFinishDate: b.finish || '',
           worker: b.sup || '',
           warehousePic: b.pic || '',
+          incomplete: b.incomplete ? 1 : undefined,   // CSV 미수신 → 품번·수량·담당 미상
           isUrgent: false,
           status: b.done ? 'completed' : 'waiting',
-          startedAt: b.start || null,
+          startedAt: (b.start && !b.startBad) ? b.start : null,
           completedAt: b.done ? krDate(b.done) : null,
           completedTs: b.done || null,
-          leadTimeDays: (b.start && b.done) ? getLeadTimeDays(parseTs(b.start), parseTs(b.done)) : null,
+          leadTimeDays: (b.start && b.done && !b.startBad) ? getLeadTimeDays(parseTs(b.start), parseTs(b.done)) : null,
           createdAt: b.start || null,
           source: 'mail-backfill',
         });
@@ -2694,7 +2697,7 @@ export default function PBKWarehouseSystem() {
       orderKeys.forEach(o => {
         if (seenP.has(o)) return;
         const b = map[o];
-        if (!b.done || !b.start) return;
+        if (!b.done || !b.start || b.startBad) return;
         mergedP.push({
           id: 'bf-p-' + o,
           productionOrder: o,
@@ -13780,7 +13783,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           </label>
                         </td>
                         <td className="px-2 py-2 text-xs font-mono text-gray-600 whitespace-nowrap">
-                          {k.materialNum || '-'}
+                          {k.materialNum || (k.incomplete
+                            ? <span className="text-amber-600" title="생산계획 메일(CSV)을 못 받아 품번·수량·담당이 미상입니다">미상</span>
+                            : '-')}
                         </td>
                         <td className="px-2 py-2 text-sm text-gray-600 whitespace-nowrap" title={k.materialDesc || ''}>{k.materialDesc?.slice(0, 20) || '-'}</td>
                         <td className="px-2 py-2 text-center text-xs whitespace-nowrap font-medium">{k.qty != null ? k.qty.toLocaleString() : '-'}</td>
@@ -13803,7 +13808,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           ) : '-'}
                         </td>
                         <td className="px-2 py-2 text-center whitespace-nowrap">
-                          {k.leadTimeDays ? (
+                          {k.leadTimeDays != null ? (
                             <span className={`px-2 py-1 rounded text-xs ${
                               k.leadTimeDays <= 3 ? 'bg-emerald-100 text-emerald-700' : 
                               k.leadTimeDays <= 5 ? 'bg-amber-100 text-yellow-600' : 
