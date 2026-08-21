@@ -16797,7 +16797,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             const fmt = (v) => (v || 0).toLocaleString();
                             const sum = (k) => months.reduce((a, m) => a + (all[m] || []).reduce((x, r) => x + (r[k] || 0), 0), 0);
                             const totalUp = sum('up'), totalDown = sum('down');
-                            const noText = months.reduce((a, m) => a + (all[m] || []).filter(r => r.text === '(사유 미기재)').reduce((x, r) => x + r.n, 0), 0);
+                            // 사유가 비어 있는 건 — 3월분은 연 1회 재고조사(QP-704 4.3.2, 매년 3월 전수조사)
+                            // 차이로 본다. 그 외 월의 미기재만 확인이 필요한 건으로 구분한다.
+                            const ANNUAL_COUNT_MONTH = 3;
+                            const isBlank = (r) => r.text === '(사유 미기재)';
+                            const countBlank = (filterFn) => months.filter(filterFn)
+                              .reduce((a, m) => a + (all[m] || []).filter(isBlank).reduce((x, r) => x + r.n, 0), 0);
+                            const countBlank2 = countBlank(m => parseInt(m.slice(5, 7)) === ANNUAL_COUNT_MONTH);
+                            const noText = countBlank(() => true) - countBlank2;
                             const allCnt = months.reduce((a, m) => a + (all[m] || []).reduce((x, r) => x + r.n, 0), 0);
                             return (
                               <div className="mt-5 pt-4 border-t border-gray-100">
@@ -16806,15 +16813,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <div className="flex gap-1.5 text-xs flex-wrap">
                                     <span className="px-2 py-1 rounded bg-blue-50 text-blue-700">증가 <b>{fmt(totalUp)}</b>원</span>
                                     <span className="px-2 py-1 rounded bg-red-50 text-red-700">감소 <b>{fmt(totalDown)}</b>원</span>
+                                    {countBlank2 > 0 && (
+                                      <span className="px-2 py-1 rounded bg-slate-100 text-slate-600">재고조사 차이 <b>{countBlank2}</b>건</span>
+                                    )}
                                     {noText > 0 && (
                                       <span className="px-2 py-1 rounded bg-amber-50 text-amber-700">사유 미기재 <b>{noText}</b>/{allCnt}건</span>
                                     )}
                                   </div>
                                 </div>
+                                {countBlank2 > 0 && (
+                                  <div className="mb-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                                    📦 {ANNUAL_COUNT_MONTH}월 미기재 {countBlank2}건은 <b>연 1회 재고조사 차이</b>로 봅니다
+                                    (QP-704 4.3.2 — 매년 {ANNUAL_COUNT_MONTH}월 전수조사). 별도 기안서가 없는 게 정상입니다.
+                                  </div>
+                                )}
                                 {noText > 0 && (
                                   <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                                    ⚠️ 재고조정 {allCnt}건 중 {noText}건은 MB51 Text 가 비어 있어 사유를 알 수 없습니다.
-                                    전기 시 기안서 번호를 Text 에 남기면 여기에 자동으로 표시됩니다.
+                                    ⚠️ 재고조사 외에 사유가 비어 있는 건이 {noText}건 있습니다. 전기 시 기안서 번호를
+                                    Text 에 남기면 여기에 자동으로 표시됩니다.
                                   </div>
                                 )}
                                 <div className="overflow-x-auto">
@@ -16831,17 +16847,29 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {months.map(m => (all[m] || []).map((r, i) => (
-                                        <tr key={m + '-' + i} className={`border-b hover:bg-gray-50 ${r.text === '(사유 미기재)' ? 'bg-amber-50/40' : ''}`}>
+                                      {months.map(m => (all[m] || []).map((r, i) => {
+                                        const blank = r.text === '(사유 미기재)';
+                                        const isCount = blank && parseInt(m.slice(5, 7)) === ANNUAL_COUNT_MONTH;
+                                        return (
+                                        <tr key={m + '-' + i} className={`border-b hover:bg-gray-50 ${
+                                          isCount ? 'bg-slate-50' : blank ? 'bg-amber-50/40' : ''}`}>
                                           <td className="px-2 py-1.5 whitespace-nowrap font-medium">{parseInt(m.slice(5, 7))}월</td>
-                                          <td className="px-2 py-1.5" title={r.text}>{r.text}</td>
+                                          <td className="px-2 py-1.5" title={r.text}>
+                                            {isCount ? (
+                                              <span className="text-slate-700">
+                                                재고조사 차이
+                                                <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">연 1회 전수조사</span>
+                                              </span>
+                                            ) : r.text}
+                                          </td>
                                           <td className="px-2 py-1.5 text-center text-gray-500">{r.reason || '-'}</td>
                                           <td className="px-2 py-1.5 text-right text-blue-700">{r.up ? fmt(r.up) : '-'}</td>
                                           <td className="px-2 py-1.5 text-right text-red-700">{r.down ? fmt(r.down) : '-'}</td>
                                           <td className="px-2 py-1.5 text-center">{r.n}</td>
                                           <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{(r.mats || []).join(', ')}</td>
                                         </tr>
-                                      )))}
+                                        );
+                                      }))}
                                     </tbody>
                                   </table>
                                 </div>
