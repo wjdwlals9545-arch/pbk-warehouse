@@ -2713,6 +2713,9 @@ export default function PBKWarehouseSystem() {
       if (!orderKeys.length) return;
       // 취소된 오더 — 백필 파일의 removed 목록에 있는 건은 키팅·불출에서 삭제한다
       const removed = new Set((doc && Array.isArray(doc.removed) ? doc.removed : []).map(String));
+      // 동기화 복원(loadDashboardState) 과 업로드에서도 걸러내야 하므로 남겨 둔다.
+      // (백필이 지워도 그 뒤에 동기화가 원격 값을 다시 합쳐 넣어 되살아났음)
+      safeStorage.setItem('pbk_removed_orders', JSON.stringify([...removed]));
       if (safeStorage.getItem('pbk_backfill_ver') === ver) return;   // 이미 적용됨
 
       const krDate = (iso) => new Date(iso).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
@@ -3031,6 +3034,9 @@ export default function PBKWarehouseSystem() {
               const extra = local.filter(r => r && !remoteOrders.has(String(r.productionOrder || '')));
               if (extra.length) val = val.concat(extra);
             }
+            // 취소된 오더는 원격에 남아 있어도 되살리지 않는다
+            const gone = new Set(safeParse(safeStorage.getItem('pbk_removed_orders'), []).map(String));
+            if (gone.size) val = val.filter(r => !gone.has(String((r && r.productionOrder) || '')));
           }
           safeStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
           // React state 업데이트
@@ -3080,9 +3086,12 @@ export default function PBKWarehouseSystem() {
     }
     // 메일에서 복원한 과거 실적은 kitting_backfill.json 에 이미 있으므로 백업에서 제외한다.
     // (넣으면 동기화 파일이 3배로 커져 로딩·업로드가 느려짐. 손으로 고친 건(edited)은 유지)
+    const goneOrders = new Set(safeParse(safeStorage.getItem('pbk_removed_orders'), []).map(String));
     for (const key of ['pbk_kitting_data', 'pbk_pick_cycles']) {
       if (Array.isArray(stateObj[key])) {
-        stateObj[key] = stateObj[key].filter(r => !(r && r.source === 'mail-backfill' && !r.edited));
+        stateObj[key] = stateObj[key].filter(r =>
+          !(r && r.source === 'mail-backfill' && !r.edited) &&
+          !(r && goneOrders.has(String(r.productionOrder || ''))));
       }
     }
     // 타임스탬프 포함 (로컬 vs 리모트 비교용)
