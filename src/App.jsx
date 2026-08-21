@@ -4399,6 +4399,10 @@ export default function PBKWarehouseSystem() {
   const [kpiSelectedYear, setKpiSelectedYear] = useState(new Date().getFullYear()); // KPI 연도 선택
   // KPI 리드타임·사이클타임 구분 필터 (total / Model / Sub-com. / Spare Parts)
   const [kpiCategory, setKpiCategory] = useState('total');
+  // 구분 안에서 더 좁혀 보기 — Model 은 RSC48 등 모델명, 나머지는 품번. null = 전체
+  const [kpiSubFilter, setKpiSubFilter] = useState(null);
+  // 구분을 바꾸면 하위 선택은 초기화
+  const pickKpiCategory = (key) => { setKpiCategory(key); setKpiSubFilter(null); };
 
   // KPI 점수 계산 함수
   const KPI_SCORE_TABLE = {
@@ -15710,8 +15714,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 const vals = Object.values(byMonth).map(arr => arr.reduce((a, b) => a + b, 0) / arr.length);
                 return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
               };
+              // Model 은 RSC48 같은 모델명으로, 나머지는 품번으로 더 좁혀 볼 수 있게 한다
+              const subKeyOf = (cat, mat) => cat === 'Model' ? modelFromMaterial(mat) : String(mat || '');
               const ltByCat = { total: {}, 'Model': {}, 'Sub-com.': {}, 'Spare Parts': {} };
               const kpiCatCount = { total: 0, 'Model': 0, 'Sub-com.': 0, 'Spare Parts': 0 };
+              const kpiSubOpts = new Map();   // 선택한 구분의 하위 항목 (건수·품명)
+              const ltBySub = {};             // 하위 항목까지 좁힌 월별 L/T
               kittingData.filter(k => k.status === 'completed' && k.leadTimeDays != null).forEach(k => {
                 const month = k.completedAt?.slice(0, 7);
                 if (!month || !month.startsWith(String(selectedYear))) return;
@@ -15721,13 +15729,28 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   ltByCat[c][month].push(k.leadTimeDays);
                 });
                 kpiCatCount[cat]++; kpiCatCount.total++;
+                if (cat === kpiCategory) {
+                  const sub = subKeyOf(cat, k.materialNum);
+                  const cur = kpiSubOpts.get(sub) || { n: 0, desc: k.materialDesc || '', mat: k.materialNum || '' };
+                  cur.n++;
+                  if (!cur.desc && k.materialDesc) cur.desc = k.materialDesc;
+                  kpiSubOpts.set(sub, cur);
+                  if (kpiSubFilter && sub === kpiSubFilter) {
+                    if (!ltBySub[month]) ltBySub[month] = [];
+                    ltBySub[month].push(k.leadTimeDays);
+                  }
+                }
               });
-              const kittingLTByMonth = ltByCat[kpiCategory] || ltByCat.total;
+              const kpiSubList = [...kpiSubOpts.entries()]
+                .map(([key, v]) => ({ key, ...v }))
+                .sort((a, b) => b.n - a.n);
+              const kittingLTByMonth = kpiSubFilter ? ltBySub : (ltByCat[kpiCategory] || ltByCat.total);
               const kittingLTAvg = monthAvg(ltByCat.total);      // 종합등급은 전체 기준
               const kittingLTScore = calculateKpiScore('kittingLeadTime', kittingLTAvg);
 
               // Kitting Cycle Time 월별 집계 (같은 구분 필터 적용)
               const ctByCat = { total: {}, 'Model': {}, 'Sub-com.': {}, 'Spare Parts': {} };
+              const ctBySub = {};
               pickCycles.filter(p => p.status === 'completed' && p.cycleMin).forEach(p => {
                 const month = p.completed?.slice(0, 7);
                 if (!month || !month.startsWith(String(selectedYear))) return;
@@ -15736,8 +15759,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   if (!ctByCat[c][month]) ctByCat[c][month] = [];
                   ctByCat[c][month].push(p.cycleMin);
                 });
+                if (kpiSubFilter && cat === kpiCategory && subKeyOf(cat, p.materialNum) === kpiSubFilter) {
+                  if (!ctBySub[month]) ctBySub[month] = [];
+                  ctBySub[month].push(p.cycleMin);
+                }
               });
-              const kittingCTByMonth = ctByCat[kpiCategory] || ctByCat.total;
+              const kittingCTByMonth = kpiSubFilter ? ctBySub : (ctByCat[kpiCategory] || ctByCat.total);
               const kittingCTAvg = monthAvg(ctByCat.total);
 
               // 입고 Cycle Time 월별 집계 (migo 날짜 기준)
@@ -16345,11 +16372,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       });
                       const hasData = ltChartData.some(d => d.lt !== null);
                       const countMax = Math.max(...ltChartData.map(d => d.count || 0), 3);
-                      const ltMax   = Math.max(...ltChartData.map(d => d.lt   || 0), 5);
-                      // 막대를 하단 25%에 → 왼쪽 Y축 max = countMax * 4
+                      const ltMax   = Math.max(...ltChartData.map(d => d.lt   || 0), 1);
+                      // 막대는 하단 25%, 꺾은선은 중상단에 오도록 축을 잡는다.
+                      // 예전엔 ltMax 하한이 5여서 실제 L/T 가 2일대면 축 상한이 8일이 되고
+                      // 꺾은선이 막대 높이까지 내려와 숫자가 서로 겹쳤다.
                       const leftDomainMax  = countMax * 4;
-                      // 꺾은선을 상단 75%에 → 오른쪽 Y축 max에 충분한 여백
-                      const rightDomainMax = Math.ceil(ltMax * 1.4 / 1) + 1;
+                      const rightDomainMax = Math.max(Math.ceil(ltMax * 1.7), 4);
+                      // 기간 표시용 (데이터가 있는 첫 달 ~ 마지막 달)
+                      const ltMonthsWith = ltChartData.map((d,i) => d.lt !== null ? i+1 : null).filter(v => v !== null);
+                      const ltRange = ltMonthsWith.length ? `${ltMonthsWith[0]}~${ltMonthsWith[ltMonthsWith.length-1]}월` : '';
                       return (
                         <div data-kpi-section className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                           <div className="flex items-center justify-between mb-2">
@@ -16361,9 +16392,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                           </div>
                           {/* 구분 선택 — 차트와 아래 월별 표가 함께 바뀐다 */}
-                          <div className="flex flex-wrap gap-1.5 mb-3">
+                          <div className="flex flex-wrap gap-1.5 mb-2">
                             {[['total','Total'],['Model','Model'],['Sub-com.','Sub-com.'],['Spare Parts','Spare Parts']].map(([key, label]) => (
-                              <button key={key} onClick={() => setKpiCategory(key)}
+                              <button key={key} onClick={() => pickKpiCategory(key)}
                                 className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
                                   kpiCategory === key
                                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
@@ -16375,15 +16406,63 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </button>
                             ))}
                           </div>
+                          {/* 하위 선택 — 구분을 고르면 그 안에서 더 좁혀 볼 수 있다.
+                              Model 은 모델명 칩, 품번이 많은 구분(Sub-com./Spare Parts)은 목록 선택 */}
+                          {kpiCategory !== 'total' && kpiSubList.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 mb-3 pl-3 border-l-2 border-indigo-200">
+                              <span className="text-xs text-gray-400 mr-1">
+                                {kpiCategory === 'Model' ? '모델' : '품번'} 선택
+                              </span>
+                              <button onClick={() => setKpiSubFilter(null)}
+                                className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+                                  !kpiSubFilter ? 'bg-gray-700 text-white border-gray-700'
+                                                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                                전체 <span className={!kpiSubFilter ? 'text-gray-300' : 'text-gray-400'}>{kpiCatCount[kpiCategory]}</span>
+                              </button>
+                              {kpiSubList.length <= 8 ? (
+                                kpiSubList.map(o => (
+                                  <button key={o.key} onClick={() => setKpiSubFilter(o.key)}
+                                    title={o.mat ? `${o.mat} ${o.desc || ''}` : (o.desc || '')}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+                                      kpiSubFilter === o.key ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                                             : 'bg-white text-gray-600 border-gray-300 hover:bg-indigo-50 hover:border-indigo-300'}`}>
+                                    {o.key || '미분류'} <span className={kpiSubFilter === o.key ? 'text-indigo-100' : 'text-gray-400'}>{o.n}</span>
+                                  </button>
+                                ))
+                              ) : (
+                                <select value={kpiSubFilter || ''} onChange={e => setKpiSubFilter(e.target.value || null)}
+                                  className="px-2 py-1 rounded-lg text-xs border border-gray-300 bg-white text-gray-700 max-w-[420px]">
+                                  <option value="">전체 ({kpiSubList.length}개 품번)</option>
+                                  {kpiSubList.map(o => (
+                                    <option key={o.key} value={o.key}>
+                                      {o.key} — {(o.desc || '').slice(0, 28)} ({o.n}건)
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              {kpiSubFilter && (
+                                <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-semibold">
+                                  {kpiSubFilter} 기준으로 보는 중
+                                </span>
+                              )}
+                            </div>
+                          )}
                           {/* 요약 뱃지 */}
                           {(() => {
                             const totalOrders = Object.values(kittingLTByMonth).reduce((s,arr)=>s+arr.length,0);
                             const allLT = Object.values(kittingLTByMonth).flat();
                             const avgLT = allLT.length > 0 ? allLT.reduce((a,b)=>a+b,0)/allLT.length : null;
+                            const best = allLT.length ? Math.min(...ltChartData.filter(d=>d.lt!==null).map(d=>d.lt)) : null;
+                            const worst = allLT.length ? Math.max(...ltChartData.filter(d=>d.lt!==null).map(d=>d.lt)) : null;
                             return (
-                              <div className="flex gap-3 mb-3 text-xs">
-                                <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded">Total Orders: <b>{totalOrders}</b>건</span>
-                                {avgLT !== null && <span className={`px-2 py-1 rounded ${avgLT<=3?'bg-emerald-50 text-emerald-700':avgLT<=5?'bg-amber-50 text-amber-700':'bg-red-50 text-red-600'}`}>평균 L/T: <b>{avgLT.toFixed(1)}</b>일</span>}
+                              <div className="flex gap-2 mb-3 text-xs flex-wrap items-center">
+                                {avgLT !== null && (
+                                  <span className={`px-3 py-1.5 rounded-lg font-semibold ${avgLT<=3?'bg-emerald-100 text-emerald-800':avgLT<=5?'bg-amber-100 text-amber-800':'bg-red-100 text-red-700'}`}>
+                                    {ltRange} 평균 L/T <b className="text-base">{avgLT.toFixed(1)}</b>일
+                                  </span>
+                                )}
+                                <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded">Order <b>{totalOrders}</b>건</span>
+                                {best !== null && <span className="px-2 py-1 bg-gray-50 text-gray-500 rounded">최저 {best}일 · 최고 {worst}일</span>}
                                 <span className={`px-2 py-1 rounded ${avgLT===null?'bg-gray-50 text-gray-400':avgLT<=3?'bg-emerald-50 text-emerald-700':'bg-red-50 text-red-600'}`}>목표: 3일 이하</span>
                               </div>
                             );
@@ -16413,9 +16492,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <Bar yAxisId="left" dataKey="count" name="Order 건수" fill="#818cf8"
                                 radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
                                 label={(props) => {
-                                  const {x,y,width,value} = props;
+                                  const {x,y,width,height,value} = props;
                                   if (!value) return null;
-                                  return <text x={x+width/2} y={y-5} fill="#4338ca" textAnchor="middle" fontSize={12} fontWeight={700}>{value}건</text>;
+                                  // 막대가 충분히 높으면 안쪽(흰 글씨)에 — 꺾은선 숫자와 겹치지 않게
+                                  const inside = height >= 20;
+                                  return <text x={x+width/2} y={inside ? y+15 : y-6}
+                                    fill={inside ? '#fff' : '#4338ca'} textAnchor="middle"
+                                    fontSize={11} fontWeight={700}>{value}건</text>;
                                 }}>
                                 {ltChartData.map((d,i) => (
                                   <Cell key={i} fill={!d.count ? '#e5e7eb' : d.lt<=3 ? '#818cf8' : d.lt<=5 ? '#fbbf24' : d.count ? '#818cf8' : '#e5e7eb'} />
@@ -16428,7 +16511,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 label={(props) => {
                                   const {x,y,value} = props;
                                   if (!value) return null;
-                                  return <text x={x} y={y-12} fill="#ef4444" textAnchor="middle" fontSize={11} fontWeight={700}>{value}일</text>;
+                                  return <text x={x} y={y-14} fill="#ef4444" textAnchor="middle" fontSize={11} fontWeight={700}
+                                    stroke="#fff" strokeWidth={3} paintOrder="stroke">{value}일</text>;
                                 }}
                                 connectNulls={false} />
                             </ComposedChart>
@@ -16449,7 +16533,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       const ctCountMax = Math.max(...ctChartData.map(d => d.count || 0), 3);
                       const ctMax      = Math.max(...ctChartData.map(d => d.ct    || 0), 60);
                       const ctLeftMax  = ctCountMax * 4;
-                      const ctRightMax = Math.ceil(ctMax * 1.4 / 10) * 10 + 20;
+                      // 막대는 하단 25%, 꺾은선은 중상단 (숫자 겹침 방지)
+                      const ctRightMax = Math.ceil(ctMax * 1.7 / 100) * 100;
+                      const ctMonthsWith = ctChartData.map((d,i) => d.ct !== null ? i+1 : null).filter(v => v !== null);
+                      const ctRange = ctMonthsWith.length ? `${ctMonthsWith[0]}~${ctMonthsWith[ctMonthsWith.length-1]}월` : '';
                       return (
                         <div data-kpi-section className="mb-8 border-t-2 border-gray-200 pt-8 mt-8">
                           <div className="flex items-center justify-between mb-2">
@@ -16461,9 +16548,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </div>
                           </div>
                           {/* 구분 선택 — 리드타임 차트와 같은 필터를 공유한다 */}
-                          <div className="flex flex-wrap gap-1.5 mb-3">
+                          <div className="flex flex-wrap gap-1.5 mb-3 items-center">
                             {[['total','Total'],['Model','Model'],['Sub-com.','Sub-com.'],['Spare Parts','Spare Parts']].map(([key, label]) => (
-                              <button key={key} onClick={() => setKpiCategory(key)}
+                              <button key={key} onClick={() => pickKpiCategory(key)}
                                 className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
                                   kpiCategory === key
                                     ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
@@ -16471,6 +16558,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {label}
                               </button>
                             ))}
+                            {kpiSubFilter && (
+                              <span className="px-2 py-1 rounded bg-purple-50 text-purple-700 text-xs font-semibold">
+                                {kpiSubFilter} 기준 (위에서 변경)
+                              </span>
+                            )}
                           </div>
                           {/* 요약 뱃지 */}
                           {(() => {
@@ -16478,9 +16570,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             const allCT = Object.values(kittingCTByMonth).flat();
                             const avgCT = allCT.length > 0 ? Math.round(allCT.reduce((a,b)=>a+b,0)/allCT.length) : null;
                             return (
-                              <div className="flex gap-3 mb-3 text-xs">
-                                <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded">Total Orders: <b>{totalOrders}</b>건</span>
-                                {avgCT !== null && <span className="px-2 py-1 bg-purple-50 text-purple-700 rounded">평균 CT: <b>{avgCT}</b>분</span>}
+                              <div className="flex gap-2 mb-3 text-xs flex-wrap items-center">
+                                {avgCT !== null && (
+                                  <span className="px-3 py-1.5 rounded-lg bg-purple-100 text-purple-800 font-semibold">
+                                    {ctRange} 평균 CT <b className="text-base">{avgCT}</b>분
+                                    <span className="ml-1 font-normal text-purple-600">({(avgCT/480).toFixed(1)}일)</span>
+                                  </span>
+                                )}
+                                <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded">Order <b>{totalOrders}</b>건</span>
                                 <span className="px-2 py-1 bg-gray-50 text-gray-400 rounded">목표: 검토 중</span>
                               </div>
                             );
@@ -16502,9 +16599,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <Bar yAxisId="left" dataKey="count" name="Order 건수" fill="#60a5fa"
                                 radius={[4,4,0,0]} maxBarSize={40} fillOpacity={0.75}
                                 label={(props) => {
-                                  const {x,y,width,value} = props;
+                                  const {x,y,width,height,value} = props;
                                   if (!value) return null;
-                                  return <text x={x+width/2} y={y-5} fill="#1d4ed8" textAnchor="middle" fontSize={12} fontWeight={700}>{value}건</text>;
+                                  const inside = height >= 20;
+                                  return <text x={x+width/2} y={inside ? y+15 : y-6}
+                                    fill={inside ? '#fff' : '#1d4ed8'} textAnchor="middle"
+                                    fontSize={11} fontWeight={700}>{value}건</text>;
                                 }}>
                                 {ctChartData.map((d,i) => (
                                   <Cell key={i} fill={!d.count ? '#e5e7eb' : '#60a5fa'} />
@@ -16516,7 +16616,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 label={(props) => {
                                   const {x,y,value} = props;
                                   if (!value) return null;
-                                  return <text x={x} y={y-12} fill="#7c3aed" textAnchor="middle" fontSize={11} fontWeight={700}>{value}분</text>;
+                                  return <text x={x} y={y-14} fill="#7c3aed" textAnchor="middle" fontSize={11} fontWeight={700}
+                                    stroke="#fff" strokeWidth={3} paintOrder="stroke">{value}분</text>;
                                 }}
                                 connectNulls={false} />
                             </ComposedChart>
@@ -16608,7 +16709,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       📋 {selectedYear}년 월별 데이터
                       {kpiCategory !== 'total' && (
                         <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
-                          Kitting L/T · CT = {kpiCategory} 기준
+                          Kitting L/T · CT = {kpiSubFilter ? kpiCategory + ' > ' + kpiSubFilter : kpiCategory} 기준
                         </span>
                       )}
                     </h3>
