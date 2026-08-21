@@ -1947,6 +1947,21 @@ function kpiCategoryOf(materialNum) {
   return 'Spare Parts';
 }
 
+// 모델 → 시리즈. 대시보드 다른 곳(Kitting 필터·Area Analysis)과 같은 이름을 쓴다.
+const KPI_MODEL_SERIES = {
+  'RSC48': 'Maxwell 48', 'CSC48': 'Maxwell 48',
+  'RSC16': 'Maxwell 16', 'CSC16': 'Maxwell 16', 'FSC16': 'Maxwell 16',
+  'HSM3.0': 'HSM 3.0',
+};
+const KPI_SERIES_MEMBERS = {
+  'Maxwell 48': ['RSC48', 'CSC48'],
+  'Maxwell 16': ['RSC16', 'CSC16', 'FSC16'],
+  'HSM 3.0': ['HSM3.0'],
+};
+function kpiSeriesOf(materialNum) {
+  return KPI_MODEL_SERIES[modelFromMaterial(materialNum)] || '기타';
+}
+
 // 품번 → 모델 구분 (CSV 업로드/백필 공통)
 function modelFromMaterial(materialNum) {
   if (!materialNum) return '';        // 품번을 모를 때만 빈값 (BOM 외 자재는 아래에서 Spare Parts)
@@ -4399,10 +4414,12 @@ export default function PBKWarehouseSystem() {
   const [kpiSelectedYear, setKpiSelectedYear] = useState(new Date().getFullYear()); // KPI 연도 선택
   // KPI 리드타임·사이클타임 구분 필터 (total / Model / Sub-com. / Spare Parts)
   const [kpiCategory, setKpiCategory] = useState('total');
-  // 구분 안에서 더 좁혀 보기 — Model 은 RSC48 등 모델명, 나머지는 품번. null = 전체
+  // 구분 안에서 더 좁혀 보기 — Model 은 시리즈(Maxwell 48/16), 나머지는 품번. null = 전체
   const [kpiSubFilter, setKpiSubFilter] = useState(null);
-  // 구분을 바꾸면 하위 선택은 초기화
-  const pickKpiCategory = (key) => { setKpiCategory(key); setKpiSubFilter(null); };
+  // 시리즈 안의 개별 모델(RSC48/CSC48 등). null = 시리즈 전체
+  const [kpiSub2Filter, setKpiSub2Filter] = useState(null);
+  const pickKpiCategory = (key) => { setKpiCategory(key); setKpiSubFilter(null); setKpiSub2Filter(null); };
+  const pickKpiSub = (key) => { setKpiSubFilter(key); setKpiSub2Filter(null); };
 
   // KPI 점수 계산 함수
   const KPI_SCORE_TABLE = {
@@ -15714,12 +15731,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 const vals = Object.values(byMonth).map(arr => arr.reduce((a, b) => a + b, 0) / arr.length);
                 return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
               };
-              // Model 은 RSC48 같은 모델명으로, 나머지는 품번으로 더 좁혀 볼 수 있게 한다
-              const subKeyOf = (cat, mat) => cat === 'Model' ? modelFromMaterial(mat) : String(mat || '');
+              // Model 은 시리즈(Maxwell 48 = RSC48+CSC48, Maxwell 16 = RSC16+CSC16+FSC16)로 묶고,
+              // 시리즈를 고르면 그 안의 개별 모델까지 볼 수 있다. 나머지 구분은 품번 기준.
+              const subKeyOf = (cat, mat) => cat === 'Model' ? kpiSeriesOf(mat) : String(mat || '');
+              const sub2KeyOf = (cat, mat) => cat === 'Model' ? modelFromMaterial(mat) : '';
               const ltByCat = { total: {}, 'Model': {}, 'Sub-com.': {}, 'Spare Parts': {} };
               const kpiCatCount = { total: 0, 'Model': 0, 'Sub-com.': 0, 'Spare Parts': 0 };
-              const kpiSubOpts = new Map();   // 선택한 구분의 하위 항목 (건수·품명)
-              const ltBySub = {};             // 하위 항목까지 좁힌 월별 L/T
+              const kpiSubOpts = new Map();    // 선택한 구분의 하위 항목 (건수·품명)
+              const kpiSub2Opts = new Map();   // 선택한 시리즈 안의 개별 모델
+              const ltBySub = {};              // 하위 항목까지 좁힌 월별 L/T
               kittingData.filter(k => k.status === 'completed' && k.leadTimeDays != null).forEach(k => {
                 const month = k.completedAt?.slice(0, 7);
                 if (!month || !month.startsWith(String(selectedYear))) return;
@@ -15729,20 +15749,24 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   ltByCat[c][month].push(k.leadTimeDays);
                 });
                 kpiCatCount[cat]++; kpiCatCount.total++;
-                if (cat === kpiCategory) {
-                  const sub = subKeyOf(cat, k.materialNum);
-                  const cur = kpiSubOpts.get(sub) || { n: 0, desc: k.materialDesc || '', mat: k.materialNum || '' };
-                  cur.n++;
-                  if (!cur.desc && k.materialDesc) cur.desc = k.materialDesc;
-                  kpiSubOpts.set(sub, cur);
-                  if (kpiSubFilter && sub === kpiSubFilter) {
-                    if (!ltBySub[month]) ltBySub[month] = [];
-                    ltBySub[month].push(k.leadTimeDays);
-                  }
-                }
+                if (cat !== kpiCategory) return;
+                const sub = subKeyOf(cat, k.materialNum);
+                const cur = kpiSubOpts.get(sub) || { n: 0, desc: k.materialDesc || '', mat: k.materialNum || '' };
+                cur.n++;
+                if (!cur.desc && k.materialDesc) cur.desc = k.materialDesc;
+                kpiSubOpts.set(sub, cur);
+                if (!kpiSubFilter || sub !== kpiSubFilter) return;
+                const sub2 = sub2KeyOf(cat, k.materialNum);
+                if (sub2) kpiSub2Opts.set(sub2, (kpiSub2Opts.get(sub2) || 0) + 1);
+                if (kpiSub2Filter && sub2 !== kpiSub2Filter) return;
+                if (!ltBySub[month]) ltBySub[month] = [];
+                ltBySub[month].push(k.leadTimeDays);
               });
               const kpiSubList = [...kpiSubOpts.entries()]
                 .map(([key, v]) => ({ key, ...v }))
+                .sort((a, b) => b.n - a.n);
+              const kpiSub2List = [...kpiSub2Opts.entries()]
+                .map(([key, n]) => ({ key, n }))
                 .sort((a, b) => b.n - a.n);
               const kittingLTByMonth = kpiSubFilter ? ltBySub : (ltByCat[kpiCategory] || ltByCat.total);
               const kittingLTAvg = monthAvg(ltByCat.total);      // 종합등급은 전체 기준
@@ -15759,7 +15783,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   if (!ctByCat[c][month]) ctByCat[c][month] = [];
                   ctByCat[c][month].push(p.cycleMin);
                 });
-                if (kpiSubFilter && cat === kpiCategory && subKeyOf(cat, p.materialNum) === kpiSubFilter) {
+                if (kpiSubFilter && cat === kpiCategory && subKeyOf(cat, p.materialNum) === kpiSubFilter
+                    && (!kpiSub2Filter || sub2KeyOf(cat, p.materialNum) === kpiSub2Filter)) {
                   if (!ctBySub[month]) ctBySub[month] = [];
                   ctBySub[month].push(p.cycleMin);
                 }
@@ -16413,7 +16438,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               <span className="text-xs text-gray-400 mr-1">
                                 {kpiCategory === 'Model' ? '모델' : '품번'} 선택
                               </span>
-                              <button onClick={() => setKpiSubFilter(null)}
+                              <button onClick={() => pickKpiSub(null)}
                                 className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
                                   !kpiSubFilter ? 'bg-gray-700 text-white border-gray-700'
                                                 : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
@@ -16421,8 +16446,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               </button>
                               {kpiSubList.length <= 8 ? (
                                 kpiSubList.map(o => (
-                                  <button key={o.key} onClick={() => setKpiSubFilter(o.key)}
-                                    title={o.mat ? `${o.mat} ${o.desc || ''}` : (o.desc || '')}
+                                  <button key={o.key} onClick={() => pickKpiSub(o.key)}
+                                    title={kpiCategory === 'Model'
+                                      ? (KPI_SERIES_MEMBERS[o.key] || []).join(' + ')
+                                      : `${o.mat} ${o.desc || ''}`}
                                     className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
                                       kpiSubFilter === o.key ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                                                              : 'bg-white text-gray-600 border-gray-300 hover:bg-indigo-50 hover:border-indigo-300'}`}>
@@ -16430,7 +16457,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   </button>
                                 ))
                               ) : (
-                                <select value={kpiSubFilter || ''} onChange={e => setKpiSubFilter(e.target.value || null)}
+                                <select value={kpiSubFilter || ''} onChange={e => pickKpiSub(e.target.value || null)}
                                   className="px-2 py-1 rounded-lg text-xs border border-gray-300 bg-white text-gray-700 max-w-[420px]">
                                   <option value="">전체 ({kpiSubList.length}개 품번)</option>
                                   {kpiSubList.map(o => (
@@ -16440,11 +16467,26 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   ))}
                                 </select>
                               )}
-                              {kpiSubFilter && (
-                                <span className="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-semibold">
-                                  {kpiSubFilter} 기준으로 보는 중
-                                </span>
-                              )}
+                            </div>
+                          )}
+                          {/* 시리즈를 고르면 그 안의 개별 모델도 볼 수 있다 (Maxwell 48 → RSC48 / CSC48) */}
+                          {kpiCategory === 'Model' && kpiSubFilter && kpiSub2List.length > 1 && (
+                            <div className="flex flex-wrap items-center gap-1.5 mb-3 pl-8">
+                              <span className="text-xs text-gray-400 mr-1">{kpiSubFilter} 안에서</span>
+                              <button onClick={() => setKpiSub2Filter(null)}
+                                className={`px-2 py-0.5 rounded-full text-xs border transition ${
+                                  !kpiSub2Filter ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-semibold'
+                                                 : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                                합계
+                              </button>
+                              {kpiSub2List.map(o => (
+                                <button key={o.key} onClick={() => setKpiSub2Filter(o.key)}
+                                  className={`px-2 py-0.5 rounded-full text-xs border transition ${
+                                    kpiSub2Filter === o.key ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-semibold'
+                                                            : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
+                                  {o.key} <span className="text-gray-400">{o.n}</span>
+                                </button>
+                              ))}
                             </div>
                           )}
                           {/* 요약 뱃지 */}
@@ -16560,7 +16602,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             ))}
                             {kpiSubFilter && (
                               <span className="px-2 py-1 rounded bg-purple-50 text-purple-700 text-xs font-semibold">
-                                {kpiSubFilter} 기준 (위에서 변경)
+                                {kpiSub2Filter || kpiSubFilter} 기준 (위에서 변경)
                               </span>
                             )}
                           </div>
@@ -16709,7 +16751,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       📋 {selectedYear}년 월별 데이터
                       {kpiCategory !== 'total' && (
                         <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
-                          Kitting L/T · CT = {kpiSubFilter ? kpiCategory + ' > ' + kpiSubFilter : kpiCategory} 기준
+                          Kitting L/T · CT = {kpiSub2Filter ? kpiSubFilter + ' > ' + kpiSub2Filter
+                                                : kpiSubFilter ? kpiCategory + ' > ' + kpiSubFilter : kpiCategory} 기준
                         </span>
                       )}
                     </h3>
