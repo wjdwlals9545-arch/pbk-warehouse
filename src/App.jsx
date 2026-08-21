@@ -3129,6 +3129,67 @@ export default function PBKWarehouseSystem() {
     } catch (e) { console.log('[Backfill] skip:', e.message); }
   };
 
+  // SAP_Drop 에 넣은 MB51 을 sap_watcher 가 집계해 둔 kpi_auto.json 을 반영한다.
+  //   Movement 101/102 → GR Cancel (건수)
+  //   Movement 711/712 → 재고조정 차이금액
+  // 월말 재고금액(MB5B)은 아직 수동이라, 재고금액이 있는 달만 비율을 다시 계산한다.
+  const applyKpiAuto = async () => {
+    try {
+      const lastChk = parseInt(safeStorage.getItem('pbk_kpiauto_chk') || '0');
+      if (safeStorage.getItem('pbk_kpiauto_ver') && Date.now() - lastChk < 6 * 60 * 60 * 1000) return;
+      safeStorage.setItem('pbk_kpiauto_chk', String(Date.now()));
+      const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kpi_auto.json?t=${Date.now()}`);
+      if (!resp.ok) return;
+      const doc = await resp.json();
+      const stamp = String(doc.updated || '');
+      if (!stamp || safeStorage.getItem('pbk_kpiauto_ver') === stamp) return;
+
+      const grQty = doc.grQty || {};
+      const grCancel = doc.grCancel || {};
+      const variance = doc.variance || {};
+      if (!Object.keys(grQty).length && !Object.keys(variance).length) return;
+
+      setKpiData(prev => {
+        const next = {
+          grCancel: { ...prev.grCancel, ...grCancel },
+          grCancelQty: { ...prev.grCancelQty, ...grQty },
+          inventoryAdjust: { ...prev.inventoryAdjust },
+          invAdjustDetail: { ...prev.invAdjustDetail },
+        };
+        // 차이금액 반영 (재고금액은 손대지 않는다)
+        Object.entries(variance).forEach(([m, amt]) => {
+          const cur = next.invAdjustDetail[m] || { stock: 0, variance: 0, ratioQ: 0, ratioCum: 0 };
+          next.invAdjustDetail[m] = { ...cur, variance: amt };
+        });
+        // 재고금액이 있는 달만 비율 재계산 (연 누적은 그 해 합계 기준)
+        const years = new Set(Object.keys(next.invAdjustDetail).map(m => m.slice(0, 4)));
+        years.forEach(y => {
+          let sumVar = 0, sumStock = 0;
+          Object.keys(next.invAdjustDetail).filter(m => m.startsWith(y)).sort().forEach(m => {
+            const d = next.invAdjustDetail[m];
+            if (!d.stock) return;
+            sumVar += d.variance || 0;
+            sumStock += d.stock;
+            const q = parseFloat((d.variance / d.stock * 100).toFixed(4));
+            const cum = parseFloat((sumVar / sumStock * 100).toFixed(4));
+            next.invAdjustDetail[m] = { ...d, ratioQ: q, ratioCum: cum };
+            next.inventoryAdjust[m] = q;
+          });
+        });
+        safeStorage.setItem('pbk_kpi_data', JSON.stringify(next));
+        return next;
+      });
+      safeStorage.setItem('pbk_kpiauto_ver', stamp);
+      safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
+      const gr = Object.values(grQty).reduce((a, b) => a + b, 0);
+      const cn = Object.values(grCancel).reduce((a, b) => a + b, 0);
+      console.log(`[KPI Auto] MB51 반영 — GR ${gr}건 / 취소 ${cn}건 / 재고조정 ${Object.keys(variance).length}개월`);
+      if (gr || cn || Object.keys(variance).length) {
+        showToast(`📊 KPI 자동 반영 — GR ${gr}건 / 취소 ${cn}건`, 'success');
+      }
+    } catch (e) { console.log('[KPI Auto] skip:', e.message); }
+  };
+
   // kitting_scan.json의 start/end 이벤트를 Kitting 현황 + 불출 Cycle에 반영.
   // 적용한 이벤트 id는 pbk_scan_applied에 기록 (멱등). 주문이 아직 없는 이벤트는
   // 미적용으로 남겨서 CSV가 나중에 업로드되면 다음 주기에 자동 병합된다.
@@ -5456,6 +5517,7 @@ export default function PBKWarehouseSystem() {
 
       // 아웃룩 감시가 올린 신규 오더/완료 자동 반영
       await applyMailEvents();
+      await applyKpiAuto();
 
       // 폰 스캔 이벤트 병합 (kitting.html → kitting_scan.json)
       await applyKittingScanEvents();
@@ -15965,7 +16027,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                     <h4 className="font-semibold text-blue-800 mb-2">GR Cancel</h4>
                     <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
-                      <li>매월 첫번째 월요일: SAP MB51에서 수동 다운로드</li>
+                      <li><b>SAP_Drop 폴더에 넣으면 자동 집계됩니다</b> (파일명 무관)</li>
+                      <li>SAP MB51 → 엑셀 저장 → SAP_Drop 폴더에 넣기</li>
+                      <li>3초 안에 감시 프로그램이 읽어 GR·취소 건수를 월별로 반영</li>
+                      <li>아래 버튼은 수동으로 올릴 때만 쓰시면 됩니다</li>
                       <li>아래 업로드 버튼으로 대시보드에 반영</li>
                       <li>(GR Cancel은 SAP_Drop 폴더 감시 대상이 아님 — 직접 업로드)</li>
                     </ol>
