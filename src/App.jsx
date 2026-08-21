@@ -1957,14 +1957,15 @@ function buildKpiInsight(byCat, opt) {
   const unit = opt.unit;                    // '일' | '분'
   const dec = opt.decimals ? 1 : 0;
   const target = opt.target;                // 목표값 (없으면 생략)
-  const rows = opt.rows || [];              // 최장 건 찾기용 [{order, mat, value, month}]
+  const rows = opt.rows || [];              // [{order, mat, value, month, start, urgent, pic}]
   const mean = (a) => (a && a.length) ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const f = (v) => v == null ? '-' : (dec ? v.toFixed(1) : String(Math.round(v)));
   const mNum = (m) => parseInt(String(m).slice(5, 7), 10);
   const pct = (v) => Math.round(v * 100);
+  const eps = dec ? 0.05 : 5;
 
   const months = Object.keys(byCat.total || {}).sort();
-  if (!months.length) return [];
+  if (!months.length) return { rows: [], verdict: null, actions: [] };
   const cur = months[months.length - 1];
   const prev = months.length > 1 ? months[months.length - 2] : null;
   const curArr = byCat.total[cur] || [];
@@ -1972,41 +1973,59 @@ function buildKpiInsight(byCat, opt) {
   const curAvg = mean(curArr);
   const yearAvg = mean(yearArr);
   const out = [];
+  const actions = [];
+  const share = (m, c) => {
+    const tot = (byCat.total[m] || []).length;
+    return tot ? (byCat[c][m] || []).length / tot : 0;
+  };
+  const lvl = (m, c) => mean(byCat[c][m] || []);
 
   // ① 이번 달 위치
   const diffYear = (curAvg != null && yearAvg != null) ? curAvg - yearAvg : null;
   out.push({
-    icon: '📌',
-    tone: 'base',
-    text: `${mNum(cur)}월은 ${curArr.length}건 평균 ${f(curAvg)}${unit}. `
+    icon: '📌', tone: 'base',
+    text: `${mNum(cur)}월 ${curArr.length}건 평균 ${f(curAvg)}${unit}. `
         + (diffYear == null ? ''
-           : Math.abs(diffYear) < (dec ? 0.05 : 5)
-             ? `연평균 ${f(yearAvg)}${unit}과 같은 수준입니다.`
-             : `연평균 ${f(yearAvg)}${unit}보다 ${f(Math.abs(diffYear))}${unit} ${diffYear > 0 ? '깁니다' : '짧습니다'}.`),
+           : Math.abs(diffYear) < eps ? `연평균 ${f(yearAvg)}${unit}과 같은 수준입니다.`
+           : `연평균 ${f(yearAvg)}${unit}보다 ${f(Math.abs(diffYear))}${unit} ${diffYear > 0 ? '깁니다' : '짧습니다'}.`),
   });
 
+  // ② 전월 대비를 "구성 탓 / 실제 탓" 으로 쪼갠다 — 이게 원인 규명의 핵심
+  let mixVal = 0, rateVal = 0, delta = null;
   if (prev) {
-    const share = (m, c) => {
-      const tot = (byCat.total[m] || []).length;
-      return tot ? (byCat[c][m] || []).length / tot : 0;
-    };
-    const lvl = (m, c) => mean(byCat[c][m] || []);
     const prevAvg = mean(byCat.total[prev] || []);
-    const delta = (curAvg != null && prevAvg != null) ? curAvg - prevAvg : null;
+    delta = (curAvg != null && prevAvg != null) ? curAvg - prevAvg : null;
+    KPI_INSIGHT_CATS.forEach((c) => {
+      const aP = lvl(prev, c), aC = lvl(cur, c);
+      const wP = share(prev, c), wC = share(cur, c);
+      if (aP != null) mixVal += (wC - wP) * aP;
+      if (aP != null && aC != null) rateVal += wC * (aC - aP);
+    });
 
-    // ② 전월 대비
-    if (delta != null && Math.abs(delta) >= (dec ? 0.05 : 5)) {
+    if (delta != null && Math.abs(delta) >= eps) {
+      const mixAbs = Math.abs(mixVal), rateAbs = Math.abs(rateVal);
+      const dom = mixAbs > rateAbs * 1.3 ? 'mix' : rateAbs > mixAbs * 1.3 ? 'rate' : 'both';
       out.push({
-        icon: delta > 0 ? '🔺' : '🔻',
-        tone: delta > 0 ? 'warn' : 'good',
-        text: `${mNum(prev)}월 ${f(prevAvg)}${unit} → ${mNum(cur)}월 ${f(curAvg)}${unit} `
-            + `(${delta > 0 ? '+' : '−'}${f(Math.abs(delta))}${unit})`,
+        icon: delta > 0 ? '🔺' : '🔻', tone: delta > 0 ? 'warn' : 'good',
+        text: `${mNum(prev)}월 ${f(prevAvg)} → ${mNum(cur)}월 ${f(curAvg)}${unit} `
+            + `(${delta > 0 ? '+' : '−'}${f(Math.abs(delta))}${unit}). `
+            + `이 중 구성 변화 ${mixVal >= 0 ? '+' : '−'}${f(mixAbs)}, `
+            + `실제 처리속도 ${rateVal >= 0 ? '+' : '−'}${f(rateAbs)}${unit} 몫입니다.`,
+      });
+      out.push({
+        icon: dom === 'mix' ? '🔀' : dom === 'rate' ? '⚙️' : '⚖️',
+        tone: dom === 'rate' ? (rateVal > 0 ? 'warn' : 'good') : 'mix',
+        text: dom === 'mix'
+            ? `주 원인은 구성 변화입니다. 실제 처리속도는 거의 그대로인데 오더 구성이 바뀌어 평균이 움직였습니다. 관리 관점에서는 나빠진 게 아닙니다.`
+            : dom === 'rate'
+            ? `주 원인은 실제 처리속도입니다. 오더 구성과 무관하게 ${rateVal > 0 ? '느려졌' : '빨라졌'}으니 ${rateVal > 0 ? '원인을 봐야 합니다' : '개선이 실제로 반영됐습니다'}.`
+            : `구성 변화와 실제 처리속도가 비슷하게 작용했습니다.`,
       });
     } else if (delta != null) {
       out.push({ icon: '➡️', tone: 'base', text: `${mNum(prev)}월과 거의 같습니다 (${f(prevAvg)} → ${f(curAvg)}${unit}).` });
     }
 
-    // ③ 구성 효과 — 비중이 가장 크게 움직인 구분
+    // ③ 구성이 어떻게 바뀌었나
     let mixTop = null;
     KPI_INSIGHT_CATS.forEach((c) => {
       const d = share(cur, c) - share(prev, c);
@@ -2014,38 +2033,29 @@ function buildKpiInsight(byCat, opt) {
     });
     if (mixTop && Math.abs(mixTop.d) >= 0.05) {
       const catLvl = lvl(cur, mixTop.c) != null ? lvl(cur, mixTop.c) : lvl(prev, mixTop.c);
-      // 비교 대상은 "나머지 구분 전체 평균" — 항상 문장이 완성되고 근거도 숫자로 남는다
       const restArr = KPI_INSIGHT_CATS.filter((c) => c !== mixTop.c)
         .reduce((acc, c) => acc.concat(byCat[c][cur] || []), []);
       const restLvl = mean(restArr);
-      const jo = unit === '분' ? '으로' : '로';
       let why = '';
       if (catLvl != null && restLvl != null) {
         const gap = catLvl - restLvl;
-        const same = Math.abs(gap) < (dec ? 0.1 : 30);   // 반올림하면 같아 보이는 수준
-        if (same) {
-          // 수준이 비슷하면 구성이 바뀌어도 전체 평균은 거의 안 움직인다 — 그대로 말한다
-          why = `${mixTop.c} 평균 ${f(catLvl)}${unit}은 나머지 ${f(restLvl)}${unit}과 비슷해서, `
-              + `이 비중 변화만으로는 전체 평균이 크게 달라지지 않습니다.`;
+        if (Math.abs(gap) < (dec ? 0.1 : 30)) {
+          why = `${mixTop.c} 평균 ${f(catLvl)}${unit}은 나머지 ${f(restLvl)}${unit}과 비슷해서, 이 비중 변화만으로는 평균이 크게 달라지지 않습니다.`;
         } else {
           const longer = gap > 0;
-          const up = mixTop.d > 0 ? longer : !longer;   // 전체 평균이 올라가는 방향인가
-          why = `${mixTop.c} 평균 ${f(catLvl)}${unit}은 나머지 ${f(restLvl)}${unit}보다 `
-              + `${longer ? '길어서' : '짧아서'}, 비중이 ${mixTop.d > 0 ? '늘면' : '줄면'} `
-              + `전체 평균을 ${up ? '끌어올립니다' : '끌어내립니다'}.`;
+          const up = mixTop.d > 0 ? longer : !longer;
+          why = `${mixTop.c} 평균 ${f(catLvl)}${unit}은 나머지 ${f(restLvl)}${unit}보다 ${longer ? '길어서' : '짧아서'}, `
+              + `비중이 ${mixTop.d > 0 ? '늘면' : '줄면'} 평균을 ${up ? '끌어올립니다' : '끌어내립니다'}.`;
         }
-      } else if (catLvl != null) {
-        why = `${mixTop.c} 평균은 ${f(catLvl)}${unit}${jo} 집계됩니다.`;
       }
       out.push({
-        icon: '🔀',
-        tone: 'mix',
-        text: `구성 변화 — ${mixTop.c} 비중이 ${pct(share(prev, mixTop.c))}% → ${pct(share(cur, mixTop.c))}% `
+        icon: '🧩', tone: 'mix',
+        text: `${mixTop.c} 비중 ${pct(share(prev, mixTop.c))}% → ${pct(share(cur, mixTop.c))}% `
             + `(${mixTop.d > 0 ? '+' : '−'}${Math.abs(pct(mixTop.d))}%p). ` + why,
       });
     }
 
-    // ④ 실질 변화 — 구분 자체가 가장 많이 움직인 것
+    // ④ 어느 구분이 실제로 움직였나
     let rateTop = null;
     KPI_INSIGHT_CATS.forEach((c) => {
       const a = lvl(prev, c), b = lvl(cur, c);
@@ -2055,50 +2065,136 @@ function buildKpiInsight(byCat, opt) {
     });
     if (rateTop && Math.abs(rateTop.d) >= (dec ? 0.2 : 60)) {
       out.push({
-        icon: rateTop.d > 0 ? '📈' : '📉',
-        tone: rateTop.d > 0 ? 'warn' : 'good',
-        text: `실제 변화 — ${rateTop.c} 자체가 ${f(rateTop.a)} → ${f(rateTop.b)}${unit} `
-            + `(${rateTop.d > 0 ? '+' : '−'}${f(Math.abs(rateTop.d))}${unit}). 구성과 별개로 이 구분이 ${rateTop.d > 0 ? '느려졌' : '빨라졌'}습니다.`,
+        icon: rateTop.d > 0 ? '📈' : '📉', tone: rateTop.d > 0 ? 'warn' : 'good',
+        text: `${rateTop.c} 자체가 ${f(rateTop.a)} → ${f(rateTop.b)}${unit} (${rateTop.d > 0 ? '+' : '−'}${f(Math.abs(rateTop.d))}${unit}) `
+            + `— 가장 크게 움직인 구분입니다.`,
       });
+      if (rateTop.d > 0) actions.push(`${rateTop.c} 가 ${f(Math.abs(rateTop.d))}${unit} 느려졌습니다. 해당 자재의 재고 위치·부족 여부를 먼저 확인해 보세요.`);
     }
   }
 
-  // ⑤ 목표 대비
+  const curRows = rows.filter((r) => r.month === cur && r.value != null);
+
+  // ⑤ 오더가 한꺼번에 몰렸는지 (같은 시각 접수 = 배치 발행)
+  if (curRows.length >= 8) {
+    const bucket = {};
+    curRows.forEach((r) => { if (r.start) { const k = String(r.start).slice(0, 16); (bucket[k] = bucket[k] || []).push(r.value); } });
+    const groups = Object.entries(bucket);
+    if (groups.length >= 2) {
+      const big = groups.filter(([, v]) => v.length >= 5);
+      const small = groups.filter(([, v]) => v.length < 5);
+      const bigVals = big.reduce((a, [, v]) => a.concat(v), []);
+      const smallVals = small.reduce((a, [, v]) => a.concat(v), []);
+      const topBatch = groups.sort((a, b) => b[1].length - a[1].length)[0];
+      if (bigVals.length >= 5 && smallVals.length >= 3) {
+        const bAvg = mean(bigVals), sAvg = mean(smallVals);
+        if (bAvg - sAvg >= eps * 4) {
+          out.push({
+            icon: '🧱', tone: 'warn',
+            text: `한 번에 5건 이상 몰려 들어온 오더는 평균 ${f(bAvg)}${unit}, 소량으로 들어온 오더는 ${f(sAvg)}${unit} `
+                + `— 몰릴 때 ${f(bAvg - sAvg)}${unit} 더 걸립니다. 최대 배치는 ${topBatch[0].replace('T', ' ')} ${topBatch[1].length}건입니다.`,
+          });
+          actions.push(`오더가 한 시각에 ${topBatch[1].length}건씩 몰려 뒤 순번이 밀립니다. 발행을 이틀에 나눠 달라고 생산계획에 요청하면 평균이 ${f(bAvg - sAvg)}${unit} 가까이 내려갈 여지가 있습니다.`);
+        } else {
+          out.push({
+            icon: '🧱', tone: 'good',
+            text: `배치로 몰려 들어온 오더(${f(bAvg)}${unit})와 소량 오더(${f(sAvg)}${unit}) 차이가 크지 않습니다. 물량이 몰려도 처리에 밀림은 없습니다.`,
+          });
+        }
+      }
+    }
+  }
+
+  // ⑥ 목표 대비 + 반복 초과 품번
   if (target != null && curArr.length) {
     const over = curArr.filter((v) => v > target).length;
+    const ratio = over / curArr.length;
     out.push({
       icon: over ? '🎯' : '✅',
-      tone: over / curArr.length > 0.3 ? 'warn' : 'good',
-      text: over
-        ? `목표 ${target}${unit} 초과 ${over}건 (${mNum(cur)}월 ${curArr.length}건 중 ${pct(over / curArr.length)}%).`
-        : `${mNum(cur)}월은 전 건이 목표 ${target}${unit} 이내입니다.`,
+      tone: ratio > 0.3 ? 'warn' : 'good',
+      text: over ? `목표 ${target}${unit} 초과 ${over}건 / ${curArr.length}건 (${pct(ratio)}%).`
+                 : `${mNum(cur)}월은 전 건이 목표 ${target}${unit} 이내입니다.`,
     });
+    const overAll = rows.filter((r) => r.value > target && r.mat);
+    if (overAll.length >= 3) {
+      const cnt = {};
+      overAll.forEach((r) => { cnt[r.mat] = (cnt[r.mat] || 0) + 1; });
+      const worst = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+      if (worst && worst[1] >= 3) {
+        out.push({
+          icon: '🔁', tone: 'warn',
+          text: `올해 목표 초과 ${overAll.length}건 중 ${worst[0]} 이 ${worst[1]}건으로 가장 잦습니다.`,
+        });
+        actions.push(`${worst[0]} 이 목표를 반복해서 넘깁니다 (${worst[1]}건). 이 자재의 Fixed bin 위치와 상시 재고 수준을 점검해 보세요.`);
+      }
+    }
   }
 
-  // ⑥ 이번 달 최장 건
-  const curRows = rows.filter((r) => r.month === cur && r.value != null).sort((a, b) => b.value - a.value);
-  if (curRows.length) {
-    const t = curRows[0];
+  // ⑦ 이번 달 최장
+  const sorted = curRows.slice().sort((a, b) => b.value - a.value);
+  if (sorted.length) {
+    const t = sorted[0];
     out.push({
-      icon: '⏱',
-      tone: 'base',
+      icon: '⏱', tone: 'base',
       text: `${mNum(cur)}월 최장 — 오더 ${t.order} ${t.mat || ''} ${f(t.value)}${unit}`
-          + (curRows.length > 1 ? ` (2위 ${curRows[1].order} ${f(curRows[1].value)}${unit})` : ''),
+          + (sorted.length > 1 ? ` (2위 ${sorted[1].order} ${f(sorted[1].value)}${unit})` : ''),
     });
   }
 
-  // ⑦ 건수 급변
+  // ⑧ 물량 급변
+  let volShift = 0;
   if (prev) {
     const a = (byCat.total[prev] || []).length, b = curArr.length;
-    if (a && Math.abs(b - a) / a >= 0.3) {
+    if (a) volShift = (b - a) / a;
+    if (a && Math.abs(volShift) >= 0.3) {
       out.push({
-        icon: '📦',
-        tone: 'base',
-        text: `물량 ${a}건 → ${b}건 (${b > a ? '+' : '−'}${Math.abs(pct((b - a) / a))}%). 건수가 크게 달라지면 월 평균의 안정성이 떨어집니다.`,
+        icon: '📦', tone: 'base',
+        text: `물량 ${a}건 → ${b}건 (${volShift > 0 ? '+' : '−'}${Math.abs(pct(volShift))}%).`
+            + (b < 15 ? ' 건수가 적어 월 평균이 한두 건에 크게 흔들립니다.' : ''),
       });
     }
   }
-  return out;
+
+  // ⑨ 종합 판단 + 권고
+  const small = curArr.length < 10;
+  const overRatio = (target != null && curArr.length) ? curArr.filter((v) => v > target).length / curArr.length : 0;
+  const worsened = delta != null && delta >= eps * 4;
+  const improved = delta != null && delta <= -eps * 4;
+  const rateDriven = Math.abs(rateVal) > Math.abs(mixVal) * 1.3;
+
+  let verdict;
+  if (small) {
+    verdict = { level: 'hold', title: '판단 보류', text: `${mNum(cur)}월 ${curArr.length}건으로 표본이 적습니다. 한두 건에 평균이 흔들리니 다음 달까지 보고 판단하는 게 맞습니다.` };
+  } else if (target != null && overRatio > 0.3) {
+    verdict = { level: 'act', title: '조치 필요', text: `목표 ${target}${unit} 초과가 ${pct(overRatio)}%입니다. 아래 항목부터 손대는 게 효과가 큽니다.` };
+  } else if (worsened && rateDriven) {
+    verdict = { level: 'act', title: '조치 필요', text: `구성 탓이 아니라 실제 처리속도가 ${f(Math.abs(rateVal))}${unit} 나빠졌습니다. 원인을 짚어야 다음 달에 되돌아옵니다.` };
+  } else if (worsened) {
+    verdict = { level: 'watch', title: '주의 관찰', text: `평균은 올랐지만 대부분 오더 구성이 바뀐 결과입니다. 실제 처리속도는 ${f(Math.abs(rateVal))}${unit} 수준 변화라 당장 조치보다 한 달 더 보는 편이 낫습니다.` };
+  } else if (improved) {
+    verdict = { level: 'good', title: rateDriven ? '개선 유지' : '현상 유지', text: rateDriven
+      ? `실제 처리속도가 ${f(Math.abs(rateVal))}${unit} 좋아졌습니다. 지금 방식을 그대로 유지하시면 됩니다.`
+      : `평균이 내려갔지만 주로 오더 구성 덕입니다. 실제 개선은 아니니 좋아졌다고 보고하기엔 조심스럽습니다.` };
+  } else {
+    verdict = { level: 'good', title: '현상 유지', text: `전월과 큰 차이 없고 ${target != null ? `목표 ${target}${unit} 대비 여유가 있습니다` : '안정적입니다'}. 지금 방식을 바꿀 이유가 없습니다.` };
+  }
+
+  // 권고가 비면 상황에 맞는 기본 제안
+  if (!actions.length) {
+    if (verdict.level === 'good') {
+      actions.push('특별한 조치 없이 현재 방식을 유지하세요.');
+      if (target != null && overRatio > 0) actions.push(`목표 초과 건만 따로 원인을 적어 두면 다음 달 비교가 쉬워집니다.`);
+    } else if (verdict.level === 'hold') {
+      actions.push('다음 달 실적이 쌓인 뒤 다시 보세요. 지금 숫자로 결론 내리기엔 건수가 부족합니다.');
+    } else {
+      actions.push('가장 오래 걸린 오더 3건의 사유(자재 부족·검사 대기·위치 확인 등)를 메모해 두면 원인이 좁혀집니다.');
+    }
+  }
+  if (Math.abs(volShift) >= 0.3 && curArr.length >= 10) {
+    actions.push(`물량이 ${volShift > 0 ? '늘었' : '줄었'}으니 평균만 보지 말고 건수와 함께 보고하세요 (${curArr.length}건).`);
+  }
+
+  return { rows: out, verdict, actions };
 }
 
 // 모델 → 시리즈. 대시보드 다른 곳(Kitting 필터·Area Analysis)과 같은 이름을 쓴다.
@@ -4601,7 +4697,7 @@ export default function PBKWarehouseSystem() {
   // KPI 차트 AI 해설 — 계산 분석은 항상 나오고, 키가 있으면 서술을 덧붙인다
   const [kpiAiText, setKpiAiText] = useState({});
   const [kpiAiLoading, setKpiAiLoading] = useState(null);
-  const askKpiAi = async (label, byCat, unit) => {
+  const askKpiAi = async (label, byCat, unit, ins) => {
     const apiKey = safeStorage.getItem('pbk_anthropic_key');
     if (!apiKey) {
       setKpiAiText(prev => ({ ...prev, [label]: 'API 키가 없어 AI 해설은 건너뜁니다. 위의 분석은 실제 데이터 계산 결과라 키 없이도 항상 표시됩니다.' }));
@@ -4610,7 +4706,10 @@ export default function PBKWarehouseSystem() {
     setKpiAiLoading(label);
     try {
       const mean = a => (a && a.length) ? a.reduce((x, y) => x + y, 0) / a.length : null;
-      const payload = { 지표: label, 단위: unit, 월별: {} };
+      const payload = { 지표: label, 단위: unit, 월별: {},
+        계산분석: (ins && ins.rows || []).map(r => r.text),
+        계산판단: ins && ins.verdict ? ins.verdict.title + ' — ' + ins.verdict.text : null,
+        계산권고: (ins && ins.actions) || [] };
       Object.keys(byCat.total).sort().forEach(m => {
         payload.월별[m] = {
           전체: { 건수: byCat.total[m].length, 평균: Number(mean(byCat.total[m]).toFixed(2)) },
@@ -4626,11 +4725,23 @@ export default function PBKWarehouseSystem() {
                    'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
         body: JSON.stringify({
           model: 'claude-sonnet-5', max_tokens: 600,
-          system: `당신은 의료기기 제조사 자재담당의 KPI를 해석하는 분석가입니다.
-제공된 JSON 숫자만 근거로 쓰세요. 새 숫자를 만들지 마세요.
-Model=완제품, Sub-com.=반제품 조립품, Spare Parts=서비스 자재입니다.
-Spare Parts 는 리드타임이 짧아 비중이 커지면 전체 평균이 내려갑니다(구성 효과).
-마크다운 기호 없이 3~4문장. 원인 → 판단 → 지켜볼 점 순서로. 존댓말.`,
+          system: `당신은 의료기기 제조사(Promega) 자재담당 1인 체제의 KPI를 해석하는 분석가입니다.
+제공된 JSON 숫자만 근거로 쓰고 새 숫자를 만들지 마세요. '계산분석'은 이미 검증된 사실입니다.
+
+배경
+- Model=완제품(Maxwell 장비), Sub-com.=반제품 조립품, Spare Parts=서비스 자재
+- Spare Parts 는 리드타임이 짧아 비중이 커지면 전체 평균이 내려갑니다(구성 효과)
+- 리드타임 = 오더 발행 → 불출완료, 사이클타임 = 오더 접수 → 불출완료 경과시간
+- 근무시간 기준 하루 480분(07:00~16:00, 점심 1시간 제외), 자재담당은 1명
+- 자재담당이 통제할 수 있는 것: 불출 준비, 재고 위치, 선입선출, 적재 정리
+- 통제 못 하는 것: 오더 발행 시점·물량, 수입검사 대기, 공급사 납기
+
+이렇게 써 주세요 (마크다운 기호 없이, 존댓말, 5~7문장)
+1) 왜 이렇게 됐는지 — 구성 탓과 실제 처리속도 탓을 반드시 구분해서 말할 것
+2) 자재담당 책임인지 외부 요인인지 솔직하게
+3) 개선할 수 있다면 무엇을 하면 되는지 구체적으로 (막연한 '효율화' 금지)
+4) 손댈 게 없으면 '현상 유지가 맞습니다' 라고 분명히 말할 것 — 억지 개선안 금지
+5) 표본이 적으면 판단을 미루라고 할 것`,
           messages: [{ role: 'user', content: JSON.stringify(payload) }]
         })
       });
@@ -15815,6 +15926,34 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             </div>
 
+            {/* 표시 항목 — 누르면 그 KPI 가 숨는다. PDF 저장에도 그대로 반영된다 */}
+            <div data-kpi-toggle className="bg-white rounded-xl shadow-sm px-5 py-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm font-semibold text-gray-700 mr-2">👁 표시 항목</span>
+                {KPI_SECTIONS.map(sec => {
+                  const on = !kpiHidden.has(sec.key);
+                  return (
+                    <button key={sec.key} onClick={() => toggleKpiSection(sec.key)}
+                      title={on ? '누르면 숨김' : '누르면 표시'}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
+                        on ? 'bg-slate-700 text-white border-slate-700 hover:bg-slate-600'
+                           : 'bg-white text-gray-400 border-gray-200 line-through hover:bg-gray-50'}`}>
+                      {on ? '' : '🚫 '}{sec.label}
+                    </button>
+                  );
+                })}
+                {kpiHidden.size > 0 && (
+                  <button onClick={() => { setKpiHidden(new Set()); safeStorage.setItem('pbk_kpi_hidden', '[]'); }}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
+                    ↺ 전부 표시
+                  </button>
+                )}
+                <span className="ml-auto text-xs text-gray-400">
+                  {KPI_SECTIONS.length - kpiHidden.size} / {KPI_SECTIONS.length} 표시 중
+                </span>
+              </div>
+            </div>
+
             {/* 업로드 방법 가이드 */}
             {showKpiUploadGuide && isAdmin && (
               <div className="bg-white rounded-xl shadow-sm border p-5 space-y-4">
@@ -15998,7 +16137,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 .filter(k => k.status === 'completed' && k.leadTimeDays != null
                           && String(k.completedAt || '').startsWith(String(selectedYear)))
                 .map(k => ({ order: k.productionOrder, mat: k.materialNum, value: k.leadTimeDays,
-                             month: String(k.completedAt).slice(0, 7) }));
+                             month: String(k.completedAt).slice(0, 7),
+                             start: k.startedAt || '', urgent: !!k.isUrgent, pic: k.warehousePic || '' }));
               const kittingLTAvg = monthAvg(ltByCat.total);      // 종합등급은 전체 기준
               const kittingLTScore = calculateKpiScore('kittingLeadTime', kittingLTAvg);
 
@@ -16024,7 +16164,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 .filter(p => p.status === 'completed' && p.cycleMin
                           && String(p.completed || '').startsWith(String(selectedYear)))
                 .map(p => ({ order: p.productionOrder, mat: p.materialNum, value: p.cycleMin,
-                             month: String(p.completed).slice(0, 7) }));
+                             month: String(p.completed).slice(0, 7),
+                             start: p.startTime || p.received || '', urgent: !!p.isUrgent, pic: p.warehousePic || '' }));
               const kittingCTAvg = monthAvg(ctByCat.total);
 
               // 입고 Cycle Time 월별 집계 (migo 날짜 기준)
@@ -16208,35 +16349,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                   {/* PDF 캡처 영역 (그래프만) */}
                   <div ref={kpiContentRef} className="bg-white rounded-xl shadow-sm p-6">
-                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <h3 className="font-semibold mb-4 flex items-center gap-2">
                       📈 {selectedYear}년 월별 KPI 추이
                       {kpiHidden.size > 0 && (
-                        <span className="text-xs font-normal text-gray-400">({kpiHidden.size}개 숨김)</span>
+                        <span className="text-xs font-normal text-gray-400">({kpiHidden.size}개 숨김 — 위에서 변경)</span>
                       )}
                     </h3>
-                    {/* 표시할 항목 선택 — 누르면 그 섹션이 숨는다 (PDF 저장에도 반영) */}
-                    <div data-kpi-toggle className="flex flex-wrap items-center gap-1.5 mb-5 pb-4 border-b border-gray-100">
-                      <span className="text-xs text-gray-400 mr-1">표시 항목</span>
-                      {KPI_SECTIONS.map(sec => {
-                        const on = !kpiHidden.has(sec.key);
-                        return (
-                          <button key={sec.key} onClick={() => toggleKpiSection(sec.key)}
-                            title={on ? '누르면 숨김' : '누르면 표시'}
-                            className={`px-2.5 py-1 rounded-full text-xs font-medium border transition ${
-                              on ? 'bg-slate-700 text-white border-slate-700'
-                                 : 'bg-white text-gray-400 border-gray-200 line-through hover:bg-gray-50'}`}>
-                            {on ? '' : '🚫 '}{sec.label}
-                          </button>
-                        );
-                      })}
-                      {kpiHidden.size > 0 && (
-                        <button onClick={() => { setKpiHidden(new Set()); safeStorage.setItem('pbk_kpi_hidden', '[]'); }}
-                          className="px-2.5 py-1 rounded-full text-xs font-semibold border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100">
-                          전부 표시
-                        </button>
-                      )}
-                    </div>
-
                     {/* GR Cancel 연도별 트렌드 */}
                     {!kpiHidden.has('grTrend') && (
                     <div data-kpi-section className="mb-8">
@@ -16830,18 +16948,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           {(() => {
                             const ins = buildKpiInsight(ltByCat, {
                               unit: '일', decimals: true, target: 3, rows: ltInsightRows });
-                            if (!ins.length) return null;
+                            if (!ins.rows.length) return null;
                             return (
                               <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
                                 <div className="flex items-center justify-between mb-1.5">
                                   <div className="text-xs font-bold text-indigo-800">🤖 리드타임 분석</div>
-                                  <button onClick={() => askKpiAi('리드타임', ltByCat, '일')}
+                                  <button onClick={() => askKpiAi('리드타임', ltByCat, '일', ins)}
                                     className="text-[11px] px-2 py-0.5 rounded-full border border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50">
                                     {kpiAiLoading === '리드타임' ? '분석 중...' : 'AI 해설 더 보기'}
                                   </button>
                                 </div>
                                 <ul className="space-y-1">
-                                  {ins.map((r, i) => (
+                                  {ins.rows.map((r, i) => (
                                     <li key={i} className={`text-xs leading-relaxed flex gap-1.5 ${
                                       r.tone === 'warn' ? 'text-red-700' : r.tone === 'good' ? 'text-emerald-700'
                                       : r.tone === 'mix' ? 'text-violet-700' : 'text-gray-700'}`}>
@@ -16849,9 +16967,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                     </li>
                                   ))}
                                 </ul>
+                                {ins.verdict && (
+                                  <div className={`mt-2.5 rounded-lg border p-2.5 {
+                                      ins.verdict.level === 'act' ? 'bg-red-50 border-red-200 text-red-800'
+                                    : ins.verdict.level === 'watch' ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                    : ins.verdict.level === 'hold' ? 'bg-slate-50 border-slate-200 text-slate-700'
+                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                                    <div className="text-xs font-bold mb-0.5">
+                                      {ins.verdict.level === 'act' ? '🚨' : ins.verdict.level === 'watch' ? '👀'
+                                        : ins.verdict.level === 'hold' ? '⏸' : '👍'} 판단 — {ins.verdict.title}
+                                    </div>
+                                    <div className="text-xs leading-relaxed">{ins.verdict.text}</div>
+                                    {ins.actions.length > 0 && (
+                                      <ul className="mt-1.5 space-y-0.5">
+                                        {ins.actions.map((a, i) => (
+                                          <li key={i} className="text-xs leading-relaxed flex gap-1.5">
+                                            <span className="shrink-0 opacity-60">▸</span><span>{a}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                )}
                                 {kpiAiText['리드타임'] && (
                                   <div className="mt-2 pt-2 border-t border-indigo-200 text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                    {kpiAiText['리드타임']}
+                                    <span className="font-bold text-indigo-700">AI 해설 </span>{kpiAiText['리드타임']}
                                   </div>
                                 )}
                                 <div className="mt-1.5 text-[10px] text-gray-400">
@@ -16969,18 +17109,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           {(() => {
                             const ins = buildKpiInsight(ctByCat, {
                               unit: '분', decimals: false, target: null, rows: ctInsightRows });
-                            if (!ins.length) return null;
+                            if (!ins.rows.length) return null;
                             return (
                               <div className="mt-3 rounded-xl border border-purple-100 bg-purple-50/40 p-3">
                                 <div className="flex items-center justify-between mb-1.5">
                                   <div className="text-xs font-bold text-purple-800">🤖 사이클타임 분석</div>
-                                  <button onClick={() => askKpiAi('사이클타임', ctByCat, '분')}
+                                  <button onClick={() => askKpiAi('사이클타임', ctByCat, '분', ins)}
                                     className="text-[11px] px-2 py-0.5 rounded-full border border-purple-300 text-purple-700 bg-white hover:bg-purple-50">
                                     {kpiAiLoading === '사이클타임' ? '분석 중...' : 'AI 해설 더 보기'}
                                   </button>
                                 </div>
                                 <ul className="space-y-1">
-                                  {ins.map((r, i) => (
+                                  {ins.rows.map((r, i) => (
                                     <li key={i} className={`text-xs leading-relaxed flex gap-1.5 ${
                                       r.tone === 'warn' ? 'text-red-700' : r.tone === 'good' ? 'text-emerald-700'
                                       : r.tone === 'mix' ? 'text-violet-700' : 'text-gray-700'}`}>
@@ -16988,9 +17128,31 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                     </li>
                                   ))}
                                 </ul>
+                                {ins.verdict && (
+                                  <div className={`mt-2.5 rounded-lg border p-2.5 {
+                                      ins.verdict.level === 'act' ? 'bg-red-50 border-red-200 text-red-800'
+                                    : ins.verdict.level === 'watch' ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                    : ins.verdict.level === 'hold' ? 'bg-slate-50 border-slate-200 text-slate-700'
+                                    : 'bg-emerald-50 border-emerald-200 text-emerald-800'}`}>
+                                    <div className="text-xs font-bold mb-0.5">
+                                      {ins.verdict.level === 'act' ? '🚨' : ins.verdict.level === 'watch' ? '👀'
+                                        : ins.verdict.level === 'hold' ? '⏸' : '👍'} 판단 — {ins.verdict.title}
+                                    </div>
+                                    <div className="text-xs leading-relaxed">{ins.verdict.text}</div>
+                                    {ins.actions.length > 0 && (
+                                      <ul className="mt-1.5 space-y-0.5">
+                                        {ins.actions.map((a, i) => (
+                                          <li key={i} className="text-xs leading-relaxed flex gap-1.5">
+                                            <span className="shrink-0 opacity-60">▸</span><span>{a}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    )}
+                                  </div>
+                                )}
                                 {kpiAiText['사이클타임'] && (
                                   <div className="mt-2 pt-2 border-t border-purple-200 text-xs text-gray-700 whitespace-pre-wrap leading-relaxed">
-                                    {kpiAiText['사이클타임']}
+                                    <span className="font-bold text-purple-700">AI 해설 </span>{kpiAiText['사이클타임']}
                                   </div>
                                 )}
                                 <div className="mt-1.5 text-[10px] text-gray-400">
