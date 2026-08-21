@@ -16058,8 +16058,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <div className="bg-violet-50 rounded-lg p-4 border border-violet-200">
                     <h4 className="font-semibold text-violet-800 mb-2">Inventory Adjust Cost</h4>
                     <ol className="text-sm text-violet-700 space-y-1 list-decimal list-inside">
-                      <li>SAP MB5B → 월말 Total Stock Value</li>
-                      <li>SAP MB51 → Movement Type 711, 712</li>
+                      <li><b>SAP_Drop 폴더에 넣으면 자동 집계됩니다</b> (파일명 무관)</li>
+                      <li>SAP MB5B → 월말 기준 조회 → 엑셀 저장 → 폴더에 넣기 (Closing Value 사용)</li>
+                      <li>SAP MB51 → Movement Type 711, 712 → 엑셀 저장 → 폴더에 넣기</li>
+                      <li>비율은 <b>차이금액 ÷ 월말 재고금액</b> 으로 자동 계산됩니다</li>
+                      <li>MB51 의 Text 에 적은 사유는 차트 아래 표에 그대로 나옵니다</li>
                       <li>엑셀 파일로 정리 후 수동 업로드</li>
                     </ol>
                     <label className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-violet-500 hover:bg-violet-600 rounded-lg transition cursor-pointer text-white text-xs font-medium">
@@ -16763,6 +16766,68 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </p>
                           )}
 
+                          {/* 재고조정 사유 — MB51 Text 컬럼. 왜 늘고 줄었는지 */}
+                          {(() => {
+                            const all = kpiData.adjustReasons || {};
+                            const months = Object.keys(all).filter(m => m.startsWith(String(selectedYear))).sort();
+                            if (!months.length) return null;
+                            const fmt = (v) => (v || 0).toLocaleString();
+                            const sum = (k) => months.reduce((a, m) => a + (all[m] || []).reduce((x, r) => x + (r[k] || 0), 0), 0);
+                            const totalUp = sum('up'), totalDown = sum('down');
+                            const noText = months.reduce((a, m) => a + (all[m] || []).filter(r => r.text === '(사유 미기재)').reduce((x, r) => x + r.n, 0), 0);
+                            const allCnt = months.reduce((a, m) => a + (all[m] || []).reduce((x, r) => x + r.n, 0), 0);
+                            return (
+                              <div className="mt-5 pt-4 border-t border-gray-100">
+                                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                  <h5 className="text-sm font-bold text-gray-700">📋 재고조정 사유 (MB51 Text)</h5>
+                                  <div className="flex gap-1.5 text-xs flex-wrap">
+                                    <span className="px-2 py-1 rounded bg-blue-50 text-blue-700">증가 <b>{fmt(totalUp)}</b>원</span>
+                                    <span className="px-2 py-1 rounded bg-red-50 text-red-700">감소 <b>{fmt(totalDown)}</b>원</span>
+                                    {noText > 0 && (
+                                      <span className="px-2 py-1 rounded bg-amber-50 text-amber-700">사유 미기재 <b>{noText}</b>/{allCnt}건</span>
+                                    )}
+                                  </div>
+                                </div>
+                                {noText > 0 && (
+                                  <div className="mb-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                    ⚠️ 재고조정 {allCnt}건 중 {noText}건은 MB51 Text 가 비어 있어 사유를 알 수 없습니다.
+                                    전기 시 기안서 번호를 Text 에 남기면 여기에 자동으로 표시됩니다.
+                                  </div>
+                                )}
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="border-b bg-gray-50 text-gray-600">
+                                        <th className="px-2 py-1.5 text-left font-medium">월</th>
+                                        <th className="px-2 py-1.5 text-left font-medium">사유 (Text)</th>
+                                        <th className="px-2 py-1.5 text-center font-medium">사유코드</th>
+                                        <th className="px-2 py-1.5 text-right font-medium">증가</th>
+                                        <th className="px-2 py-1.5 text-right font-medium">감소</th>
+                                        <th className="px-2 py-1.5 text-center font-medium">건수</th>
+                                        <th className="px-2 py-1.5 text-left font-medium">자재</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {months.map(m => (all[m] || []).map((r, i) => (
+                                        <tr key={m + '-' + i} className={`border-b hover:bg-gray-50 ${r.text === '(사유 미기재)' ? 'bg-amber-50/40' : ''}`}>
+                                          <td className="px-2 py-1.5 whitespace-nowrap font-medium">{parseInt(m.slice(5, 7))}월</td>
+                                          <td className="px-2 py-1.5" title={r.text}>{r.text}</td>
+                                          <td className="px-2 py-1.5 text-center text-gray-500">{r.reason || '-'}</td>
+                                          <td className="px-2 py-1.5 text-right text-blue-700">{r.up ? fmt(r.up) : '-'}</td>
+                                          <td className="px-2 py-1.5 text-right text-red-700">{r.down ? fmt(r.down) : '-'}</td>
+                                          <td className="px-2 py-1.5 text-center">{r.n}</td>
+                                          <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{(r.mats || []).join(', ')}</td>
+                                        </tr>
+                                      )))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <div className="mt-1.5 text-[10px] text-gray-400">
+                                  711 = 재고 감소, 712 = 재고 증가. 금액은 절대값 합계이며 Adjust Cost 계산에 쓰이는 값과 같습니다.
+                                </div>
+                              </div>
+                            );
+                          })()}
                           {/* 월별 데이터 테이블 */}
                           {hasData && (
                             <div className="mt-4 overflow-x-auto">
