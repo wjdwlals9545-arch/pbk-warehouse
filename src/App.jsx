@@ -3135,19 +3135,24 @@ export default function PBKWarehouseSystem() {
   // 월말 재고금액(MB5B)은 아직 수동이라, 재고금액이 있는 달만 비율을 다시 계산한다.
   const applyKpiAuto = async () => {
     try {
-      const lastChk = parseInt(safeStorage.getItem('pbk_kpiauto_chk') || '0');
-      if (safeStorage.getItem('pbk_kpiauto_ver') && Date.now() - lastChk < 6 * 60 * 60 * 1000) return;
-      safeStorage.setItem('pbk_kpiauto_chk', String(Date.now()));
-      const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kpi_auto.json?t=${Date.now()}`);
-      if (!resp.ok) return;
-      const doc = await resp.json();
+      // 받아온 문서는 캐시해 두고 병합은 매번 다시 한다 (멱등이라 여러 번 해도 안전).
+      // 동기화 복원 뒤에도 다시 얹어야 하므로 버전 가드를 두지 않는다.
+      let doc = kpiAutoDocRef.current;
+      if (!doc) {
+        const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kpi_auto.json?t=${Date.now()}`);
+        if (!resp.ok) return;
+        doc = await resp.json();
+        kpiAutoDocRef.current = doc;
+      }
       const stamp = String(doc.updated || '');
-      if (!stamp || safeStorage.getItem('pbk_kpiauto_ver') === stamp) return;
+      if (!stamp) return;
 
       const grQty = doc.grQty || {};
       const grCancel = doc.grCancel || {};
       const variance = doc.variance || {};
-      if (!Object.keys(grQty).length && !Object.keys(variance).length) return;
+      const stock = doc.stock || {};
+      const reasons = doc.reasons || {};
+      if (!Object.keys(grQty).length && !Object.keys(variance).length && !Object.keys(stock).length) return;
 
       setKpiData(prev => {
         const next = {
@@ -3155,8 +3160,14 @@ export default function PBKWarehouseSystem() {
           grCancelQty: { ...prev.grCancelQty, ...grQty },
           inventoryAdjust: { ...prev.inventoryAdjust },
           invAdjustDetail: { ...prev.invAdjustDetail },
+          adjustReasons: { ...(prev.adjustReasons || {}), ...reasons },
         };
-        // 차이금액 반영 (재고금액은 손대지 않는다)
+        // MB5B 월말 재고금액
+        Object.entries(stock).forEach(([m, v]) => {
+          const cur = next.invAdjustDetail[m] || { stock: 0, variance: 0, ratioQ: 0, ratioCum: 0 };
+          next.invAdjustDetail[m] = { ...cur, stock: v };
+        });
+        // MB51 711/712 차이금액
         Object.entries(variance).forEach(([m, amt]) => {
           const cur = next.invAdjustDetail[m] || { stock: 0, variance: 0, ratioQ: 0, ratioCum: 0 };
           next.invAdjustDetail[m] = { ...cur, variance: amt };
@@ -3179,14 +3190,17 @@ export default function PBKWarehouseSystem() {
         safeStorage.setItem('pbk_kpi_data', JSON.stringify(next));
         return next;
       });
+      const firstTime = safeStorage.getItem('pbk_kpiauto_ver') !== stamp;
       safeStorage.setItem('pbk_kpiauto_ver', stamp);
       safeStorage.setItem('pbk_sync_local_ts', Date.now().toString());
       const gr = Object.values(grQty).reduce((a, b) => a + b, 0);
       const cn = Object.values(grCancel).reduce((a, b) => a + b, 0);
-      console.log(`[KPI Auto] MB51 반영 — GR ${gr}건 / 취소 ${cn}건 / 재고조정 ${Object.keys(variance).length}개월`);
-      if (gr || cn || Object.keys(variance).length) {
-        showToast(`📊 KPI 자동 반영 — GR ${gr}건 / 취소 ${cn}건`, 'success');
-      }
+      console.log(`[KPI Auto] 반영 — GR ${gr}건 / 취소 ${cn}건 / 재고조정 ${Object.keys(variance).length}개월 / 월말재고 ${Object.keys(stock).length}개월`);
+      const parts = [];
+      if (gr || cn) parts.push(`GR ${gr}건·취소 ${cn}건`);
+      if (Object.keys(stock).length) parts.push(`월말재고 ${Object.keys(stock).length}개월`);
+      if (Object.keys(variance).length) parts.push(`재고조정 ${Object.keys(variance).length}개월`);
+      if (parts.length && firstTime) showToast(`📊 KPI 자동 반영 — ${parts.join(' / ')}`, 'success');
     } catch (e) { console.log('[KPI Auto] skip:', e.message); }
   };
 
@@ -3323,7 +3337,8 @@ export default function PBKWarehouseSystem() {
           grCancel: { ...DEFAULT_GR_CANCEL_DATA, ...(val.grCancel || {}) },
           grCancelQty: { ...DEFAULT_GR_CANCEL_QTY, ...(val.grCancelQty || {}) },
           inventoryAdjust: val.inventoryAdjust || {},
-          invAdjustDetail: val.invAdjustDetail || {}
+          invAdjustDetail: val.invAdjustDetail || {},
+          adjustReasons: val.adjustReasons || {}
         }),
         pbk_temp_humidity_data: (val) => setTempHumidityData(prev => ({ ...HISTORICAL_TEMP_HUMIDITY_DATA, ...prev, ...val })),
         pbk_temp_humidity_recorder: setTempHumidityRecorder,
@@ -4360,14 +4375,16 @@ export default function PBKWarehouseSystem() {
         grCancel: { ...DEFAULT_GR_CANCEL_DATA, ...parsed.grCancel },
         grCancelQty: { ...DEFAULT_GR_CANCEL_QTY, ...parsed.grCancelQty },
         inventoryAdjust: parsed.inventoryAdjust || {},
-        invAdjustDetail: parsed.invAdjustDetail || {}
+        invAdjustDetail: parsed.invAdjustDetail || {},
+        adjustReasons: parsed.adjustReasons || {}
       };
     }
     return {
       grCancel: DEFAULT_GR_CANCEL_DATA,
       grCancelQty: DEFAULT_GR_CANCEL_QTY,
       inventoryAdjust: {},
-      invAdjustDetail: {}
+      invAdjustDetail: {},
+      adjustReasons: {}
     };
   });
 
@@ -4756,6 +4773,7 @@ export default function PBKWarehouseSystem() {
   };
 
   // KPI 차트 AI 해설 — 계산 분석은 항상 나오고, 키가 있으면 서술을 덧붙인다
+  const kpiAutoDocRef = useRef(null);
   const [kpiAiText, setKpiAiText] = useState({});
   const [kpiAiLoading, setKpiAiLoading] = useState(null);
   const askKpiAi = async (label, byCat, unit, ins) => {
@@ -5517,7 +5535,6 @@ export default function PBKWarehouseSystem() {
 
       // 아웃룩 감시가 올린 신규 오더/완료 자동 반영
       await applyMailEvents();
-      await applyKpiAuto();
 
       // 폰 스캔 이벤트 병합 (kitting.html → kitting_scan.json)
       await applyKittingScanEvents();
@@ -5527,6 +5544,9 @@ export default function PBKWarehouseSystem() {
     fetchGitHubDataRef.current = fetchGitHubData; // 5분 주기 재체크에서 사용
     const initLoad = async () => {
       await loadDashboardState();
+      // 동기화 복원이 KPI 를 덮어쓴 뒤에 자동 집계분을 다시 얹는다.
+      // (먼저 하면 loadDashboardState 가 원격 값으로 되돌려 버린다)
+      await applyKpiAuto();
       await fetchGitHubData();
       setSyncReady(true); // 초기 로드 완료 후 동기화 활성화
     };
@@ -5590,6 +5610,9 @@ export default function PBKWarehouseSystem() {
     const interval = setInterval(async () => {
       console.log('[DashSync] Read-only PC: auto-refreshing from GitHub...');
       await loadDashboardState();
+      // 동기화 복원이 KPI 를 덮어쓴 뒤에 자동 집계분을 다시 얹는다.
+      // (먼저 하면 loadDashboardState 가 원격 값으로 되돌려 버린다)
+      await applyKpiAuto();
       // Excel 파일도 재체크 (새 커밋 있으면 재파싱 — 폴더 감시 워크플로우 대응)
       if (fetchGitHubDataRef.current) await fetchGitHubDataRef.current();
     }, 5 * 60 * 1000); // 5분마다
