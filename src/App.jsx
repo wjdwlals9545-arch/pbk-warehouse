@@ -8445,6 +8445,21 @@ ${tableRows}</tbody>
   const saveEditKitting = () => {
     if (!editingKitting) return;
     setKittingData(prev => prev.map(k => k.id === editingKitting.id ? { ...editingKitting, edited: 1 } : k));
+    // 같은 오더의 불출 Cycle 도 함께 맞춘다. 안 그러면 키팅은 진행중인데
+    // 불출은 완료로 남아 두 탭의 숫자가 어긋난다.
+    const po = String(editingKitting.productionOrder || '');
+    if (po) {
+      setPickCycles(prev => prev.map(x => {
+        if (String(x.productionOrder) !== po) return x;
+        if (editingKitting.status === 'completed') {
+          const done = editingKitting.completedTs || x.completed;
+          const st = x.startTime || x.received;
+          return { ...x, edited: 1, status: 'completed', completed: done,
+                   cycleMin: (st && done) ? getWorkingMinutes(parseTs(st), parseTs(done)) : x.cycleMin };
+        }
+        return { ...x, edited: 1, status: editingKitting.status, completed: null, cycleMin: null };
+      }));
+    }
     setEditingKitting(null);
   };
 
@@ -22835,7 +22850,9 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                       ...editingKitting,
                       completedAt,
                       leadTimeDays,
-                      status: completedAt ? 'completed' : editingKitting.status
+                      // 날짜를 비우면 분 단위 완료시각도 같이 지운다 (안 지우면 표에 계속 남음)
+                      completedTs: completedAt ? editingKitting.completedTs : null,
+                      status: completedAt ? 'completed' : (editingKitting.status === 'completed' ? 'in-progress' : editingKitting.status)
                     });
                   }}
                 />
@@ -22845,7 +22862,17 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                 <select 
                   className="w-full border rounded-lg px-3 py-2"
                   value={editingKitting.status}
-                  onChange={e => setEditingKitting({...editingKitting, status: e.target.value})}
+                  onChange={e => {
+                    const status = e.target.value;
+                    // 완료 → 대기/진행중 으로 되돌리면 완료일·완료시각·리드타임을 지운다.
+                    // (예전에는 상태만 바뀌고 완료일이 그대로 남아 표가 어긋났음)
+                    if (status !== 'completed') {
+                      setEditingKitting({ ...editingKitting, status,
+                        completedAt: null, completedTs: null, leadTimeDays: null });
+                    } else {
+                      setEditingKitting({ ...editingKitting, status });
+                    }
+                  }}
                 >
                   <option value="waiting">대기</option>
                   <option value="in-progress">진행중</option>
