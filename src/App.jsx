@@ -5246,8 +5246,17 @@ export default function PBKWarehouseSystem() {
         const priceUnit = fnum(cell(r, 'Price Unit')) || 1;
         const unitPrice = priceUnit > 0 ? fnum(cell(r, 'Net Price')) / priceUnit : fnum(cell(r, 'Net Price'));
         const currency = String(cell(r, 'Currency') ?? 'KRW').trim();
+        // raw:true 로 읽으면 날짜가 엑셀 시리얼 숫자(46198)로 온다 → YYYY-MM-DD 로 변환
         const dRaw = cell(r, 'Delivery Date');
-        const dd = dRaw instanceof Date ? dRaw.toISOString().slice(0, 10) : String(dRaw ?? '').slice(0, 10);
+        let dd = '';
+        if (dRaw instanceof Date) {
+          dd = new Date(dRaw.getTime() - dRaw.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+        } else if (typeof dRaw === 'number' && dRaw > 20000) {
+          dd = new Date(Date.UTC(1899, 11, 30) + dRaw * 86400000).toISOString().slice(0, 10);
+        } else {
+          dd = String(dRaw ?? '').slice(0, 10);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) dd = '';
+        }
         rawItems.push({ material, description, qty, unit, poNo: curPo, supplier, unitPrice, currency });
         if (!poByMaterial[material]) {
           poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [],
@@ -20430,8 +20439,11 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                       <Upload className="w-5 h-5 text-emerald-600" />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-800">SAP Stock 업로드</p>
-                      <p className="text-xs text-gray-500">Zbindata_latest.xlsx</p>
+                      <p className="font-medium text-gray-800">SAP Stock (재고)</p>
+                      <p className="text-xs text-gray-500">
+                        SAP <b>ZBIN</b> 추출 → SAP_Drop 폴더에 넣기 (자동 판별·업로드)
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">재고 현황 · 수입검사 대기 갱신</p>
                     </div>
                   </div>
                   <label className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg cursor-pointer transition text-sm font-medium">
@@ -20490,7 +20502,10 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     </div>
                     <div>
                       <p className="font-medium text-gray-800">Open PO 업로드</p>
-                      <p className="text-xs text-gray-500">납품 예정 자재 데이터</p>
+                      <p className="text-xs text-gray-500">
+                        SAP <b>ME2N</b> 납기일정 추출 → SAP_Drop 폴더에 넣기 (자동 판별·업로드)
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Delivery 와 같은 파일 하나로 함께 갱신됩니다</p>
                     </div>
                   </div>
                   <label className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg cursor-pointer transition text-sm font-medium">
@@ -20506,7 +20521,9 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                   </label>
                 </div>
                 <p className="text-xs text-gray-400 text-center mb-2">또는 파일을 여기로 드래그하세요</p>
-                <p className="text-xs text-gray-500">필수 컬럼: Material, Order Quantity, Order Unit, Document Number</p>
+                <p className="text-xs text-gray-500">
+                  미납 = Scheduled Quantity − Quantity Received · 공급업체·납기일 함께 표시
+                </p>
               </div>
 
               {/* Delivery Data 업로드 */}
@@ -20547,7 +20564,10 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     </div>
                     <div>
                       <p className="font-medium text-gray-800">Delivery Data 업로드</p>
-                      <p className="text-xs text-gray-500">납품일정 데이터 (ME2N V열추가)</p>
+                      <p className="text-xs text-gray-500">
+                        SAP <b>ME2N</b> 납기일정 추출 → SAP_Drop 폴더에 넣기 (자동 판별·업로드)
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">Open PO 도 이 파일로 같이 갱신됩니다</p>
                     </div>
                   </div>
                   <label className="px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg cursor-pointer transition text-sm font-medium">
@@ -20578,6 +20598,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                 </div>
                 <p className="text-xs text-gray-400 text-center mb-2">또는 파일을 여기로 드래그하세요</p>
                 <p className="text-xs text-gray-500">ME2N Schedule Line 뷰 (Delivery Date 포함)</p>
+                <p className="text-[11px] text-gray-400">아래 「파일 선택」은 폴더를 못 쓸 때 쓰는 수동 방법입니다</p>
                 {deliveryLastUpdated && <p className="text-xs text-teal-500 text-right mt-1">마지막 업로드: {deliveryLastUpdated}</p>}
               </div>
 
@@ -20605,7 +20626,10 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     </div>
                     <div>
                       <p className="font-medium text-gray-800">BOM 업로드</p>
-                      <p className="text-xs text-gray-500">모델별 자재 소요량</p>
+                      <p className="text-xs text-gray-500">
+                        SAP <b>CS03 / ZBOM</b> 추출 → SAP_Drop 폴더에 넣기 (자동 판별·업로드)
+                      </p>
+                      <p className="text-[11px] text-gray-400 mt-0.5">모델별 자재 소요량 · 모델별로 병합됩니다</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
