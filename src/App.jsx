@@ -5210,10 +5210,70 @@ export default function PBKWarehouseSystem() {
     };
 
     // Excel ArrayBuffer → OpenPO 데이터 파싱 (parseOpenPOFile 로직 동일)
+    // ME2N 납기일정 레이아웃 파서.
+    // 이 내보내기는 ALV 계층 구조라 PO 번호가 상세행이 아니라 그룹 헤더 줄에 있다.
+    //   Purchasing Document 4500232466
+    //     Item 20
+    //       1 | NB | 760 | 712604 | ...
+    // 미납 = Scheduled Quantity - Quantity Received
+    // (Qty Delivered 는 이 리포트에서 항상 0이라 쓰면 4배로 부풀려진다)
+    const parseDeliveryAsOpenPO = (rowsAoA) => {
+      const header = rowsAoA.find(r => r && r.some(c => String(c).trim() === 'Scheduled Quantity'));
+      if (!header) return null;
+      const ix = {};
+      header.forEach((c, i) => { ix[String(c).trim()] = i; });
+      if (ix['Material'] === undefined || ix['Quantity Received'] === undefined) return null;
+      const cell = (r, n) => (ix[n] !== undefined && ix[n] < r.length ? r[ix[n]] : undefined);
+      const fnum = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+      const start = rowsAoA.indexOf(header) + 1;
+      const poByMaterial = {};
+      const rawItems = [];
+      let curPo = '';
+      for (let i = start; i < rowsAoA.length; i++) {
+        const r = rowsAoA[i];
+        if (!r || !r.length) continue;
+        const first = String(r[0] ?? '').trim();
+        const m = first.match(/^Purchasing Document\s+(\d+)/);
+        if (m) { curPo = m[1]; continue; }
+        if (first.startsWith('Item ')) continue;
+        const material = String(cell(r, 'Material') ?? '').trim();
+        if (!material) continue;
+        const qty = fnum(cell(r, 'Scheduled Quantity')) - fnum(cell(r, 'Quantity Received'));
+        if (qty <= 0) continue;
+        const description = String(cell(r, 'Short Text') ?? '').trim();
+        const unit = String(cell(r, 'Order Unit') ?? 'EA').trim() || 'EA';
+        const supplier = String(cell(r, 'Supplier/Supplying Plant') ?? '').trim();
+        const priceUnit = fnum(cell(r, 'Price Unit')) || 1;
+        const unitPrice = priceUnit > 0 ? fnum(cell(r, 'Net Price')) / priceUnit : fnum(cell(r, 'Net Price'));
+        const currency = String(cell(r, 'Currency') ?? 'KRW').trim();
+        const dRaw = cell(r, 'Delivery Date');
+        const dd = dRaw instanceof Date ? dRaw.toISOString().slice(0, 10) : String(dRaw ?? '').slice(0, 10);
+        rawItems.push({ material, description, qty, unit, poNo: curPo, supplier, unitPrice, currency });
+        if (!poByMaterial[material]) {
+          poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [],
+            unitPrice, currency, supplier, nextDelivery: dd, schedules: [] };
+        }
+        const agg = poByMaterial[material];
+        agg.totalQty += qty;
+        if (unitPrice > 0 && !agg.unitPrice) { agg.unitPrice = unitPrice; agg.currency = currency; }
+        if (curPo && !agg.poNumbers.includes(curPo)) agg.poNumbers.push(curPo);
+        if (supplier && !agg.supplier) agg.supplier = supplier;
+        if (dd && (!agg.nextDelivery || dd < agg.nextDelivery)) agg.nextDelivery = dd;
+        if (agg.schedules.length < 12) agg.schedules.push({ date: dd, qty, po: curPo });
+      }
+      const aggregated = Object.values(poByMaterial);
+      aggregated.forEach(a => a.schedules.sort((x, y) => String(x.date).localeCompare(String(y.date))));
+      return aggregated.length ? { aggregated, rawItems } : null;
+    };
+
     const parseOpenPOExcel = (arrayBuf) => {
       const XLSX = window.XLSX;
       const workbook = XLSX.read(arrayBuf);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      // 납기일정 레이아웃이면 그쪽으로 처리 (Still to be delivered 컬럼이 없음)
+      const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+      const viaDelivery = parseDeliveryAsOpenPO(aoa);
+      if (viaDelivery) return viaDelivery;
       const jsonData = XLSX.utils.sheet_to_json(sheet);
       const poByMaterial = {};
       const rawItems = [];
