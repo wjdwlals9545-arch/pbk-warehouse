@@ -12294,7 +12294,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           openPO: openPO ? {
                             qty: openPO.totalQty,
                             unit: openPO.unit,
-                            poNumbers: openPO.poNumbers
+                            poNumbers: openPO.poNumbers,
+                            // 납기일정 파일에서 온 정보 (없으면 그대로 미표시)
+                            nextDelivery: openPO.nextDelivery || '',
+                            supplier: openPO.supplier || ''
                           } : null,
                           urgency: possibleUnits === 0 ? 'critical' : possibleUnits < Math.ceil(threshold/2) ? 'high' : 'medium'
                         });
@@ -12404,7 +12407,22 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                       <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">
                                         ✅ {item.openPO.qty.toLocaleString()} {item.openPO.unit}
                                       </span>
-                                      {item.openPO.poNumbers?.length > 0 && (
+                                      {item.openPO.nextDelivery && (() => {
+                                        const today = new Date().toISOString().slice(0, 10);
+                                        const late = item.openPO.nextDelivery < today;
+                                        return (
+                                          <span className={`text-xs mt-0.5 font-medium ${late ? 'text-red-600' : 'text-blue-600'}`}
+                                            title={item.openPO.supplier}>
+                                            {late ? '⚠ 납기초과 ' : '📅 '}{item.openPO.nextDelivery.slice(5)}
+                                          </span>
+                                        );
+                                      })()}
+                                      {item.openPO.supplier && (
+                                        <span className="text-xs text-gray-400 mt-0.5">
+                                          {item.openPO.supplier.replace(/^\d+\s+/, '').slice(0, 16)}
+                                        </span>
+                                      )}
+                                      {!item.openPO.nextDelivery && item.openPO.poNumbers?.length > 0 && (
                                         <span className="text-xs text-gray-400 mt-0.5">
                                           PO: {item.openPO.poNumbers[0]}
                                         </span>
@@ -21882,7 +21900,15 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                           <td className="px-3 py-2 text-center text-xs">{s.models.join(', ')}</td>
                           <td className="px-3 py-2 text-center text-xs">
                             {s.openPO ? (
-                              <span className="text-green-600">✅ {s.openPO.qty}EA</span>
+                              <div className="flex flex-col items-center leading-tight">
+                                <span className="text-green-600">✅ {s.openPO.qty}EA</span>
+                                {s.openPO.nextDelivery && (
+                                  <span className={s.openPO.nextDelivery < new Date().toISOString().slice(0, 10)
+                                    ? 'text-red-600' : 'text-blue-600'} title={s.openPO.supplier || ''}>
+                                    {s.openPO.nextDelivery.slice(5)}
+                                  </span>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-red-500">❌ 없음</span>
                             )}
