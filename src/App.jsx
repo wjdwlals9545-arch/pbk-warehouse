@@ -20627,7 +20627,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     <div>
                       <p className="font-medium text-gray-800">BOM 업로드</p>
                       <p className="text-xs text-gray-500">
-                        SAP <b>CS03 / ZBOM</b> 추출 → SAP_Drop 폴더에 넣기 (자동 판별·업로드)
+                        SAP <b>CS12</b> 추출 → SAP_Drop 폴더에 넣기 (자동 판별·업로드)
                       </p>
                       <p className="text-[11px] text-gray-400 mt-0.5">모델별 자재 소요량 · 모델별로 병합됩니다</p>
                     </div>
