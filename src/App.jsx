@@ -4753,10 +4753,17 @@ export default function PBKWarehouseSystem() {
   };
 
   // ── 탭 순서 관리 (Admin drag-and-drop) ──
-  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','kitting','pick','kpi','analysis','locate','layout','view3d','temphumidity','testlog','todo'];
+  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','inventory','kitting','pick','kpi','analysis','locate','layout','view3d','temphumidity','testlog','todo'];
   const [tabOrder, setTabOrder] = useState(() => {
-    try { const saved = JSON.parse(safeStorage.getItem('pbk_tab_order')); return Array.isArray(saved) ? saved : DEFAULT_TAB_ORDER; }
-    catch { return DEFAULT_TAB_ORDER; }
+    // 예전에 저장된 순서에 새 탭이 빠져 있으면 화면에서 아예 사라진다.
+    // (Inventory 가 설정에는 보이는데 탭 바에 없던 원인)
+    // 빠진 것은 기본 순서 위치를 참고해 뒤에 붙여 준다.
+    try {
+      const saved = JSON.parse(safeStorage.getItem('pbk_tab_order'));
+      if (!Array.isArray(saved) || !saved.length) return DEFAULT_TAB_ORDER;
+      const missing = DEFAULT_TAB_ORDER.filter(id => !saved.includes(id));
+      return missing.length ? [...saved, ...missing] : saved;
+    } catch { return DEFAULT_TAB_ORDER; }
   });
   const moveTab = (idx, dir) => {
     const target = idx + dir;
