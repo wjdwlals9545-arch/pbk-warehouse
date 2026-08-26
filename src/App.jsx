@@ -2277,6 +2277,9 @@ export default function PBKWarehouseSystem() {
     } catch { return 'migo'; }
   });
   const [searchTerm, setSearchTerm] = useState('');
+  // 자재 → 협력업체 매핑 (supplier_map.json, 감시 프로그램이 MB51+납기일정에서 생성)
+  const [supplierMap, setSupplierMap] = useState(() => safeParse(safeStorage.getItem('pbk_supplier_map'), { materials: {}, names: {} }));
+  const [inventorySupplier, setInventorySupplier] = useState('all');
   const [selectedZone, setSelectedZone] = useState('all');
 
   // 모바일 메뉴
@@ -3203,6 +3206,34 @@ export default function PBKWarehouseSystem() {
       if (parts.length && firstTime) showToast(`📊 KPI 자동 반영 — ${parts.join(' / ')}`, 'success');
     } catch (e) { console.log('[KPI Auto] skip:', e.message); }
   };
+
+  // 자재 → 협력업체 매핑을 받아 둔다. 하루 한 번만 확인한다.
+  const loadSupplierMap = async () => {
+    try {
+      const lastChk = parseInt(safeStorage.getItem('pbk_supmap_chk') || '0');
+      if (safeStorage.getItem('pbk_supplier_map') && Date.now() - lastChk < 24 * 60 * 60 * 1000) return;
+      safeStorage.setItem('pbk_supmap_chk', String(Date.now()));
+      const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/supplier_map.json?t=${Date.now()}`);
+      if (!resp.ok) return;
+      const doc = await resp.json();
+      if (!doc || !doc.materials || !Object.keys(doc.materials).length) return;
+      const next = { materials: doc.materials, names: doc.names || {}, updated: doc.updated };
+      safeStorage.setItem('pbk_supplier_map', JSON.stringify(next));
+      setSupplierMap(next);
+      console.log(`[Supplier] 업체 매핑 ${Object.keys(doc.materials).length}품번 / ${Object.keys(doc.names || {}).length}업체`);
+    } catch (e) { console.log('[Supplier] skip:', e.message); }
+  };
+
+  // 재고 자재의 업체 구분 — 'all' / 업체코드 / 'inhouse'(사내제작) / 'none'(미확인)
+  const supplierOf = (material) => {
+    const m = String(material || '').trim();
+    const code = supplierMap.materials?.[m];
+    if (code) return code;
+    return /^(KB|SP|AS|A2)/i.test(m) ? 'inhouse' : 'none';
+  };
+  const supplierLabel = (code) =>
+    code === 'inhouse' ? '사내제작' : code === 'none' ? '미확인'
+    : (supplierMap.names?.[code] || code);
 
   // kitting_scan.json의 start/end 이벤트를 Kitting 현황 + 불출 Cycle에 반영.
   // 적용한 이벤트 id는 pbk_scan_applied에 기록 (멱등). 주문이 아직 없는 이벤트는
@@ -5616,6 +5647,7 @@ export default function PBKWarehouseSystem() {
       // 동기화 복원이 KPI 를 덮어쓴 뒤에 자동 집계분을 다시 얹는다.
       // (먼저 하면 loadDashboardState 가 원격 값으로 되돌려 버린다)
       await applyKpiAuto();
+      await loadSupplierMap();
       await fetchGitHubData();
       setSyncReady(true); // 초기 로드 완료 후 동기화 활성화
     };
@@ -5682,6 +5714,7 @@ export default function PBKWarehouseSystem() {
       // 동기화 복원이 KPI 를 덮어쓴 뒤에 자동 집계분을 다시 얹는다.
       // (먼저 하면 loadDashboardState 가 원격 값으로 되돌려 버린다)
       await applyKpiAuto();
+      await loadSupplierMap();
       // Excel 파일도 재체크 (새 커밋 있으면 재파싱 — 폴더 감시 워크플로우 대응)
       if (fetchGitHubDataRef.current) await fetchGitHubDataRef.current();
     }, 5 * 60 * 1000); // 5분마다
@@ -10857,6 +10890,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 dashboard: { label: 'Production', icon: BarChart3 },
                 delivery: { label: 'Delivery', icon: Truck },
                 receive: { label: 'Receiving', icon: Database },
+                inventory: { label: 'Inventory', icon: Archive },
                 kitting: { label: 'Kitting L/T', icon: Package },
                 pick: { label: 'Kitting Cycle', icon: Clock },
                 kpi: { label: 'KPI', icon: TrendingUp },
@@ -13542,7 +13576,63 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </button>
                 </div>
               </div>
-              <p className="text-xs text-gray-500 mt-2">총 {inventoryData.length}개</p>
+              {/* 협력업체 필터 — 누르면 그 업체 자재만. 매핑은 MB51 입고 + ME2N 납기일정에서 나온다 */}
+              {(() => {
+                const counts = {};
+                inventoryData.forEach(i => {
+                  const c = supplierOf(i.material);
+                  if (!counts[c]) counts[c] = { n: 0, qty: 0 };
+                  counts[c].n++; counts[c].qty += (i.stock || 0);
+                });
+                const list = Object.entries(counts)
+                  .filter(([c]) => c !== 'inhouse' && c !== 'none')
+                  .sort((a, b) => b[1].n - a[1].n);
+                if (!list.length) return null;
+                const chip = (key, label, n, active) => (
+                  <button key={key} onClick={() => setInventorySupplier(active ? 'all' : key)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition whitespace-nowrap ${
+                      active ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                             : 'bg-white text-gray-600 border-gray-300 hover:bg-emerald-50 hover:border-emerald-300'}`}>
+                    {label} <span className={active ? 'text-emerald-100' : 'text-gray-400'}>{n}</span>
+                  </button>
+                );
+                return (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-xs text-gray-400">협력업체</span>
+                      {supplierMap.updated && <span className="text-[10px] text-gray-300">{String(supplierMap.updated).slice(0, 12)} 기준</span>}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button onClick={() => setInventorySupplier('all')}
+                        className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition ${
+                          inventorySupplier === 'all' ? 'bg-gray-700 text-white border-gray-700'
+                                                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                        전체 <span className={inventorySupplier === 'all' ? 'text-gray-300' : 'text-gray-400'}>{inventoryData.length}</span>
+                      </button>
+                      {list.map(([c, v]) => chip(c, supplierLabel(c), v.n, inventorySupplier === c))}
+                      {counts['inhouse'] && chip('inhouse', '사내제작', counts['inhouse'].n, inventorySupplier === 'inhouse')}
+                      {counts['none'] && chip('none', '미확인', counts['none'].n, inventorySupplier === 'none')}
+                    </div>
+                    {inventorySupplier !== 'all' && (() => {
+                      const v = counts[inventorySupplier];
+                      if (!v) return null;
+                      return (
+                        <div className="mt-2 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-800 text-xs">
+                          <b>{supplierLabel(inventorySupplier)}</b>
+                          {inventorySupplier !== 'inhouse' && inventorySupplier !== 'none' && (
+                            <span className="ml-1 text-emerald-600">({inventorySupplier})</span>
+                          )}
+                          <span className="ml-2">재고 <b>{v.n}</b>품번 · <b>{v.qty.toLocaleString()}</b>개</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+              <p className="text-xs text-gray-500 mt-2">
+                총 {inventoryData.length}개
+                {inventorySupplier !== 'all' && ` · ${supplierLabel(inventorySupplier)} ${inventoryData.filter(i => supplierOf(i.material) === inventorySupplier).length}개 표시`}
+              </p>
             </div>
 
             {/* PC: 테이블 뷰 */}
@@ -13566,6 +13656,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </thead>
                   <tbody className="divide-y">
                     {inventoryData
+                      .filter(i => inventorySupplier === 'all' || supplierOf(i.material) === inventorySupplier)
                       .filter(i => !searchTerm || 
                         i.material.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         i.description.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -13602,6 +13693,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {/* 모바일: 카드 뷰 */}
             <div className="md:hidden space-y-3">
               {inventoryData
+                .filter(i => inventorySupplier === 'all' || supplierOf(i.material) === inventorySupplier)
                 .filter(i => !searchTerm || 
                   i.material.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   i.description.toLowerCase().includes(searchTerm.toLowerCase()))
