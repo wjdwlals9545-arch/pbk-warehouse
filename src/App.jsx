@@ -2281,7 +2281,7 @@ export default function PBKWarehouseSystem() {
   const [supplierMap, setSupplierMap] = useState(() => safeParse(safeStorage.getItem('pbk_supplier_map'), { materials: {}, names: {} }));
   const [inventorySupplier, setInventorySupplier] = useState('all');
   const [supplierSearch, setSupplierSearch] = useState('');
-  const [supplierExpanded, setSupplierExpanded] = useState(false);
+  const [supplierOpen, setSupplierOpen] = useState(false);
   const [selectedZone, setSelectedZone] = useState('all');
 
   // 모바일 메뉴
@@ -13585,7 +13585,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </button>
                 </div>
               </div>
-              {/* 협력업체 필터 — 재고·미납·납기를 한 곳에서. 매핑은 MB51 입고 + ME2N 납기일정 */}
+              {/* 협력업체 — 접히는 선택 목록. 50곳을 칩으로 다 늘어놓으면 화면을 잡아먹는다 */}
               {(() => {
                 const counts = {};
                 inventoryData.forEach(i => {
@@ -13601,81 +13601,106 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   .sort((a, b) => b[1].n - a[1].n);
                 if (!vendors.length) return null;
 
-                const q = (supplierSearch || '').trim().toLowerCase();
-                const shown = q
-                  ? vendors.filter(([c]) => (supplierLabel(c) + ' ' + c).toLowerCase().includes(q))
-                  : (supplierExpanded ? vendors : vendors.slice(0, 8));
-                const maxN = vendors[0][1].n || 1;
                 const sel = inventorySupplier;
+                const q = (supplierSearch || '').trim().toLowerCase();
+                const filtered = q
+                  ? vendors.filter(([c]) => (supplierLabel(c) + ' ' + c).toLowerCase().includes(q))
+                  : vendors;
+                const maxN = vendors[0][1].n || 1;
+                const named = (c) => supplierMap.names?.[c];
 
-                // 선택한 업체의 미납·납기 (Open PO 연계)
+                // 선택 요약용 — Open PO 를 업체코드로 연결
                 const poRows = (openPOData || []).filter(x => {
                   if (sel === 'all' || sel === 'inhouse' || sel === 'none') return false;
-                  const code = String(x.supplier || '').trim().split(/\s+/)[0];
-                  return code === sel;
+                  return String(x.supplier || '').trim().split(/\s+/)[0] === sel;
                 });
                 const today = new Date().toISOString().slice(0, 10);
                 const late = poRows.filter(x => x.nextDelivery && x.nextDelivery < today);
                 const next = poRows.filter(x => x.nextDelivery && x.nextDelivery >= today)
                   .sort((a, b) => String(a.nextDelivery).localeCompare(String(b.nextDelivery)))[0];
 
-                const Chip = ({ id, label, n, tone }) => {
+                const pick = (id) => { setInventorySupplier(id); setSupplierOpen(false); setSupplierSearch(''); };
+                const Row = ({ id, label, code, n, muted }) => {
                   const on = sel === id;
-                  const base = tone === 'gray'
-                    ? (on ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300')
-                    : (on ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-200'
-                          : 'bg-white text-gray-700 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/50');
                   return (
-                    <button key={id} onClick={() => setInventorySupplier(on ? 'all' : id)}
-                      className={`group relative overflow-hidden px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${base}`}>
-                      {tone !== 'gray' && !on && (
-                        <span className="absolute left-0 bottom-0 h-0.5 bg-emerald-400/70 transition-all"
-                          style={{ width: `${Math.round((n / maxN) * 100)}%` }} />
-                      )}
-                      <span className="relative">{label}</span>
-                      <span className={`relative ml-1.5 tabular-nums ${on ? 'text-white/70' : 'text-gray-400'}`}>{n}</span>
+                    <button key={id} onClick={() => pick(id)}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs transition ${
+                        on ? 'bg-emerald-50 text-emerald-900 font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}>
+                      <span className="flex-1 truncate">
+                        {label}
+                        {code && <span className="ml-1.5 text-[10px] text-gray-400 font-mono">{code}</span>}
+                      </span>
+                      <span className="w-14 h-1 rounded-full bg-gray-100 overflow-hidden shrink-0">
+                        <span className={`block h-full ${muted ? 'bg-gray-300' : 'bg-emerald-400'}`}
+                          style={{ width: `${Math.max(4, Math.round((n / maxN) * 100))}%` }} />
+                      </span>
+                      <span className={`w-10 text-right tabular-nums ${on ? 'text-emerald-700' : 'text-gray-400'}`}>{n}</span>
+                      {on && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
                     </button>
                   );
                 };
 
+                const selLabel = sel === 'all' ? '전체' : supplierLabel(sel);
+                const selN = sel === 'all' ? inventoryData.length : (counts[sel]?.n || 0);
+
                 return (
                   <div className="mt-3 pt-3 border-t border-gray-100">
-                    <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-semibold text-gray-600">🏭 협력업체</span>
-                        <span className="text-[11px] text-gray-400">{vendors.length}곳</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <input type="text" value={supplierSearch} onChange={e => setSupplierSearch(e.target.value)}
-                          placeholder="업체 검색"
-                          className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-32 focus:w-44 transition-all focus:outline-none focus:border-emerald-400" />
-                        {supplierMap.updated && (
-                          <span className="text-[10px] text-gray-300 hidden sm:inline">{String(supplierMap.updated).slice(0, 12)}</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold text-gray-600">🏭 협력업체</span>
+                      {/* 접힌 상태 — 한 줄만 차지 */}
+                      <div className="relative">
+                        <button onClick={() => setSupplierOpen(v => !v)}
+                          className={`flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-lg text-xs font-medium border transition ${
+                            sel === 'all' ? 'bg-white text-gray-700 border-gray-300 hover:border-emerald-400'
+                                          : 'bg-emerald-600 text-white border-emerald-600 shadow-sm'}`}>
+                          <span>{selLabel}</span>
+                          <span className={sel === 'all' ? 'text-gray-400' : 'text-emerald-100'}>{selN}품번</span>
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${supplierOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {supplierOpen && (
+                          <>
+                            <div className="fixed inset-0 z-20" onClick={() => setSupplierOpen(false)} />
+                            <div className="absolute left-0 mt-1 w-[300px] z-30 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                              <div className="p-2 border-b border-gray-100">
+                                <input type="text" autoFocus value={supplierSearch}
+                                  onChange={e => setSupplierSearch(e.target.value)}
+                                  placeholder={`업체 검색 (${vendors.length}곳)`}
+                                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-emerald-400" />
+                              </div>
+                              <div className="max-h-72 overflow-y-auto">
+                                {!q && <Row id="all" label="전체" n={inventoryData.length} muted />}
+                                {filtered.map(([c, v]) => (
+                                  <Row key={c} id={c} label={named(c) || c} code={named(c) ? c : null} n={v.n} />
+                                ))}
+                                {!filtered.length && (
+                                  <p className="px-3 py-4 text-center text-xs text-gray-400">맞는 업체가 없습니다</p>
+                                )}
+                                {!q && (counts['inhouse'] || counts['none']) && (
+                                  <div className="border-t border-gray-100 mt-1 pt-1">
+                                    {counts['inhouse'] && <Row id="inhouse" label="사내제작" n={counts['inhouse'].n} muted />}
+                                    {counts['none'] && <Row id="none" label="업체 미확인" n={counts['none'].n} muted />}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5">
-                      <Chip id="all" label="전체" n={inventoryData.length} tone="gray" />
-                      {shown.map(([c, v]) => <Chip key={c} id={c} label={supplierLabel(c)} n={v.n} />)}
-                      {!q && !supplierExpanded && vendors.length > 8 && (
-                        <button onClick={() => setSupplierExpanded(true)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-dashed border-gray-300 text-gray-500 hover:border-emerald-400 hover:text-emerald-600 transition">
-                          + {vendors.length - 8}곳 더
+                      {/* 자주 쓰는 상위 5곳만 바로 누를 수 있게 */}
+                      {!supplierOpen && vendors.slice(0, 5).map(([c, v]) => (
+                        <button key={c} onClick={() => pick(sel === c ? 'all' : c)}
+                          className={`px-2 py-1 rounded-md text-[11px] transition ${
+                            sel === c ? 'bg-emerald-600 text-white'
+                                      : 'bg-gray-50 text-gray-500 hover:bg-emerald-50 hover:text-emerald-700'}`}>
+                          {(named(c) || c).split(/\s+/)[0]} <span className="opacity-60">{v.n}</span>
                         </button>
+                      ))}
+                      {supplierMap.updated && (
+                        <span className="ml-auto text-[10px] text-gray-300 hidden lg:inline">
+                          {vendors.length}곳 · {String(supplierMap.updated).slice(0, 12)}
+                        </span>
                       )}
-                      {!q && supplierExpanded && (
-                        <button onClick={() => setSupplierExpanded(false)}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-dashed border-gray-300 text-gray-500 hover:border-gray-400 transition">
-                          접기
-                        </button>
-                      )}
-                      {counts['inhouse'] && <Chip id="inhouse" label="사내제작" n={counts['inhouse'].n} tone="gray" />}
-                      {counts['none'] && <Chip id="none" label="미확인" n={counts['none'].n} tone="gray" />}
                     </div>
-                    {q && !shown.length && (
-                      <p className="mt-2 text-xs text-gray-400">"{supplierSearch}" 와 맞는 업체가 없습니다</p>
-                    )}
 
                     {/* 선택 요약 */}
                     {sel !== 'all' && counts[sel] && (() => {
@@ -13683,21 +13708,21 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       const racks = Object.entries(v.racks).sort((a, b) => b[1] - a[1]).slice(0, 5);
                       const isVendor = sel !== 'inhouse' && sel !== 'none';
                       const Stat = ({ label, value, sub, tone }) => (
-                        <div className="flex-1 min-w-[86px]">
+                        <div className="flex-1 min-w-[84px]">
                           <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
-                          <div className={`text-lg font-bold leading-none tabular-nums ${tone || 'text-gray-800'}`}>{value}</div>
+                          <div className={`text-base font-bold leading-none tabular-nums ${tone || 'text-gray-800'}`}>{value}</div>
                           {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
                         </div>
                       );
                       return (
-                        <div className="mt-3 rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50/70 to-white p-3.5">
-                          <div className="flex items-baseline gap-2 mb-3">
+                        <div className="mt-2.5 rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50/60 to-white p-3">
+                          <div className="flex items-baseline gap-2 mb-2.5">
                             <span className="text-sm font-bold text-emerald-900">{supplierLabel(sel)}</span>
-                            {isVendor && <span className="text-[11px] text-emerald-600 font-mono">{sel}</span>}
+                            {isVendor && named(sel) && <span className="text-[11px] text-emerald-600 font-mono">{sel}</span>}
                             <button onClick={() => setInventorySupplier('all')}
                               className="ml-auto text-[11px] text-gray-400 hover:text-gray-600">✕ 해제</button>
                           </div>
-                          <div className="flex flex-wrap gap-4">
+                          <div className="flex flex-wrap gap-3">
                             <Stat label="재고" value={`${v.n}품번`} sub={`${v.qty.toLocaleString()}개`} />
                             {isVendor && (
                               <>
@@ -13707,12 +13732,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   tone={late.length ? 'text-red-600' : 'text-gray-800'}
                                   sub={late.length ? String(late[0].nextDelivery).slice(5) + ' 외' : '없음'} />
                                 <Stat label="다음 입고" value={next ? String(next.nextDelivery).slice(5) : '—'}
-                                  sub={next ? `${next.material}` : '예정 없음'} />
+                                  sub={next ? next.material : '예정 없음'} />
                               </>
                             )}
                           </div>
                           {racks.length > 0 && (
-                            <div className="mt-3 pt-2.5 border-t border-emerald-100/70 flex items-center gap-1.5 flex-wrap">
+                            <div className="mt-2.5 pt-2 border-t border-emerald-100/70 flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] text-gray-400 mr-0.5">위치</span>
                               {racks.map(([r, n]) => (
                                 <span key={r} className="px-1.5 py-0.5 rounded bg-white border border-emerald-100 text-[11px] text-gray-600">
