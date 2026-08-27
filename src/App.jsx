@@ -13689,7 +13689,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             <span className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded text-xs">{item.bin}</span>
                           </td>
                           <td className="px-4 py-2 text-center text-xs">{getRackId(item.bin)}</td>
-                          <td className="px-4 py-2 text-center font-medium">{item.stock?.toLocaleString()}</td>
+                          <td className="px-4 py-2 text-center font-medium">
+                            {item.stock?.toLocaleString()}
+                            {/* 단위를 안 보여주면 MM·MG 자재를 EA 로 오해한다 (712055 는 124,495MM = 약 124m) */}
+                            {item.unit && item.unit.toUpperCase() !== 'EA' ? (
+                              <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">{item.unit}</span>
+                            ) : (
+                              <span className="ml-1 text-[10px] text-gray-400">{item.unit || 'EA'}</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                   </tbody>
