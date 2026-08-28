@@ -3227,15 +3227,28 @@ export default function PBKWarehouseSystem() {
   };
 
   // 재고 자재의 업체 구분 — 'all' / 업체코드 / 'inhouse'(사내제작) / 'none'(미확인)
+  // 반제품은 전부 S1 에 보관한다 (책임님 확인). 품번 접두어로는 구분되지 않는다 —
+  // KB0802 Pulley ASM 처럼 ASM 이어도 S1 밖이면 하청 구매품이다.
+  const s1Materials = useMemo(() => new Set(
+    (inventoryData || []).filter(i => String(i.bin || '').toUpperCase().startsWith('S1'))
+      .map(i => String(i.material).trim())
+  ), [inventoryData]);
+
+  // 자재 구분 — 장비 / 반제품 / Spare Parts / 업체코드 / 미확인
+  //  장비        : 완제품 7종만 (AS 로 시작해도 나머지는 Spare Parts)
+  //  반제품      : S1 보관. 하청 발주분이 구매이력에 있어도 반제품으로 본다
+  //  Spare Parts : SP* 전체 + 장비가 아닌 AS*
+  //  그 외        : 원자재 → 구매업체 매핑
   const supplierOf = (material) => {
     const m = String(material || '').trim();
-    const code = supplierMap.materials?.[m];
-    if (code) return code;
-    return /^(KB|SP|AS|A2)/i.test(m) ? 'inhouse' : 'none';
+    const U = m.toUpperCase();
+    if (KPI_MODEL_MATERIALS.has(U)) return 'equip';
+    if (s1Materials.has(m)) return 'subcom';
+    if (/^(SP|AS)/i.test(m)) return 'spare';
+    return supplierMap.materials?.[m] || 'none';
   };
-  const supplierLabel = (code) =>
-    code === 'inhouse' ? '사내제작' : code === 'none' ? '미확인'
-    : (supplierMap.names?.[code] || code);
+  const SUPPLIER_GROUPS = { equip: '장비', subcom: '반제품', spare: 'Spare Parts', none: '업체 미확인' };
+  const supplierLabel = (code) => SUPPLIER_GROUPS[code] || supplierMap.names?.[code] || code;
 
   // kitting_scan.json의 start/end 이벤트를 Kitting 현황 + 불출 Cycle에 반영.
   // 적용한 이벤트 id는 pbk_scan_applied에 기록 (멱등). 주문이 아직 없는 이벤트는
@@ -13597,7 +13610,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   counts[c].racks[rack] = (counts[c].racks[rack] || 0) + 1;
                 });
                 const vendors = Object.entries(counts)
-                  .filter(([c]) => c !== 'inhouse' && c !== 'none')
+                  .filter(([c]) => !SUPPLIER_GROUPS[c])
                   .sort((a, b) => b[1].n - a[1].n);
                 if (!vendors.length) return null;
 
@@ -13611,7 +13624,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                 // 선택 요약용 — Open PO 를 업체코드로 연결
                 const poRows = (openPOData || []).filter(x => {
-                  if (sel === 'all' || sel === 'inhouse' || sel === 'none') return false;
+                  if (sel === 'all' || SUPPLIER_GROUPS[sel]) return false;
                   return String(x.supplier || '').trim().split(/\s+/)[0] === sel;
                 });
                 const today = new Date().toISOString().slice(0, 10);
@@ -13675,10 +13688,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {!filtered.length && (
                                   <p className="px-3 py-4 text-center text-xs text-gray-400">맞는 업체가 없습니다</p>
                                 )}
-                                {!q && (counts['inhouse'] || counts['none']) && (
+                                {!q && Object.keys(SUPPLIER_GROUPS).some(k => counts[k]) && (
                                   <div className="border-t border-gray-100 mt-1 pt-1">
-                                    {counts['inhouse'] && <Row id="inhouse" label="사내제작" n={counts['inhouse'].n} muted />}
-                                    {counts['none'] && <Row id="none" label="업체 미확인" n={counts['none'].n} muted />}
+                                    {Object.entries(SUPPLIER_GROUPS).map(([k, label]) =>
+                                      counts[k] ? <Row key={k} id={k} label={label} n={counts[k].n} muted /> : null)}
                                   </div>
                                 )}
                               </div>
@@ -13706,7 +13719,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     {sel !== 'all' && counts[sel] && (() => {
                       const v = counts[sel];
                       const racks = Object.entries(v.racks).sort((a, b) => b[1] - a[1]).slice(0, 5);
-                      const isVendor = sel !== 'inhouse' && sel !== 'none';
+                      const isVendor = !SUPPLIER_GROUPS[sel];
                       const Stat = ({ label, value, sub, tone }) => (
                         <div className="flex-1 min-w-[84px]">
                           <div className="text-[10px] text-gray-400 mb-0.5">{label}</div>
