@@ -13735,9 +13735,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           <div className="flex items-baseline gap-2 mb-2.5">
                             <span className="text-sm font-bold text-emerald-900">{supplierLabel(sel)}</span>
                             {isVendor && named(sel) && <span className="text-[11px] text-emerald-600 font-mono">{sel}</span>}
+                            {supplierMap.notes?.[sel] && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold">
+                                거래 종료
+                              </span>
+                            )}
                             <button onClick={() => setInventorySupplier('all')}
                               className="ml-auto text-[11px] text-gray-400 hover:text-gray-600">✕ 해제</button>
                           </div>
+                          {/* 왜 거래가 끝났는데 재고가 남아 있는지 — 안 적어두면 매번 다시 묻게 된다 */}
+                          {supplierMap.notes?.[sel] && (
+                            <p className="-mt-1 mb-2.5 text-[11px] leading-snug text-amber-700 bg-amber-50/70 border border-amber-100 rounded-lg px-2 py-1.5">
+                              {supplierMap.notes[sel]}
+                            </p>
+                          )}
                           <div className="flex flex-wrap gap-3">
                             <Stat label="재고" value={`${v.n}품번`} sub={`${v.qty.toLocaleString()}개`} />
                             {isVendor && (
