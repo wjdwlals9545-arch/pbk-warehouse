@@ -5497,7 +5497,10 @@ export default function PBKWarehouseSystem() {
 
         // 2. Excel 시도 (OpenPO) — epoch 기반 비교
         if (!poLoaded) {
-          const poInfo = await getFileCommitInfo('public/data/OpenPOData_latest.xlsx');
+          // Open PO 와 Delivery 는 같은 ME2N 납기일정 파일 하나를 쓴다.
+          // (예전엔 OpenPOData_latest.xlsx 를 따로 뒀는데, 같은 원본을 두 이름으로
+          //  복사하다 보니 서로 덮어쓰는 사고가 났다)
+          const poInfo = await getFileCommitInfo('public/data/DeliveryData_latest.xlsx');
           const savedPoEpoch = parseInt(safeStorage.getItem('pbk_po_epoch') || '0');
           const poNewer = poInfo.epoch > savedPoEpoch;
           // 과거 버전이 저장해둔 대용량 원본 블롭 제거 (쿼터 확보)
@@ -5507,7 +5510,7 @@ export default function PBKWarehouseSystem() {
           const forcePoReparse = parseVersionChanged || needRawItems;
           console.log(`[OpenPO] epoch비교: GitHub=${poInfo.epoch}(${poInfo.display}), saved=${savedPoEpoch}, newer=${poNewer}, forceReparse=${forcePoReparse}, hasLocal=${!!safeStorage.getItem('pbk_open_po')}`);
           if (poNewer || forcePoReparse || !safeStorage.getItem('pbk_open_po')) try {
-            const xlsResp = await fetch(`${BASE}/OpenPOData_latest.xlsx?t=${Date.now()}`);
+            const xlsResp = await fetch(`${BASE}/DeliveryData_latest.xlsx?t=${Date.now()}`);
             if (xlsResp.ok) {
               await ensureXLSX();
               const buf = await xlsResp.arrayBuffer();
