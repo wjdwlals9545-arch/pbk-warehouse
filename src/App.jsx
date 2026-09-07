@@ -2381,6 +2381,12 @@ export default function PBKWarehouseSystem() {
   const [qStockStatusFilter, setQStockStatusFilter] = useState('all');
   const [qStockSortKey, setQStockSortKey] = useState('daysElapsed'); // 'grDate' | 'daysElapsed' | 'warehouseStock'
   const [qStockSortDir, setQStockSortDir] = useState('desc'); // 'asc' | 'desc'
+  // 납품 예정 목록의 업체·PO 필터와 정렬.
+  // 정렬은 같은 납품일 안에서만 일어난다 — 날짜 순서를 흩뜨리면 납품 일정이 아니게 된다.
+  const [delFilterSupplier, setDelFilterSupplier] = useState(null);
+  const [delFilterPO, setDelFilterPO] = useState(null);
+  const [delSortKey, setDelSortKey] = useState('none'); // 'none'|'material'|'supplier'|'remain'|'stock'
+  const [delSortDir, setDelSortDir] = useState('desc');
   const [rackSummary, setRackSummary] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(() => safeStorage.getItem('pbk_last_updated') || null);
   const [isLoading, setIsLoading] = useState(false);
@@ -15134,72 +15140,223 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               </div>
             )}
 
-            {/* 2주 납품 예정 */}
-            <div className="bg-white rounded-xl border shadow-sm">
-              <div className="p-4 border-b">
-                <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                  <Truck className="w-4 h-4 text-teal-600" /> 납품 예정 ({twoWeekStart} ~ {twoWeekEnd})
-                  <span className="text-sm font-normal text-gray-500 ml-2">{upcomingDeliveries.length}건</span>
-                </h3>
-              </div>
-              {openPORawItems.length === 0 ? (
-                <div className="p-8 text-center text-gray-400">
-                  <Truck className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>Open PO 데이터가 없습니다.</p>
-                  <p className="text-xs mt-1">데이터 관리에서 Open PO Excel을 업로드해주세요.</p>
-                </div>
-              ) : sortedDates.length === 0 ? (
-                <div className="p-6 text-center text-gray-400">
-                  <p>2주 이내 납품 예정 품목이 없습니다.</p>
-                </div>
-              ) : (
-                <div className="divide-y">
-                  {sortedDates.map(date => {
-                    const items = byDate[date];
-                    const isToday = date === todayStr;
-                    const dateObj = new Date(date + 'T00:00:00');
-                    const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
-                    return (
-                      <div key={date} className={`${isToday ? 'bg-teal-50/50' : ''}`}>
-                        <div className={`px-4 py-2 flex items-center gap-2 ${isToday ? 'bg-teal-100' : 'bg-gray-50'}`}>
-                          <Calendar className="w-3.5 h-3.5 text-gray-500" />
-                          <span className={`text-sm font-bold ${isToday ? 'text-teal-700' : 'text-gray-700'}`}>
-                            {date} ({dayName}) {isToday && <span className="text-xs bg-teal-600 text-white px-1.5 py-0.5 rounded ml-1">오늘</span>}
-                          </span>
-                          <span className="text-xs text-gray-500">{items.length}건</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead><tr className="text-left text-xs text-gray-500 border-b">
-                              <th className="pl-4 py-1.5 whitespace-nowrap" style={{width:'90px'}}>PO</th>
-                              <th className="py-1.5 whitespace-nowrap" style={{width:'65px'}}>Material</th>
-                              <th className="py-1.5" style={{width:'30%'}}>Description</th>
-                              <th className="py-1.5" style={{width:'20%'}}>공급업체</th>
-                              <th className="py-1.5 whitespace-nowrap text-right" style={{width:'70px'}}>미입고 수량</th>
-                              <th className="py-1.5 whitespace-nowrap text-right pr-3" style={{width:'65px'}}>현재 재고</th>
-                            </tr></thead>
-                            <tbody>{items.map((d, i) => {
-                              const inv = inventoryData.find(it => String(it.material) === d.material);
-                              const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
-                              return (
-                                <tr key={i} className="border-b border-gray-100 hover:bg-gray-50">
-                                  <td className="pl-4 py-1.5 text-xs whitespace-nowrap">{d.poNo}</td>
-                                  <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
-                                  <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
-                                  <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
-                                  <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
-                                  <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">{stock > 0 ? <span className="text-blue-600">{stock} EA</span> : <span className="text-gray-300">-</span>}</td>
-                                </tr>
-                              );
-                            })}</tbody>
-                          </table>
-                        </div>
+            {/* 2주 납품 예정 — 업체·PO 로 좁혀 보고, 열 머리를 눌러 정렬한다 */}
+            {(() => {
+              const stockOf = (mat) => inventoryData
+                .filter(it => String(it.material) === String(mat))
+                .reduce((sum, it) => sum + (parseFloat(it.stock) || 0), 0);
+              // "105388     kyungje Precision" -> {code:'105388', name:'kyungje Precision'}
+              const splitVendor = (v) => {
+                const t = String(v || '').trim().replace(/\s+/g, ' ');
+                const m = t.match(/^(\d{4,})\s+(.+)$/);
+                return m ? { code: m[1], name: m[2] } : { code: '', name: t };
+              };
+              const vendorName = (v) => splitVendor(v).name || '(업체 미기재)';
+              const unitOf = (mat) => {
+                const inv = inventoryData.find(it => String(it.material) === String(mat));
+                return (inv && inv.unit) ? inv.unit : 'EA';
+              };
+
+              const matches = (d) =>
+                (!delFilterSupplier || String(d.supplier || '') === delFilterSupplier) &&
+                (!delFilterPO || String(d.poNo || '') === delFilterPO);
+
+              // 날짜 그룹 안에서만 정렬한다. 날짜 자체는 항상 오름차순 고정.
+              const cmp = (a, b) => {
+                const dir = delSortDir === 'asc' ? 1 : -1;
+                if (delSortKey === 'material') return dir * String(a.material).localeCompare(String(b.material));
+                if (delSortKey === 'supplier') return dir * String(a.supplier || '').localeCompare(String(b.supplier || ''));
+                if (delSortKey === 'remain') return dir * ((a.qty || 0) - (b.qty || 0));
+                if (delSortKey === 'stock') return dir * (stockOf(a.material) - stockOf(b.material));
+                return 0;
+              };
+
+              const groups = sortedDates
+                .map(date => ({ date, items: byDate[date].filter(matches).slice().sort(cmp) }))
+                .filter(g => g.items.length > 0);
+              const shownItems = groups.reduce((acc, g) => acc.concat(g.items), []);
+
+              // 필터 후보 — 지금 보이는 2주치에서만 뽑는다
+              const vendorCounts = {};
+              upcomingDeliveries.forEach(d => {
+                const v = String(d.supplier || '').trim() || '(업체 미기재)';
+                vendorCounts[v] = (vendorCounts[v] || 0) + 1;
+              });
+              const vendors = Object.entries(vendorCounts).sort((a, b) => b[1] - a[1]);
+
+              const toggleSort = (key) => {
+                if (delSortKey === key) {
+                  if (delSortDir === 'desc') setDelSortDir('asc');
+                  else { setDelSortKey('none'); setDelSortDir('desc'); }
+                } else { setDelSortKey(key); setDelSortDir('desc'); }
+              };
+              const SortTh = ({ label, sortKey, align, width }) => {
+                const on = delSortKey === sortKey;
+                return (
+                  <th className={`py-1.5 whitespace-nowrap ${align === 'right' ? 'text-right' : ''}`} style={{ width }}>
+                    <button onClick={() => toggleSort(sortKey)}
+                      className={`inline-flex items-center gap-0.5 hover:text-teal-600 transition ${on ? 'text-teal-600 font-semibold' : ''}`}
+                      title="눌러서 정렬 (같은 납품일 안에서만)">
+                      {label}
+                      {on
+                        ? (delSortDir === 'desc' ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />)
+                        : <ArrowUpDown className="w-2.5 h-2.5 opacity-30" />}
+                    </button>
+                  </th>
+                );
+              };
+
+              const filtered = !!(delFilterSupplier || delFilterPO);
+              const clearAll = () => { setDelFilterSupplier(null); setDelFilterPO(null); };
+
+              return (
+                <div className="bg-white rounded-xl border shadow-sm">
+                  <div className="p-4 border-b">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+                      <Truck className="w-4 h-4 text-teal-600" /> 납품 예정 ({twoWeekStart} ~ {twoWeekEnd})
+                      <span className="text-sm font-normal text-gray-500 ml-1">
+                        {filtered
+                          ? <>{shownItems.length}건 <span className="text-gray-400">/ 전체 {upcomingDeliveries.length}건</span></>
+                          : <>{upcomingDeliveries.length}건</>}
+                      </span>
+                      {delSortKey !== 'none' && (
+                        <span className="text-[11px] text-teal-600 bg-teal-50 border border-teal-100 px-1.5 py-0.5 rounded">
+                          납품일 안에서 정렬 중
+                        </span>
+                      )}
+                    </h3>
+
+                    {/* 업체 빠른 선택 */}
+                    {vendors.length > 1 && (
+                      <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] text-gray-400 mr-0.5">업체</span>
+                        {vendors.slice(0, 8).map(([v, n]) => (
+                          <button key={v}
+                            onClick={() => setDelFilterSupplier(delFilterSupplier === v ? null : v)}
+                            className={`px-2 py-0.5 rounded-md text-[11px] border transition ${
+                              delFilterSupplier === v
+                                ? 'bg-teal-600 text-white border-teal-600'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300 hover:text-teal-700'}`}>
+                            {(() => { const nm = vendorName(v); return nm.length > 16 ? nm.slice(0, 16) + '…' : nm; })()}
+                            <span className="opacity-60 ml-1">{n}</span>
+                          </button>
+                        ))}
+                        {vendors.length > 8 && (
+                          <select value={delFilterSupplier || ''}
+                            onChange={e => setDelFilterSupplier(e.target.value || null)}
+                            className="text-[11px] border border-gray-200 rounded-md px-1.5 py-0.5 text-gray-600">
+                            <option value="">그 외 {vendors.length - 8}곳…</option>
+                            {vendors.slice(8).map(([v, n]) => <option key={v} value={v}>{vendorName(v)} ({n})</option>)}
+                          </select>
+                        )}
                       </div>
-                    );
-                  })}
+                    )}
+
+                    {/* 걸린 필터 */}
+                    {filtered && (
+                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                        {delFilterSupplier && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-50 border border-teal-200 text-[11px] text-teal-800">
+                            🏭 {vendorName(delFilterSupplier)}
+                            <button onClick={() => setDelFilterSupplier(null)} className="hover:text-teal-950">✕</button>
+                          </span>
+                        )}
+                        {delFilterPO && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-[11px] text-indigo-800">
+                            PO {delFilterPO}
+                            <button onClick={() => setDelFilterPO(null)} className="hover:text-indigo-950">✕</button>
+                          </span>
+                        )}
+                        <button onClick={clearAll} className="text-[11px] text-gray-400 hover:text-gray-600 ml-0.5">전체 보기</button>
+                        <span className="ml-auto text-[11px] text-gray-500">
+                          미입고 합 <b className="text-gray-700">{shownItems.reduce((sum, d) => sum + (d.qty || 0), 0).toLocaleString()}</b>
+                          {' · '}가장 이른 납기 <b className="text-gray-700">{groups.length ? groups[0].date.slice(5) : '-'}</b>
+                          {delFilterSupplier && <>{' · '}PO {new Set(shownItems.map(d => d.poNo)).size}건</>}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {openPORawItems.length === 0 ? (
+                    <div className="p-8 text-center text-gray-400">
+                      <Truck className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                      <p>Open PO 데이터가 없습니다.</p>
+                      <p className="text-xs mt-1">데이터 관리에서 Open PO Excel을 업로드해주세요.</p>
+                    </div>
+                  ) : sortedDates.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400">
+                      <p>2주 이내 납품 예정 품목이 없습니다.</p>
+                    </div>
+                  ) : groups.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400">
+                      <p className="text-sm">걸어둔 조건에 맞는 납품 예정이 없습니다.</p>
+                      <button onClick={clearAll} className="mt-2 text-xs text-teal-600 hover:underline">필터 지우기</button>
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {groups.map(({ date, items }) => {
+                        const isToday = date === todayStr;
+                        const dateObj = new Date(date + 'T00:00:00');
+                        const dayName = ['일','월','화','수','목','금','토'][dateObj.getDay()];
+                        return (
+                          <div key={date} className={`${isToday ? 'bg-teal-50/50' : ''}`}>
+                            <div className={`px-4 py-2 flex items-center gap-2 ${isToday ? 'bg-teal-100' : 'bg-gray-50'}`}>
+                              <Calendar className="w-3.5 h-3.5 text-gray-500" />
+                              <span className={`text-sm font-bold ${isToday ? 'text-teal-700' : 'text-gray-700'}`}>
+                                {date} ({dayName}) {isToday && <span className="text-xs bg-teal-600 text-white px-1.5 py-0.5 rounded ml-1">오늘</span>}
+                              </span>
+                              <span className="text-xs text-gray-500">{items.length}건</span>
+                              <span className="ml-auto text-[11px] text-gray-400">
+                                미입고 {items.reduce((sum, d) => sum + (d.qty || 0), 0).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead><tr className="text-left text-xs text-gray-500 border-b">
+                                  <th className="pl-4 py-1.5 whitespace-nowrap" style={{width:'90px'}}>PO</th>
+                                  <SortTh label="Material" sortKey="material" width="65px" />
+                                  <th className="py-1.5" style={{width:'30%'}}>Description</th>
+                                  <SortTh label="공급업체" sortKey="supplier" width="20%" />
+                                  <SortTh label="미입고 수량" sortKey="remain" align="right" width="70px" />
+                                  <SortTh label="현재 재고" sortKey="stock" align="right" width="65px" />
+                                </tr></thead>
+                                <tbody>{items.map((d, i) => {
+                                  const stock = stockOf(d.material);
+                                  const poOn = delFilterPO === String(d.poNo);
+                                  const supOn = delFilterSupplier === String(d.supplier || '');
+                                  return (
+                                    <tr key={`${d.poNo}_${d.material}_${i}`} className="border-b border-gray-100 hover:bg-gray-50">
+                                      <td className="pl-4 py-1.5 text-xs whitespace-nowrap">
+                                        <button onClick={() => setDelFilterPO(poOn ? null : String(d.poNo))}
+                                          className={`hover:underline ${poOn ? 'text-indigo-700 font-semibold' : 'text-gray-700 hover:text-indigo-600'}`}
+                                          title="이 PO만 보기">{d.poNo}</button>
+                                      </td>
+                                      <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                                      <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
+                                      <td className="py-1.5 text-xs truncate" title={d.supplier}>
+                                        <button onClick={() => setDelFilterSupplier(supOn ? null : String(d.supplier || ''))}
+                                          className={`hover:underline text-left truncate max-w-full ${supOn ? 'text-teal-700 font-semibold' : 'text-gray-700 hover:text-teal-600'}`}
+                                          title={d.supplier || ''}>{vendorName(d.supplier) || '-'}</button>
+                                      </td>
+                                      <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                                      <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">
+                                        {stock > 0
+                                          ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(d.material)}</span>
+                                          : <span className="text-gray-300">-</span>}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}</tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* 🔍 수입검사 대기 리스트 (Q Stock) - 오버뷰와 동일 기능 */}
             {(() => {
