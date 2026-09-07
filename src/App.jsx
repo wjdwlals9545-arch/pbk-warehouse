@@ -5299,6 +5299,9 @@ export default function PBKWarehouseSystem() {
         if (!material) continue;
         const qty = fnum(cell(r, 'Scheduled Quantity')) - fnum(cell(r, 'Quantity Received'));
         if (qty <= 0) continue;
+        // Deletion Indicator 가 붙은 줄은 취소된 발주다. 미납으로 세면 안 되지만
+        // 지우지도 않는다 — '발주 삭제됨' 으로 보여줘야 조치 여부를 판단할 수 있다.
+        const delMark = String(cell(r, 'Deletion Indicator') ?? '').trim().toUpperCase();
         const description = String(cell(r, 'Short Text') ?? '').trim();
         const unit = String(cell(r, 'Order Unit') ?? 'EA').trim() || 'EA';
         const supplier = String(cell(r, 'Supplier/Supplying Plant') ?? '').trim();
@@ -5316,18 +5319,26 @@ export default function PBKWarehouseSystem() {
           dd = String(dRaw ?? '').slice(0, 10);
           if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) dd = '';
         }
-        rawItems.push({ material, description, qty, unit, poNo: curPo, supplier, unitPrice, currency });
+        rawItems.push({ material, description, qty, unit, poNo: curPo, supplier, unitPrice, currency,
+          deleted: !!delMark, deliveryDate: dd });
         if (!poByMaterial[material]) {
           poByMaterial[material] = { material, description, totalQty: 0, unit, poNumbers: [],
-            unitPrice, currency, supplier, nextDelivery: dd, schedules: [] };
+            unitPrice, currency, supplier, nextDelivery: '', schedules: [],
+            deletedQty: 0, deletedPoNumbers: [], deletedDelivery: '' };
         }
         const agg = poByMaterial[material];
-        agg.totalQty += qty;
-        if (unitPrice > 0 && !agg.unitPrice) { agg.unitPrice = unitPrice; agg.currency = currency; }
-        if (curPo && !agg.poNumbers.includes(curPo)) agg.poNumbers.push(curPo);
         if (supplier && !agg.supplier) agg.supplier = supplier;
-        if (dd && (!agg.nextDelivery || dd < agg.nextDelivery)) agg.nextDelivery = dd;
-        if (agg.schedules.length < 12) agg.schedules.push({ date: dd, qty, po: curPo });
+        if (unitPrice > 0 && !agg.unitPrice) { agg.unitPrice = unitPrice; agg.currency = currency; }
+        if (delMark) {
+          agg.deletedQty += qty;
+          if (curPo && !agg.deletedPoNumbers.includes(curPo)) agg.deletedPoNumbers.push(curPo);
+          if (dd && (!agg.deletedDelivery || dd < agg.deletedDelivery)) agg.deletedDelivery = dd;
+        } else {
+          agg.totalQty += qty;
+          if (curPo && !agg.poNumbers.includes(curPo)) agg.poNumbers.push(curPo);
+          if (dd && (!agg.nextDelivery || dd < agg.nextDelivery)) agg.nextDelivery = dd;
+          if (agg.schedules.length < 12) agg.schedules.push({ date: dd, qty, po: curPo });
+        }
       }
       const aggregated = Object.values(poByMaterial);
       aggregated.forEach(a => a.schedules.sort((x, y) => String(x.date).localeCompare(String(y.date))));
@@ -12465,7 +12476,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     // 모델별 부족 기준: HSM3=3대, 나머지=10대
                     const threshold = (model === 'HSM3' || model === 'HSM3.0') ? 3 : 10;
                     if (possibleUnits < threshold && requiredQty > 0) {
-                      const openPO = openPOData.find(po => po.material === material);
+                      const po0 = openPOData.find(po => po.material === material);
+                      // 취소된 발주만 있으면 '발주 진행중' 이 아니다 — 조치가 필요하다
+                      const openPO = po0 && ((po0.totalQty || 0) > 0 || (po0.deletedQty || 0) > 0) ? po0 : null;
                       const existingIdx = allShortages.findIndex(s => s.material === material);
 
                       if (existingIdx === -1) {
@@ -12477,12 +12490,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           possibleUnits,
                           models: [model],
                           openPO: openPO ? {
-                            qty: openPO.totalQty,
+                            qty: openPO.totalQty || 0,
                             unit: openPO.unit,
-                            poNumbers: openPO.poNumbers,
+                            poNumbers: openPO.poNumbers || [],
                             // 납기일정 파일에서 온 정보 (없으면 그대로 미표시)
                             nextDelivery: openPO.nextDelivery || '',
-                            supplier: openPO.supplier || ''
+                            supplier: openPO.supplier || '',
+                            deletedQty: openPO.deletedQty || 0,
+                            deletedPoNumbers: openPO.deletedPoNumbers || [],
+                            deletedDelivery: openPO.deletedDelivery || ''
                           } : null,
                           urgency: possibleUnits === 0 ? 'critical' : possibleUnits < Math.ceil(threshold/2) ? 'high' : 'medium'
                         });
@@ -12503,7 +12519,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
                 const criticalCount = allShortages.filter(s => s.urgency === 'critical').length;
                 const highCount = allShortages.filter(s => s.urgency === 'high').length;
-                const withPOCount = allShortages.filter(s => s.openPO).length;
+                const withPOCount = allShortages.filter(s => (s.openPO?.qty || 0) > 0).length;
+                const delPOCount = allShortages.filter(s => !(s.openPO?.qty > 0) && (s.openPO?.deletedQty || 0) > 0).length;
                 const noPOCount = allShortages.filter(s => !s.openPO).length;
 
                 return (
@@ -12526,6 +12543,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         <p className="text-2xl font-bold text-gray-600">{noPOCount}</p>
                         <p className="text-xs text-gray-600">발주 필요</p>
                       </div>
+                      {delPOCount > 0 && (
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-center"
+                          title="SAP 에서 삭제(Deletion Indicator)된 발주만 남아 있어 실제로는 발주가 없는 자재">
+                          <p className="text-2xl font-bold text-orange-600">{delPOCount}</p>
+                          <p className="text-xs text-orange-600">발주 삭제됨</p>
+                        </div>
+                      )}
                     </div>
 
                     {/* 부족 자재 테이블 */}
@@ -12587,33 +12611,50 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   </div>
                                 </td>
                                 <td className="px-3 py-2 text-center">
-                                  {item.openPO ? (
-                                    <div className="flex flex-col items-center">
-                                      <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded font-medium">
-                                        ✅ {item.openPO.qty.toLocaleString()} {item.openPO.unit}
-                                      </span>
-                                      {item.openPO.nextDelivery && (() => {
-                                        const today = new Date().toISOString().slice(0, 10);
-                                        const late = item.openPO.nextDelivery < today;
-                                        return (
-                                          <span className={`text-xs mt-0.5 font-medium ${late ? 'text-red-600' : 'text-blue-600'}`}
-                                            title={item.openPO.supplier}>
-                                            {late ? '⚠ 납기초과 ' : '📅 '}{item.openPO.nextDelivery.slice(5)}
+                                  {item.openPO ? (() => {
+                                    const po = item.openPO;
+                                    const live = (po.qty || 0) > 0;
+                                    // 살아있는 발주가 없고 삭제된 것만 남았으면 그렇게 말해준다
+                                    const qty = live ? po.qty : po.deletedQty;
+                                    const nums = live ? po.poNumbers : po.deletedPoNumbers;
+                                    const due = live ? po.nextDelivery : po.deletedDelivery;
+                                    const today = new Date().toISOString().slice(0, 10);
+                                    const late = due && due < today;
+                                    // SAP 공급업체는 "105388     kyungje Precision" 형태 —
+                                    // 코드만 떼고 이름은 자르지 않는다 (넘치면 CSS 가 처리)
+                                    const supName = String(po.supplier || '').trim()
+                                      .replace(/\s+/g, ' ').replace(/^\d+\s+/, '');
+                                    return (
+                                      <div className="flex flex-col items-center gap-0.5">
+                                        <span className={`px-2 py-1 text-xs rounded font-medium ${
+                                          live ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                          {live ? '✅' : '🚫'} {(qty || 0).toLocaleString()} {po.unit}
+                                        </span>
+                                        {!live && (
+                                          <span className="text-[11px] text-orange-600 font-medium"
+                                            title="SAP 에서 삭제 표시된 발주입니다. 실제로 진행 중인 발주가 아닙니다.">
+                                            발주 삭제됨
                                           </span>
-                                        );
-                                      })()}
-                                      {item.openPO.supplier && (
-                                        <span className="text-xs text-gray-400 mt-0.5">
-                                          {item.openPO.supplier.replace(/^\d+\s+/, '').slice(0, 16)}
-                                        </span>
-                                      )}
-                                      {!item.openPO.nextDelivery && item.openPO.poNumbers?.length > 0 && (
-                                        <span className="text-xs text-gray-400 mt-0.5">
-                                          PO: {item.openPO.poNumbers[0]}
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
+                                        )}
+                                        {nums?.length > 0 && (
+                                          <span className="text-[11px] text-gray-500 font-mono"
+                                            title={nums.join(', ')}>
+                                            PO {nums[0]}{nums.length > 1 ? ` +${nums.length - 1}` : ''}
+                                          </span>
+                                        )}
+                                        {due && (
+                                          <span className={`text-[11px] font-medium ${
+                                            !live ? 'text-gray-400' : late ? 'text-red-600' : 'text-blue-600'}`}>
+                                            {live ? (late ? '⚠ 납기초과 ' : '📅 ') : '납기 '}{due.slice(5)}
+                                          </span>
+                                        )}
+                                        {supName && (
+                                          <span className="text-[11px] text-gray-400 max-w-[130px] truncate"
+                                            title={supName}>{supName}</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })() : (
                                     <span className="px-2 py-1 bg-red-100 text-red-600 text-xs rounded font-medium">
                                       ❌ 발주 필요
                                     </span>
@@ -22452,10 +22493,12 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                     const possibleUnits = Math.floor(currentStock / requiredQty);
                     const threshold2 = (model === 'HSM3' || model === 'HSM3.0') ? 3 : 10;
                     if (possibleUnits < threshold2 && requiredQty > 0) {
-                      const openPO = openPOData.find(po => po.material === material);
+                      const po0 = openPOData.find(po => po.material === material);
+                      // 취소된 발주만 있으면 '발주 진행중' 이 아니다 — 조치가 필요하다
+                      const openPO = po0 && ((po0.totalQty || 0) > 0 || (po0.deletedQty || 0) > 0) ? po0 : null;
                       const existingIdx = allShortages.findIndex(s => s.material === material);
                       if (existingIdx === -1) {
-                        allShortages.push({ material, description: descByMaterial[material] || openPO?.description || '-', currentStock, requiredQty, possibleUnits, models: [model], openPO: openPO ? { qty: openPO.totalQty, poNumbers: openPO.poNumbers } : null, urgency: possibleUnits === 0 ? 'critical' : possibleUnits < Math.ceil(threshold2/2) ? 'high' : 'medium' });
+                        allShortages.push({ material, description: descByMaterial[material] || openPO?.description || '-', currentStock, requiredQty, possibleUnits, models: [model], openPO: openPO ? { qty: openPO.totalQty || 0, poNumbers: openPO.poNumbers || [], deletedQty: openPO.deletedQty || 0, deletedPoNumbers: openPO.deletedPoNumbers || [] } : null, urgency: possibleUnits === 0 ? 'critical' : possibleUnits < Math.ceil(threshold2/2) ? 'high' : 'medium' });
                       } else {
                         if (!allShortages[existingIdx].models.includes(model)) allShortages[existingIdx].models.push(model);
                       }
@@ -22466,8 +22509,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                 let filtered = allShortages;
                 if (showShortageDetailModal === 'critical') filtered = allShortages.filter(s => s.urgency === 'critical');
                 else if (showShortageDetailModal === 'high') filtered = allShortages.filter(s => s.urgency === 'high');
-                else if (showShortageDetailModal === 'withPO') filtered = allShortages.filter(s => s.openPO);
-                else if (showShortageDetailModal === 'noPO') filtered = allShortages.filter(s => !s.openPO);
+                else if (showShortageDetailModal === 'withPO') filtered = allShortages.filter(s => (s.openPO?.qty || 0) > 0);
+                else if (showShortageDetailModal === 'noPO') filtered = allShortages.filter(s => !(s.openPO?.qty > 0));
                 
                 filtered.sort((a, b) => a.possibleUnits - b.possibleUnits);
                 
