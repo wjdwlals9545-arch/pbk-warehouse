@@ -6815,7 +6815,11 @@ export default function PBKWarehouseSystem() {
 
           if (partNo) {
             validCount++;
-            bomItems[String(partNo).trim()] = qty;
+            // 같은 자재가 BOM 여러 위치에 들어가면 합산해야 한다.
+            // 덮어쓰면 마지막 행만 남아 소요량이 줄어든다.
+            // (712696 모터는 KB0755 에 1개 + KB0812 에 2개 = 3개)
+            const key = String(partNo).trim();
+            bomItems[key] = (bomItems[key] || 0) + qty;
           }
         });
 
