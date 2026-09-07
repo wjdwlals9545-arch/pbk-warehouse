@@ -7114,6 +7114,53 @@ export default function PBKWarehouseSystem() {
     return results;
   }, [inventoryData, qStockData, qStockByMaterial, customBomData]);
 
+  // 수입검사 대기 품목의 BOM 기준 긴급도.
+  // 창고 가용재고(전체 - Q재고)로 몇 대 만들 수 있나 vs 이 검사를 통과시키면 몇 대가 되나.
+  // 가용대수가 바닥인데 검사 후 늘어난다면, 그 검사가 생산을 막고 있는 것이다.
+  const QSTOCK_BOM_THRESHOLD = { HSM3: 3, _default: 10 };
+  const qStockBomUrgency = useMemo(() => {
+    const models = customBomData || MODEL_BOM_DATA || {};
+    const subs = subComponentBomData || {};
+    if (!qStockData.length || !inventoryData.length) return {};
+
+    const totalByMat = {};
+    inventoryData.forEach(i => {
+      const m = String(i.material);
+      totalByMat[m] = (totalByMat[m] || 0) + (i.stock || 0);
+    });
+
+    const out = {};
+    qStockData.forEach(item => {
+      const mat = String(item.material);
+      if (out[mat]) return;
+      const q = qStockByMaterial[mat] || 0;
+      const avail = Math.max(0, (totalByMat[mat] || 0) - q);
+
+      // 이 자재를 쓰는 모델/반제품 중 가장 빠듯한 것을 잡는다
+      let worst = null;
+      const consider = (name, per, kind) => {
+        if (!per || per <= 0) return;
+        const availUnits = Math.floor(avail / per);
+        const afterUnits = Math.floor((avail + q) / per);
+        const limit = QSTOCK_BOM_THRESHOLD[name] || QSTOCK_BOM_THRESHOLD._default;
+        if (!worst || availUnits < worst.availUnits) {
+          worst = { name, per, availUnits, afterUnits, limit, kind };
+        }
+      };
+      Object.entries(models).forEach(([name, bom]) => consider(name, bom[mat], 'model'));
+      Object.entries(subs).forEach(([name, bom]) => consider(name, bom && bom[mat], 'sub'));
+
+      if (!worst) { out[mat] = { level: 'none', avail, q }; return; }
+
+      const gain = worst.afterUnits - worst.availUnits;
+      let level = 'ok';
+      if (worst.availUnits <= 0) level = gain > 0 ? 'stop' : 'short';
+      else if (worst.availUnits < worst.limit) level = gain > 0 ? 'urgent' : 'watch';
+      out[mat] = { level, avail, q, gain, ...worst };
+    });
+    return out;
+  }, [qStockData, inventoryData, qStockByMaterial, customBomData, subComponentBomData]);
+
   // Sub-component Q Stock 제외 생산 가능 대수
   const subComponentUnitsExQ = useMemo(() => {
     if (!subComponentBomData || inventoryData.length === 0 || qStockData.length === 0) return {};
@@ -15360,6 +15407,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
             {/* 🔍 수입검사 대기 리스트 (Q Stock) - 오버뷰와 동일 기능 */}
             {(() => {
+              const bomLv = (mat) => (qStockBomUrgency[String(mat)] || {}).level || 'none';
+              const BOM_RANK = { stop: 0, short: 1, urgent: 2, watch: 3, ok: 4, none: 5 };
               const qItems = filteredQStock.map(item => {
                 const grDate = item.grDate ? new Date(item.grDate) : null;
                 const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((koNow - grDate) / (1000 * 60 * 60 * 24)) : null;
@@ -15369,6 +15418,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 const dir = qStockSortDir === 'asc' ? 1 : -1;
                 if (qStockSortKey === 'grDate') {
                   return dir * ((a.grDateTs || 0) - (b.grDateTs || 0));
+                }
+                if (qStockSortKey === 'bomUnits') {
+                  const rank = (x) => BOM_RANK[bomLv(x.material)] ?? 9;
+                  const av = (x) => (qStockBomUrgency[String(x.material)] || {}).availUnits ?? 9999;
+                  return dir * ((rank(b) - rank(a)) || (av(b) - av(a)));
                 }
                 if (qStockSortKey === 'warehouseStock') {
                   const aTotal = inventoryData.filter(i => i.material === a.material).reduce((s, i) => s + (i.stock || 0), 0);
@@ -15382,12 +15436,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const greenCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed < 7).length;
               const amberCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed >= 7 && i.daysElapsed <= 10).length;
               const redCount = qItems.filter(i => i.daysElapsed !== null && i.daysElapsed > 10).length;
+              // BOM 긴급도는 경과일과 별개 축이다. stop = 창고 재고로 한 대도 못 만드는데
+              // 이 검사만 통과하면 생산이 가능해지는 것 -> 가장 먼저 봐야 한다.
+              const bomUrgentCount = qItems.filter(i => ['stop', 'urgent'].includes(bomLv(i.material))).length;
               const totalQty = filteredQStock.reduce((s, i) => s + (i.stock || 0), 0);
               const displayItems = qItems.filter(item => {
                 if (qStockStatusFilter !== 'all') {
                   if (qStockStatusFilter === 'green' && !(item.daysElapsed !== null && item.daysElapsed < 7)) return false;
                   if (qStockStatusFilter === 'amber' && !(item.daysElapsed !== null && item.daysElapsed >= 7 && item.daysElapsed <= 10)) return false;
                   if (qStockStatusFilter === 'red' && !(item.daysElapsed !== null && item.daysElapsed > 10)) return false;
+                  if (qStockStatusFilter === 'bom' && !['stop', 'urgent'].includes(bomLv(item.material))) return false;
                 }
                 if (qStockSearch.trim()) {
                   const s = qStockSearch.trim().toLowerCase();
@@ -15408,7 +15466,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       {qStockData.length !== filteredQStock.length && <span className="ml-1 text-gray-400">(F1/S1 제외 {qStockData.length - filteredQStock.length}건)</span>}
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                     <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'green' ? 'bg-emerald-200 border-emerald-400 ring-2 ring-emerald-400' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
                       onClick={() => setQStockStatusFilter(qStockStatusFilter === 'green' ? 'all' : 'green')}>
                       <p className="text-2xl font-bold text-emerald-600">{greenCount}</p>
@@ -15423,6 +15481,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       onClick={() => setQStockStatusFilter(qStockStatusFilter === 'red' ? 'all' : 'red')}>
                       <p className="text-2xl font-bold text-red-600">{redCount}</p>
                       <p className="text-xs text-red-600">초과 (&gt;10일)</p>
+                    </div>
+                    {/* 경과일과 별개 축 — 생산이 막혔는지로 본다 */}
+                    <div className={`border rounded-lg p-3 text-center cursor-pointer transition ${qStockStatusFilter === 'bom' ? 'bg-purple-200 border-purple-400 ring-2 ring-purple-400' : 'bg-purple-50 border-purple-200 hover:bg-purple-100'}`}
+                      onClick={() => setQStockStatusFilter(qStockStatusFilter === 'bom' ? 'all' : 'bom')}
+                      title="창고 재고만으로는 BOM 소요를 못 채우는데, 이 검사를 통과시키면 풀리는 품목">
+                      <p className="text-2xl font-bold text-purple-600">{bomUrgentCount}</p>
+                      <p className="text-xs text-purple-600">긴급 검사 (BOM)</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-3 mb-3">
@@ -15456,6 +15521,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             onClick={() => { if (qStockSortKey === 'warehouseStock') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('warehouseStock'); setQStockSortDir('asc'); } }}>
                             창고 재고 {qStockSortKey === 'warehouseStock' ? (qStockSortDir === 'asc' ? '↑' : '↓') : '↕'}
                           </th>
+                          <th className={`px-2 py-2 text-center text-xs font-medium cursor-pointer hover:text-purple-600 select-none ${qStockSortKey === 'bomUnits' ? 'text-purple-600' : 'text-gray-500'}`}
+                            title="창고 가용재고로 만들 수 있는 대수 → 이 검사를 통과시켰을 때의 대수 (BOM 기준)"
+                            onClick={() => { if (qStockSortKey === 'bomUnits') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('bomUnits'); setQStockSortDir('desc'); } }}>
+                            BOM 여유 {qStockSortKey === 'bomUnits' ? (qStockSortDir === 'asc' ? '↑' : '↓') : '↕'}
+                          </th>
                           <th className={`px-3 py-2 text-center text-xs font-medium cursor-pointer hover:text-indigo-600 select-none ${qStockSortKey === 'daysElapsed' ? 'text-indigo-600' : 'text-gray-500'}`}
                             onClick={() => { if (qStockSortKey === 'daysElapsed') { setQStockSortDir(d => d === 'asc' ? 'desc' : 'asc'); } else { setQStockSortKey('daysElapsed'); setQStockSortDir('desc'); } }}>
                             경과일 {qStockSortKey === 'daysElapsed' ? (qStockSortDir === 'asc' ? '↑' : '↓') : '↕'}
@@ -15469,7 +15539,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           const dotColor = isRed ? 'bg-red-400' : isAmber ? 'bg-amber-400' : item.daysElapsed !== null ? 'bg-emerald-400' : 'bg-gray-300';
                           const textCol = isRed ? 'text-red-600 font-bold' : isAmber ? 'text-amber-600 font-bold' : item.daysElapsed !== null ? 'text-emerald-600' : 'text-gray-400';
                           return (
-                            <tr key={idx} className={isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
+                            <tr key={idx} className={
+                              bomLv(item.material) === 'stop' ? 'bg-red-50/80 ring-1 ring-inset ring-red-200'
+                              : isRed ? 'bg-red-50' : 'hover:bg-gray-50'}>
                               <td className="px-3 py-2"><span className={`w-2.5 h-2.5 rounded-full inline-block ${dotColor}`} /></td>
                               <td className="px-3 py-2 font-mono text-xs font-semibold">{item.material}</td>
                               <td className="px-3 py-2 text-xs truncate" style={{maxWidth:'200px'}} title={item.description}>{item.description}</td>
@@ -15484,6 +15556,32 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   return <span className={warehouseStock <= 0 ? 'text-red-500 font-bold' : 'text-blue-600'}>{warehouseStock.toLocaleString()} {item.unit}</span>;
                                 })()}
                               </td>
+                              <td className="px-2 py-2 text-center text-xs whitespace-nowrap">
+                                {(() => {
+                                  const u = qStockBomUrgency[String(item.material)] || {};
+                                  if (u.level === 'none' || u.availUnits === undefined) {
+                                    return <span className="text-gray-300" title="BOM 에 없는 자재">-</span>;
+                                  }
+                                  const style = {
+                                    stop:   ['bg-red-100 text-red-700 border-red-200', '생산중단'],
+                                    short:  ['bg-orange-100 text-orange-700 border-orange-200', '수량부족'],
+                                    urgent: ['bg-amber-100 text-amber-800 border-amber-200', '긴급'],
+                                    watch:  ['bg-yellow-50 text-yellow-700 border-yellow-200', '주의'],
+                                    ok:     ['bg-gray-50 text-gray-500 border-gray-200', '여유'],
+                                  }[u.level] || ['bg-gray-50 text-gray-400 border-gray-200', ''];
+                                  const tip = `${u.name} 1대당 ${u.per}${item.unit || ''} · 창고 가용 ${u.avail.toLocaleString()} → ${u.availUnits}대`
+                                    + (u.gain > 0 ? ` / 이 검사 통과 시 ${u.afterUnits}대 (+${u.gain})` : ' / 검사해도 부족')
+                                    + (u.kind === 'sub' ? ' · 반제품 BOM' : '');
+                                  return (
+                                    <span className="inline-flex items-center gap-1" title={tip}>
+                                      <span className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold ${style[0]}`}>{style[1]}</span>
+                                      <span className="text-gray-600 tabular-nums">
+                                        {u.availUnits}<span className="text-gray-300 mx-0.5">→</span>{u.afterUnits}대
+                                      </span>
+                                    </span>
+                                  );
+                                })()}
+                              </td>
                               <td className={`px-3 py-2 text-center text-xs ${textCol}`}>
                                 {item.daysElapsed !== null ? `${item.daysElapsed}일` : '-'}
                               </td>
@@ -15491,13 +15589,17 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           );
                         })}
                         {displayItems.length === 0 && (
-                          <tr><td colSpan="8" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
+                          <tr><td colSpan="9" className="px-3 py-8 text-center text-sm text-gray-400">검색 결과가 없습니다.</td></tr>
                         )}
                       </tbody>
                     </table>
                   </div>
                   <p className="text-xs text-gray-400 mt-3">
-                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.
+                    💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.<br />
+                    🏭 <b>BOM 여유</b> = 창고 가용재고(전체 − 검사대기)로 만들 수 있는 대수 → 이 검사를 통과시켰을 때의 대수.
+                    <span className="text-red-600 font-semibold">생산중단</span>은 창고 재고로 한 대도 못 만드는데 이 검사만 통과하면 풀리는 것이라 가장 먼저 봐야 합니다.
+                    <span className="text-orange-600 font-semibold">수량부족</span>은 검사해도 모자라 추가 입고가 필요합니다.
+                    기준은 10대 미만(HSM3는 3대 미만)입니다.
                   </p>
                 </div>
               );
