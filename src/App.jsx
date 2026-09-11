@@ -3253,13 +3253,9 @@ export default function PBKWarehouseSystem() {
 
   const loadSupplierMap = async () => {
     try {
-      // 쓰는 필드가 늘면 버전을 올린다. 옛 캐시에는 그 필드가 없어서
-      // 24시간 가드에 걸리면 영영 안 들어온다 (notes 배지가 그래서 안 떴다)
-      const SUPMAP_VER = 4;
-      const cachedVer = parseInt(safeStorage.getItem('pbk_supmap_ver') || '0');
-      const lastChk = parseInt(safeStorage.getItem('pbk_supmap_chk') || '0');
-      if (cachedVer >= SUPMAP_VER && safeStorage.getItem('pbk_supplier_map')
-          && Date.now() - lastChk < 24 * 60 * 60 * 1000) return;
+      // 48KB 짜리라 매번 받는다. 담당자를 사람이 고치는 파일이라
+      // 캐시를 오래 두면 고친 게 안 보인다 (24시간 가드 때문에 하루를 기다려야 했다).
+      const SUPMAP_VER = 5;
       safeStorage.setItem('pbk_supmap_chk', String(Date.now()));
       const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/supplier_map.json?t=${Date.now()}`);
       if (!resp.ok) return;
