@@ -2432,6 +2432,11 @@ export default function PBKWarehouseSystem() {
   });
   // 납기 지연 선택/숨김 관리
   const [overdueSelected, setOverdueSelected] = useState(new Set());
+  // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
+  const [vendorMailOpen, setVendorMailOpen] = useState(false);
+  const [vendorMailPick, setVendorMailPick] = useState('');      // 지금 보고 있는 업체코드
+  const [vendorMailTo, setVendorMailTo] = useState({});          // {코드: [주소]}
+  const [vendorMailExtra, setVendorMailExtra] = useState({});    // {코드: '직접 입력 주소'}
   const [deliveryCardExpand, setDeliveryCardExpand] = useState(null);
   const [overdueDismissed, setOverdueDismissed] = useState(() => {
     try { const s = safeStorage.getItem('pbk_overdue_dismissed'); return s ? JSON.parse(s) : []; } catch { return []; }
@@ -3234,15 +3239,22 @@ export default function PBKWarehouseSystem() {
   // 자재 → 협력업체 매핑을 받아 둔다. 하루 한 번만 확인한다.
   const loadSupplierMap = async () => {
     try {
+      // 쓰는 필드가 늘면 버전을 올린다. 옛 캐시에는 그 필드가 없어서
+      // 24시간 가드에 걸리면 영영 안 들어온다 (notes 배지가 그래서 안 떴다)
+      const SUPMAP_VER = 3;
+      const cachedVer = parseInt(safeStorage.getItem('pbk_supmap_ver') || '0');
       const lastChk = parseInt(safeStorage.getItem('pbk_supmap_chk') || '0');
-      if (safeStorage.getItem('pbk_supplier_map') && Date.now() - lastChk < 24 * 60 * 60 * 1000) return;
+      if (cachedVer >= SUPMAP_VER && safeStorage.getItem('pbk_supplier_map')
+          && Date.now() - lastChk < 24 * 60 * 60 * 1000) return;
       safeStorage.setItem('pbk_supmap_chk', String(Date.now()));
       const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/supplier_map.json?t=${Date.now()}`);
       if (!resp.ok) return;
       const doc = await resp.json();
       if (!doc || !doc.materials || !Object.keys(doc.materials).length) return;
-      const next = { materials: doc.materials, names: doc.names || {}, updated: doc.updated };
+      const next = { materials: doc.materials, names: doc.names || {}, updated: doc.updated,
+        notes: doc.notes || {}, emails: doc.emails || {}, emailNotes: doc.emailNotes || {} };
       safeStorage.setItem('pbk_supplier_map', JSON.stringify(next));
+      safeStorage.setItem('pbk_supmap_ver', String(SUPMAP_VER));
       setSupplierMap(next);
       console.log(`[Supplier] 업체 매핑 ${Object.keys(doc.materials).length}품번 / ${Object.keys(doc.names || {}).length}업체`);
     } catch (e) { console.log('[Supplier] skip:', e.message); }
@@ -15199,6 +15211,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 flex items-center gap-1">
                       <Mail className="w-3 h-3" /> 전체 검토메일
                     </button>
+                    <button onClick={() => {
+                      setVendorMailOpen(true);
+                      setVendorMailPick('');
+                    }} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1"
+                      title="지연 건을 업체별로 나눠 메일 초안을 만듭니다. 발송은 직접 하십니다.">
+                      <Send className="w-3 h-3" /> 업체별 메일 초안
+                    </button>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -15675,6 +15694,168 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   <p className="px-4 py-2.5 text-[11px] text-gray-400 border-t">
                     💡 열려 있는 발주 전체입니다 (위 납품 예정은 2주 창). 납기일이 지난 건 ⚠ 로 표시합니다.
                   </p>
+                </div>
+              );
+            })()}
+
+            {/* 업체별 메일 초안 — 발송하지 않는다. 외부로 나가는 메일은 사람이 보낸다 */}
+            {vendorMailOpen && (() => {
+              const byV = {};
+              overdueDeliveries.forEach(d => {
+                const { code, name } = splitVendor(d.supplier);
+                const key = code || name || '기타';
+                if (!byV[key]) byV[key] = { code, name: name || '(업체 미기재)', items: [] };
+                byV[key].items.push(d);
+              });
+              const vs = Object.values(byV).sort((a, b) => b.items.length - a.items.length);
+              if (!vs.length) return null;
+              const cur = vs.find(v => v.code === vendorMailPick) || vs[0];
+              const curKey = cur.code || cur.name;
+
+              const known = (supplierMap.emails || {})[cur.code] || [];
+              const picked = vendorMailTo[curKey] !== undefined
+                ? vendorMailTo[curKey]
+                : (known.length ? [known[0]] : []);
+              const extra = (vendorMailExtra[curKey] || '').trim();
+              const allTo = [...picked, ...(extra ? extra.split(/[,;\s]+/).filter(Boolean) : [])];
+
+              const daysPast = (d) => Math.floor((new Date(todayStr) - new Date(d)) / 86400000);
+              const lines = cur.items
+                .slice()
+                .sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))
+                .map((d, i) => {
+                  const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                  let t = ` ${i + 1}) PO ${d.poNo} / ${d.material}  ${d.description || ''}\n`;
+                  t += `    납기 ${d.deliveryDate} (${daysPast(d.deliveryDate)}일 경과)`;
+                  if (partial) {
+                    t += ` · 발주 ${d.orderQty} / 입고 ${d.receivedQty} / 잔여 ${d.remainQty} ${d.unit || 'EA'}\n`;
+                    t += `    → 일부만 입고되었습니다. 잔여분 납품 예정일 회신 또는 Order Close 여부 확인 부탁드립니다.`;
+                  } else {
+                    t += ` · 미입고 ${d.qty} ${d.unit || 'EA'}`;
+                  }
+                  return t;
+                }).join('\n');
+
+              const subject = `[프로메가바이오시스템스] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
+              const body =
+`안녕하세요, 프로메가바이오시스템스 정지민입니다.
+
+아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.
+
+■ 납기 경과 (${cur.items.length}건)
+${lines}
+
+회신 부탁드립니다.
+감사합니다.
+
+정지민 드림
+프로메가바이오시스템스`;
+
+              const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
+                + `?cc=${encodeURIComponent('jimin.jung@promega.com')}`
+                + `&subject=${encodeURIComponent(subject)}`
+                + `&body=${encodeURIComponent(body)}`;
+
+              return (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+                  onClick={() => setVendorMailOpen(false)}>
+                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col"
+                    onClick={e => e.stopPropagation()}>
+                    <div className="px-5 py-3 border-b flex items-center gap-2">
+                      <h3 className="font-bold text-gray-800">📧 업체별 납기 확인 메일 초안</h3>
+                      <span className="text-xs text-gray-500">{vs.length}개 업체 · 지연 {overdueDeliveries.length}건</span>
+                      <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                        초안만 만듭니다. 발송은 직접 하십시오.
+                      </span>
+                      <button onClick={() => setVendorMailOpen(false)} className="text-gray-400 hover:text-gray-700 ml-2">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <div className="flex-1 flex overflow-hidden">
+                      {/* 업체 목록 */}
+                      <div className="w-56 border-r overflow-y-auto shrink-0">
+                        {vs.map(v => {
+                          const k = v.code || v.name;
+                          const hasAddr = ((supplierMap.emails || {})[v.code] || []).length > 0
+                            || (vendorMailExtra[k] || '').trim();
+                          return (
+                            <button key={k} onClick={() => setVendorMailPick(v.code || v.name)}
+                              className={`w-full px-3 py-2 text-left border-b border-gray-100 transition ${
+                                curKey === k ? 'bg-teal-50 border-l-2 border-l-teal-500' : 'hover:bg-gray-50'}`}>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-semibold text-gray-800 truncate">{v.name}</span>
+                                {!hasAddr && <span className="text-[10px] text-red-500 shrink-0">주소없음</span>}
+                              </div>
+                              <div className="text-[11px] text-gray-400">{v.items.length}건</div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* 본문 */}
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-1.5">받는 사람</p>
+                          {known.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {known.map(a => {
+                                const on = picked.includes(a);
+                                return (
+                                  <button key={a} onClick={() => setVendorMailTo(m => ({
+                                    ...m, [curKey]: on ? picked.filter(x => x !== a) : [...picked, a]
+                                  }))}
+                                    className={`px-2 py-1 rounded-md text-[11px] border transition ${
+                                      on ? 'bg-teal-600 text-white border-teal-600'
+                                         : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'}`}>
+                                    {on && '✓ '}{a}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-red-500 mb-1">저장된 주소가 없습니다. 아래에 직접 입력하세요.</p>
+                          )}
+                          <input type="text" value={vendorMailExtra[curKey] || ''}
+                            onChange={e => setVendorMailExtra(m => ({ ...m, [curKey]: e.target.value }))}
+                            placeholder="주소 직접 추가 (쉼표로 구분)"
+                            className="mt-2 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-400" />
+                          <p className="mt-1 text-[10px] text-gray-400">참조: jimin.jung@promega.com</p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-1">제목</p>
+                          <div className="text-xs bg-gray-50 border rounded-lg px-2.5 py-1.5 text-gray-700">{subject}</div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-semibold text-gray-600 mb-1">본문</p>
+                          <pre className="text-[11px] leading-relaxed bg-gray-50 border rounded-lg p-3 whitespace-pre-wrap text-gray-700 max-h-72 overflow-y-auto">{body}</pre>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="px-5 py-3 border-t flex items-center gap-2">
+                      <span className="text-[11px] text-gray-500">
+                        {allTo.length ? `수신 ${allTo.length}명` : '수신자를 선택하세요'}
+                      </span>
+                      <div className="ml-auto flex gap-2">
+                        <button onClick={() => {
+                          navigator.clipboard.writeText(body);
+                          showToast('본문을 복사했습니다', 'success');
+                        }} className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">
+                          본문 복사
+                        </button>
+                        <button disabled={!allTo.length}
+                          onClick={() => { window.location.href = mailto; }}
+                          className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 ${
+                            allTo.length ? 'bg-teal-600 text-white hover:bg-teal-700'
+                                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                          <Mail className="w-3 h-3" /> 메일 앱에서 열기
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
