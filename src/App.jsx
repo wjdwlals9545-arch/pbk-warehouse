@@ -2434,6 +2434,8 @@ export default function PBKWarehouseSystem() {
   const [overdueSelected, setOverdueSelected] = useState(new Set());
   // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
   const [vendorMailOpen, setVendorMailOpen] = useState(false);
+  const [vendorMailMode, setVendorMailMode] = useState('vendor'); // 'vendor' 업체별 | 'internal' 사내 검토
+  const [vendorMailItems, setVendorMailItems] = useState(null);  // null = 지연 전체
   const [vendorMailPick, setVendorMailPick] = useState('');      // 지금 보고 있는 업체코드
   const [vendorMailTo, setVendorMailTo] = useState({});          // {코드: [주소]}
   const [vendorMailExtra, setVendorMailExtra] = useState({});    // {코드: '직접 입력 주소'}
@@ -15161,57 +15163,27 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         }} className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600 flex items-center gap-1">
                           <X className="w-3 h-3" /> 선택 숨김 ({overdueSelected.size})
                         </button>
-                        <button onClick={async () => {
-                          const selectedItems = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
-                          if (selectedItems.length === 0) return;
-                          const ghToken = safeStorage.getItem('pbk_gh_token');
-                          if (!ghToken) { showToast('GitHub 토큰이 없습니다. 콘솔에서 localStorage.setItem("pbk_gh_token","토큰")을 실행해주세요.', 'error'); return; }
-                          const today = new Date().toISOString().slice(0, 10);
-                          const toEmail = 'jimin.jung@promega.com'; // 테스트용 (실사용: jiwon.hwang@promega.com)
-                          const items = selectedItems.map(d => {
-                            const inv = inventoryData.find(it => String(it.material) === d.material);
-                            return { poNo: d.poNo, material: d.material, description: d.description, supplier: d.supplier, deliveryDate: d.deliveryDate, qty: d.qty, unit: d.unit, stock: inv ? (parseFloat(inv.stock) || 0) : 0 };
-                          });
-                          const subject = `[납기 지연 검토 요청] ${items.length}건 (${today})`;
-                          try {
-                            showToast('📧 메일 발송 중...', 'info');
-                            const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/dispatches', {
-                              method: 'POST',
-                              headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ event_type: 'send-overdue-email', client_payload: { to_email: toEmail, cc_email: 'jimin.jung@promega.com', subject, date: today, items } })
-                            });
-                            if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 요청 완료! (${items.length}건 → ${toEmail}) 1~2분 내 도착`, 'success');
-                            else { const err = await resp.json().catch(() => ({})); throw new Error(err.message || `발송 실패 (${resp.status})`); }
-                          } catch (e) { showToast(`❌ 메일 발송 실패: ${e.message}`, 'error'); }
+                        <button onClick={() => {
+                          const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
+                          if (!sel.length) return;
+                          setVendorMailItems(sel);
+                          setVendorMailMode('internal');
+                          setVendorMailOpen(true);
                         }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
-                          <Mail className="w-3 h-3" /> 선택 검토메일 ({overdueSelected.size})
+                          <Mail className="w-3 h-3" /> 선택 검토 초안 ({overdueSelected.size})
                         </button>
                       </>
                     )}
-                    <button onClick={async () => {
-                      const ghToken = safeStorage.getItem('pbk_gh_token');
-                      if (!ghToken) { showToast('GitHub 토큰이 없습니다. 콘솔에서 localStorage.setItem("pbk_gh_token","토큰")을 실행해주세요.', 'error'); return; }
-                      const today = new Date().toISOString().slice(0, 10);
-                      const toEmail = 'jimin.jung@promega.com'; // 테스트용 (실사용: jiwon.hwang@promega.com)
-                      const items = overdueDeliveries.map(d => {
-                        const inv = inventoryData.find(it => String(it.material) === d.material);
-                        return { poNo: d.poNo, material: d.material, description: d.description, supplier: d.supplier, deliveryDate: d.deliveryDate, qty: d.qty, unit: d.unit, stock: inv ? (parseFloat(inv.stock) || 0) : 0 };
-                      });
-                      const subject = `[납기 지연 검토 요청] ${items.length}건 (${today})`;
-                      try {
-                        showToast('📧 메일 발송 중...', 'info');
-                        const resp = await fetch('https://api.github.com/repos/wjdwlals9545-arch/pbk-warehouse/dispatches', {
-                          method: 'POST',
-                          headers: { 'Authorization': `token ${ghToken}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ event_type: 'send-overdue-email', client_payload: { to_email: toEmail, cc_email: 'jimin.jung@promega.com', subject, date: today, items } })
-                        });
-                        if (resp.status === 204 || resp.ok) showToast(`✅ 검토 메일 발송 요청 완료! (${items.length}건 → ${toEmail}) 1~2분 내 도착`, 'success');
-                        else { const err = await resp.json().catch(() => ({})); throw new Error(err.message || `발송 실패 (${resp.status})`); }
-                      } catch (e) { showToast(`❌ 메일 발송 실패: ${e.message}`, 'error'); }
+                    <button onClick={() => {
+                      setVendorMailItems(null);
+                      setVendorMailMode('internal');
+                      setVendorMailOpen(true);
                     }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 flex items-center gap-1">
-                      <Mail className="w-3 h-3" /> 전체 검토메일
+                      <Mail className="w-3 h-3" /> 사내 검토메일 초안
                     </button>
                     <button onClick={() => {
+                      setVendorMailItems(null);
+                      setVendorMailMode('vendor');
                       setVendorMailOpen(true);
                       setVendorMailPick('');
                     }} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1"
@@ -15700,19 +15672,25 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
             {/* 업체별 메일 초안 — 발송하지 않는다. 외부로 나가는 메일은 사람이 보낸다 */}
             {vendorMailOpen && (() => {
+              const src = vendorMailItems || overdueDeliveries;
+              const internal = vendorMailMode === 'internal';
               const byV = {};
-              overdueDeliveries.forEach(d => {
+              src.forEach(d => {
                 const { code, name } = splitVendor(d.supplier);
                 const key = code || name || '기타';
                 if (!byV[key]) byV[key] = { code, name: name || '(업체 미기재)', items: [] };
                 byV[key].items.push(d);
               });
-              const vs = Object.values(byV).sort((a, b) => b.items.length - a.items.length);
-              if (!vs.length) return null;
+              const vsAll = Object.values(byV).sort((a, b) => b.items.length - a.items.length);
+              if (!vsAll.length) return null;
+              // 사내 검토는 업체를 나누지 않고 한 통에 다 담는다
+              const vs = internal
+                ? [{ code: '_internal', name: '사내 검토 (구매)', items: src.slice() }]
+                : vsAll;
               const cur = vs.find(v => v.code === vendorMailPick) || vs[0];
               const curKey = cur.code || cur.name;
 
-              const known = (supplierMap.emails || {})[cur.code] || [];
+              const known = internal ? ['jiwon.hwang@promega.com'] : ((supplierMap.emails || {})[cur.code] || []);
               const picked = vendorMailTo[curKey] !== undefined
                 ? vendorMailTo[curKey]
                 : (known.length ? [known[0]] : []);
@@ -15736,8 +15714,40 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   return t;
                 }).join('\n');
 
-              const subject = `[프로메가바이오시스템스] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
-              const body =
+              // 사내 검토본은 업체별로 묶어서 한 통에 담는다
+              const internalLines = () => vsAll.map(v => {
+                const ls = v.items
+                  .slice()
+                  .sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))
+                  .map((d, i) => {
+                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                    let t = ` ${i + 1}) PO ${d.poNo} / ${d.material}  ${d.description || ''}\n`;
+                    t += `    납기 ${d.deliveryDate} (${daysPast(d.deliveryDate)}일 경과)`;
+                    t += partial
+                      ? ` · 발주 ${d.orderQty} / 입고 ${d.receivedQty} / 잔여 ${d.remainQty} ${d.unit || 'EA'}  ← 부분입고`
+                      : ` · 미입고 ${d.qty} ${d.unit || 'EA'}`;
+                    return t;
+                  }).join('\n');
+                return `[${v.name}] ${v.items.length}건\n${ls}`;
+              }).join('\n\n');
+
+              const subject = internal
+                ? `[납기 지연 검토 요청] ${src.length}건 (${todayStr})`
+                : `[프로메가바이오시스템스] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
+              const body = internal ?
+`안녕하세요, 정지민입니다.
+
+아래 PO 건의 납기일이 경과하여 검토 요청드립니다.
+Order Close 또는 납품 예정 여부 확인 부탁드립니다.
+
+■ 납기 지연 (${src.length}건 / ${vsAll.length}개 업체)
+
+${internalLines()}
+
+검토 후 회신 부탁드립니다.
+감사합니다.
+
+정지민 드림` :
 `안녕하세요, 프로메가바이오시스템스 정지민입니다.
 
 아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.
@@ -15762,8 +15772,13 @@ ${lines}
                   <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[88vh] flex flex-col"
                     onClick={e => e.stopPropagation()}>
                     <div className="px-5 py-3 border-b flex items-center gap-2">
-                      <h3 className="font-bold text-gray-800">📧 업체별 납기 확인 메일 초안</h3>
-                      <span className="text-xs text-gray-500">{vs.length}개 업체 · 지연 {overdueDeliveries.length}건</span>
+                      <h3 className="font-bold text-gray-800">
+                        {internal ? '📧 사내 검토메일 초안' : '📧 업체별 납기 확인 메일 초안'}
+                      </h3>
+                      <span className="text-xs text-gray-500">
+                        {internal ? `구매 담당 앞 · ${src.length}건 / ${vsAll.length}개 업체`
+                                  : `${vs.length}개 업체 · 지연 ${src.length}건`}
+                      </span>
                       <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         초안만 만듭니다. 발송은 직접 하십시오.
                       </span>
@@ -15774,7 +15789,7 @@ ${lines}
 
                     <div className="flex-1 flex overflow-hidden">
                       {/* 업체 목록 */}
-                      <div className="w-56 border-r overflow-y-auto shrink-0">
+                      <div className={`w-56 border-r overflow-y-auto shrink-0 ${internal ? 'hidden' : ''}`}>
                         {vs.map(v => {
                           const k = v.code || v.name;
                           const hasAddr = ((supplierMap.emails || {})[v.code] || []).length > 0
