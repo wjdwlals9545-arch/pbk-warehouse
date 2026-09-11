@@ -1927,6 +1927,17 @@ function parseTs(v) {
 
 // 표시용 'MM-DD HH:mm' (한국시간). 저장 형식이 세 가지라 parseTs 로 통일해서 쓴다.
 // 직접 문자열을 자르면 '2026-08-05T07:37:28+09:00' 이 '08-0507:37:2809:00' 처럼 깨진다.
+// SAP 공급업체 문자열은 "105388     kyungje Precision" 처럼 코드와 이름이
+// 공백 덩어리로 붙어 온다. 코드와 이름을 갈라 쓴다.
+function splitVendor(v) {
+  const t = String(v || '').trim().replace(/\s+/g, ' ');
+  const m = t.match(/^(\d{4,})\s+(.+)$/);
+  return m ? { code: m[1], name: m[2] } : { code: '', name: t };
+}
+function vendorName(v) {
+  return splitVendor(v).name || '(업체 미기재)';
+}
+
 function fmtMdHm(v) {
   const d = parseTs(v);
   if (!d || isNaN(d.getTime())) return '-';
@@ -2387,6 +2398,11 @@ export default function PBKWarehouseSystem() {
   const [delFilterPO, setDelFilterPO] = useState(null);
   const [delSortKey, setDelSortKey] = useState('none'); // 'none'|'material'|'supplier'|'remain'|'stock'
   const [delSortDir, setDelSortDir] = useState('desc');
+  // 업체별 Open PO 목록
+  const [delVendorOpen, setDelVendorOpen] = useState([]);   // 펼친 업체 코드
+  const [delVendorSort, setDelVendorSort] = useState('late'); // 'late'|'due'|'qty'
+  const [delVendorSearch, setDelVendorSearch] = useState('');
+  const [delVendorShowDeleted, setDelVendorShowDeleted] = useState(false);
   const [rackSummary, setRackSummary] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(() => safeStorage.getItem('pbk_last_updated') || null);
   const [isLoading, setIsLoading] = useState(false);
@@ -15237,13 +15253,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const stockOf = (mat) => inventoryData
                 .filter(it => String(it.material) === String(mat))
                 .reduce((sum, it) => sum + (parseFloat(it.stock) || 0), 0);
-              // "105388     kyungje Precision" -> {code:'105388', name:'kyungje Precision'}
-              const splitVendor = (v) => {
-                const t = String(v || '').trim().replace(/\s+/g, ' ');
-                const m = t.match(/^(\d{4,})\s+(.+)$/);
-                return m ? { code: m[1], name: m[2] } : { code: '', name: t };
-              };
-              const vendorName = (v) => splitVendor(v).name || '(업체 미기재)';
               const unitOf = (mat) => {
                 const inv = inventoryData.find(it => String(it.material) === String(mat));
                 return (inv && inv.unit) ? inv.unit : 'EA';
@@ -15446,6 +15455,207 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       })}
                     </div>
                   )}
+                </div>
+              );
+            })()}
+
+            {/* 업체별 Open PO — 날짜가 아니라 업체가 1차 기준.
+                "이 업체가 뭘 얼마나 안 줬나"를 업체 한 줄로 본다. 2주 창이 아니라 전체. */}
+            {(() => {
+              const stockOf = (mat) => inventoryData
+                .filter(it => String(it.material) === String(mat))
+                .reduce((sum, it) => sum + (parseFloat(it.stock) || 0), 0);
+              const unitOf = (mat) => {
+                const inv = inventoryData.find(it => String(it.material) === String(mat));
+                return (inv && inv.unit) ? inv.unit : 'EA';
+              };
+              // 납기일은 rawItems 가 직접 들고 있고(납기일정 레이아웃), 없으면 매칭분을 쓴다
+              const dateByKey = {};
+              poWithDates.forEach(d => {
+                if (d.deliveryDate) dateByKey[`${d.poNo}_${d.material}`] = d.deliveryDate;
+              });
+
+              const lines = (openPORawItems || [])
+                .filter(it => (it.qty || 0) > 0)
+                .map(it => ({
+                  ...it,
+                  due: it.deliveryDate || dateByKey[`${it.poNo}_${it.material}`] || '',
+                  deleted: !!it.deleted,
+                }));
+              if (!lines.length) return null;
+
+              const byVendor = {};
+              lines.forEach(l => {
+                const { code, name } = splitVendor(l.supplier);
+                const key = code || name || '(업체 미기재)';
+                if (!byVendor[key]) {
+                  byVendor[key] = { key, code, name: name || '(업체 미기재)', items: [],
+                    qty: 0, pos: new Set(), late: 0, delQty: 0, nextDue: '' };
+                }
+                const v = byVendor[key];
+                v.items.push(l);
+                if (l.deleted) { v.delQty += (l.qty || 0); return; }
+                v.qty += (l.qty || 0);
+                if (l.poNo) v.pos.add(l.poNo);
+                if (l.due && l.due < todayStr) v.late++;
+                if (l.due && (!v.nextDue || l.due < v.nextDue)) v.nextDue = l.due;
+              });
+
+              const q = (delVendorSearch || '').trim().toLowerCase();
+              let vendors = Object.values(byVendor)
+                .filter(v => delVendorShowDeleted || v.qty > 0)
+                .filter(v => !q || (v.name + ' ' + v.code).toLowerCase().includes(q));
+
+              vendors.sort((a, b) => {
+                if (delVendorSort === 'due') {
+                  return String(a.nextDue || '9999').localeCompare(String(b.nextDue || '9999'));
+                }
+                if (delVendorSort === 'qty') return b.qty - a.qty;
+                return (b.late - a.late) || String(a.nextDue || '9999').localeCompare(String(b.nextDue || '9999'));
+              });
+
+              const totLate = vendors.reduce((s2, v) => s2 + v.late, 0);
+              const totItems = vendors.reduce((s2, v) => s2 + v.items.filter(i => delVendorShowDeleted || !i.deleted).length, 0);
+              const allOpen = vendors.length > 0 && vendors.every(v => delVendorOpen.includes(v.key));
+              const toggle = (k) => setDelVendorOpen(o => o.includes(k) ? o.filter(x => x !== k) : [...o, k]);
+
+              const SortBtn = ({ id, label }) => (
+                <button onClick={() => setDelVendorSort(id)}
+                  className={`px-2 py-0.5 rounded-md text-[11px] border transition ${
+                    delVendorSort === id ? 'bg-teal-600 text-white border-teal-600'
+                                         : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'}`}>
+                  {label}
+                </button>
+              );
+
+              return (
+                <div className="bg-white rounded-xl border shadow-sm">
+                  <div className="p-4 border-b">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                        🏭 업체별 Open PO
+                        <span className="text-sm font-normal text-gray-500">
+                          {vendors.length}곳 · {totItems}건
+                          {totLate > 0 && <span className="ml-1.5 text-red-600 font-semibold">지연 {totLate}건</span>}
+                        </span>
+                      </h3>
+                      <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+                        <input type="text" value={delVendorSearch}
+                          onChange={e => setDelVendorSearch(e.target.value)}
+                          placeholder="업체 검색"
+                          className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-28 focus:w-40 transition-all focus:outline-none focus:border-teal-400" />
+                        <SortBtn id="late" label="지연순" />
+                        <SortBtn id="due" label="납기순" />
+                        <SortBtn id="qty" label="수량순" />
+                        <button onClick={() => setDelVendorOpen(allOpen ? [] : vendors.map(v => v.key))}
+                          className="px-2 py-0.5 rounded-md text-[11px] border border-dashed border-gray-300 text-gray-500 hover:border-teal-400 hover:text-teal-600">
+                          {allOpen ? '모두 접기' : '모두 펼치기'}
+                        </button>
+                      </div>
+                    </div>
+                    <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer">
+                      <input type="checkbox" checked={delVendorShowDeleted}
+                        onChange={e => setDelVendorShowDeleted(e.target.checked)} className="accent-orange-500" />
+                      SAP 에서 삭제된 발주도 표시
+                    </label>
+                  </div>
+
+                  {vendors.length === 0 ? (
+                    <div className="p-6 text-center text-gray-400 text-sm">
+                      맞는 업체가 없습니다.
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {vendors.map(v => {
+                        const open = delVendorOpen.includes(v.key);
+                        const shown = v.items
+                          .filter(i => delVendorShowDeleted || !i.deleted)
+                          .slice()
+                          .sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')));
+                        return (
+                          <div key={v.key}>
+                            <button onClick={() => toggle(v.key)}
+                              className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-gray-50 transition">
+                              <ChevronRight className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+                              <span className="font-semibold text-sm text-gray-800 truncate">{v.name}</span>
+                              {v.code && <span className="text-[11px] text-gray-400 font-mono shrink-0">{v.code}</span>}
+                              {v.late > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold shrink-0">
+                                  지연 {v.late}
+                                </span>
+                              )}
+                              {v.delQty > 0 && (
+                                <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] shrink-0"
+                                  title="SAP 에서 삭제 표시된 발주">삭제 {v.delQty.toLocaleString()}</span>
+                              )}
+                              <span className="ml-auto flex items-center gap-3 text-[11px] text-gray-500 shrink-0">
+                                <span>{shown.length}건</span>
+                                <span>PO {v.pos.size}</span>
+                                <span className="tabular-nums">미납 <b className="text-gray-700">{v.qty.toLocaleString()}</b></span>
+                                <span className="w-14 text-right">
+                                  {v.nextDue
+                                    ? <span className={v.nextDue < todayStr ? 'text-red-600 font-semibold' : 'text-blue-600'}>{v.nextDue.slice(5)}</span>
+                                    : <span className="text-gray-300">-</span>}
+                                </span>
+                              </span>
+                            </button>
+
+                            {open && (
+                              <div className="overflow-x-auto bg-gray-50/60 border-t border-gray-100">
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="text-left text-[11px] text-gray-500 border-b border-gray-200">
+                                      <th className="pl-10 py-1.5 whitespace-nowrap" style={{width:'86px'}}>납기일</th>
+                                      <th className="py-1.5 whitespace-nowrap" style={{width:'92px'}}>PO</th>
+                                      <th className="py-1.5 whitespace-nowrap" style={{width:'68px'}}>Material</th>
+                                      <th className="py-1.5">Description</th>
+                                      <th className="py-1.5 text-right whitespace-nowrap" style={{width:'80px'}}>미납</th>
+                                      <th className="py-1.5 text-right pr-4 whitespace-nowrap" style={{width:'80px'}}>현재고</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {shown.map((it, i) => {
+                                      const late = it.due && it.due < todayStr && !it.deleted;
+                                      const stock = stockOf(it.material);
+                                      return (
+                                        <tr key={`${it.poNo}_${it.material}_${i}`}
+                                          className={`border-b border-gray-100 last:border-0 ${it.deleted ? 'opacity-50' : 'hover:bg-white'}`}>
+                                          <td className="pl-10 py-1.5 text-xs whitespace-nowrap">
+                                            {it.due
+                                              ? <span className={late ? 'text-red-600 font-semibold' : 'text-gray-600'}>
+                                                  {late && '⚠ '}{it.due}
+                                                </span>
+                                              : <span className="text-gray-300">미정</span>}
+                                          </td>
+                                          <td className="py-1.5 text-xs text-gray-600 font-mono whitespace-nowrap">
+                                            {it.poNo || '-'}
+                                            {it.deleted && <span className="ml-1 text-[10px] text-orange-600">삭제</span>}
+                                          </td>
+                                          <td className="py-1.5 text-xs font-mono whitespace-nowrap">{it.material}</td>
+                                          <td className="py-1.5 text-xs text-gray-600 truncate" title={it.description}>{it.description}</td>
+                                          <td className="py-1.5 text-xs text-right font-bold whitespace-nowrap">
+                                            {(it.qty || 0).toLocaleString()} {it.unit}
+                                          </td>
+                                          <td className="py-1.5 text-xs text-right pr-4 whitespace-nowrap">
+                                            {stock > 0
+                                              ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(it.material)}</span>
+                                              : <span className="text-red-500 font-semibold">0</span>}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="px-4 py-2.5 text-[11px] text-gray-400 border-t">
+                    💡 열려 있는 발주 전체입니다 (위 납품 예정은 2주 창). 납기일이 지난 건 ⚠ 로 표시합니다.
+                  </p>
                 </div>
               );
             })()}
