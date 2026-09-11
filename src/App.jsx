@@ -2433,6 +2433,10 @@ export default function PBKWarehouseSystem() {
   // 납기 지연 선택/숨김 관리
   const [overdueSelected, setOverdueSelected] = useState(new Set());
   // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
+  // 협력업체 담당자 편집기
+  const [contactEditOpen, setContactEditOpen] = useState(false);
+  const [contactDraft, setContactDraft] = useState(null);   // {코드: [{email,name}]}
+  const [contactSearch, setContactSearch] = useState('');
   const [vendorMailOpen, setVendorMailOpen] = useState(false);
   const [vendorMailItems, setVendorMailItems] = useState(null);  // null = 지연 전체
   const [vendorMailPick, setVendorMailPick] = useState('');      // 지금 보고 있는 업체코드
@@ -3238,11 +3242,19 @@ export default function PBKWarehouseSystem() {
   };
 
   // 자재 → 협력업체 매핑을 받아 둔다. 하루 한 번만 확인한다.
+  // contacts 가 정본. 옛 emails(주소 문자열 배열)도 읽어준다.
+  const vendorContacts = (code) => {
+    const c = (supplierMap.contacts || {})[code];
+    if (Array.isArray(c)) return c.map(x => (typeof x === 'string' ? { email: x, name: '' } : x));
+    const e = (supplierMap.emails || {})[code] || [];
+    return e.map(x => ({ email: x, name: '' }));
+  };
+
   const loadSupplierMap = async () => {
     try {
       // 쓰는 필드가 늘면 버전을 올린다. 옛 캐시에는 그 필드가 없어서
       // 24시간 가드에 걸리면 영영 안 들어온다 (notes 배지가 그래서 안 떴다)
-      const SUPMAP_VER = 3;
+      const SUPMAP_VER = 4;
       const cachedVer = parseInt(safeStorage.getItem('pbk_supmap_ver') || '0');
       const lastChk = parseInt(safeStorage.getItem('pbk_supmap_chk') || '0');
       if (cachedVer >= SUPMAP_VER && safeStorage.getItem('pbk_supplier_map')
@@ -3253,7 +3265,8 @@ export default function PBKWarehouseSystem() {
       const doc = await resp.json();
       if (!doc || !doc.materials || !Object.keys(doc.materials).length) return;
       const next = { materials: doc.materials, names: doc.names || {}, updated: doc.updated,
-        notes: doc.notes || {}, emails: doc.emails || {}, emailNotes: doc.emailNotes || {} };
+        notes: doc.notes || {}, emails: doc.emails || {}, emailNotes: doc.emailNotes || {},
+        contacts: doc.contacts || {} };
       safeStorage.setItem('pbk_supplier_map', JSON.stringify(next));
       safeStorage.setItem('pbk_supmap_ver', String(SUPMAP_VER));
       setSupplierMap(next);
@@ -15678,7 +15691,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const cur = vs.find(v => v.code === vendorMailPick) || vs[0];
               const curKey = cur.code || cur.name;
 
-              const known = (supplierMap.emails || {})[cur.code] || [];
+              const knownC = vendorContacts(cur.code);
+              const known = knownC.map(c => c.email);
+              const nameOf = (a) => (knownC.find(c => c.email === a) || {}).name || '';
               const picked = vendorMailTo[curKey] !== undefined
                 ? vendorMailTo[curKey]
                 : (known.length ? [known[0]] : []);
@@ -15785,7 +15800,11 @@ ${lines}
                       <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         초안만 만듭니다. 발송은 직접 하십시오.
                       </span>
-                      <button onClick={() => setVendorMailOpen(false)} className="text-gray-400 hover:text-gray-700 ml-2">
+                      <button onClick={() => { setContactDraft(null); setContactEditOpen(true); }}
+                        className="text-[11px] px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 ml-2">
+                        ✏️ 담당자 관리
+                      </button>
+                      <button onClick={() => setVendorMailOpen(false)} className="text-gray-400 hover:text-gray-700 ml-1">
                         <X className="w-5 h-5" />
                       </button>
                     </div>
@@ -15795,7 +15814,7 @@ ${lines}
                       <div className="w-56 border-r overflow-y-auto shrink-0">
                         {vs.map(v => {
                           const k = v.code || v.name;
-                          const hasAddr = ((supplierMap.emails || {})[v.code] || []).length > 0
+                          const hasAddr = vendorContacts(v.code).length > 0
                             || (vendorMailExtra[k] || '').trim();
                           return (
                             <button key={k} onClick={() => setVendorMailPick(v.code || v.name)}
@@ -15826,7 +15845,7 @@ ${lines}
                                     className={`px-2 py-1 rounded-md text-[11px] border transition ${
                                       on ? 'bg-teal-600 text-white border-teal-600'
                                          : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'}`}>
-                                    {on && '✓ '}{a}
+                                    {on && '✓ '}{nameOf(a) ? `${nameOf(a)} · ` : ''}{a}
                                     {(supplierMap.emailNotes || {})[cur.code] && (
                                       <span className="ml-1 text-amber-500" title={supplierMap.emailNotes[cur.code]}>⚠</span>
                                     )}
@@ -21213,6 +21232,153 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
         )}
       </main>
 
+      {contactEditOpen && (() => {
+        const base = contactDraft || Object.fromEntries(
+          Object.keys(supplierMap.names || {})
+            .map(c => [c, vendorContacts(c)])
+            .filter(([, v]) => v.length));
+        // 편집 대상 = 연락처가 있는 업체 + Open PO 가 있는 업체
+        const poCodes = new Set((openPOData || [])
+          .filter(x => (x.totalQty || 0) > 0)
+          .map(x => String(x.supplier || '').trim().split(/\s+/)[0])
+          .filter(c => /^\d+$/.test(c)));
+        const codes = [...new Set([...Object.keys(base), ...poCodes])];
+        const nm = (c) => (supplierMap.names || {})[c] || c;
+        const q = contactSearch.trim().toLowerCase();
+        const list = codes
+          .filter(c => !q || (nm(c) + ' ' + c).toLowerCase().includes(q))
+          .sort((a, b) => nm(a).localeCompare(nm(b), 'ko'));
+
+        const edit = (code, idx, field, val) => setContactDraft(d => {
+          const next = { ...(d || base) };
+          const rows = [...(next[code] || [])];
+          rows[idx] = { ...rows[idx], [field]: val };
+          next[code] = rows;
+          return next;
+        });
+        const addRow = (code) => setContactDraft(d => {
+          const next = { ...(d || base) };
+          next[code] = [...(next[code] || []), { email: '', name: '' }];
+          return next;
+        });
+        const delRow = (code, idx) => setContactDraft(d => {
+          const next = { ...(d || base) };
+          next[code] = (next[code] || []).filter((_, i) => i !== idx);
+          return next;
+        });
+        const moveUp = (code, idx) => setContactDraft(d => {
+          const next = { ...(d || base) };
+          const rows = [...(next[code] || [])];
+          if (idx <= 0) return next;
+          [rows[idx - 1], rows[idx]] = [rows[idx], rows[idx - 1]];
+          next[code] = rows;
+          return next;
+        });
+
+        const save = async () => {
+          const clean = {};
+          Object.entries(base).forEach(([c, rows]) => {
+            const ok = (rows || []).filter(r => (r.email || '').trim());
+            if (ok.length) clean[c] = ok.map(r => ({ email: r.email.trim(), name: (r.name || '').trim() }));
+          });
+          const nextMap = { ...supplierMap, contacts: clean };
+          setSupplierMap(nextMap);
+          safeStorage.setItem('pbk_supplier_map', JSON.stringify(nextMap));
+          setContactDraft(null);
+          setContactEditOpen(false);
+
+          if (!safeStorage.getItem('pbk_gh_token')) {
+            // 토큰이 없으면 브라우저에만 남는다 — 파일로 내려받아 직접 올리게 한다
+            const blob = new Blob([JSON.stringify({ ...nextMap, contacts: clean }, null, 1)],
+              { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'supplier_map.json';
+            a.click();
+            showToast('이 브라우저에 저장했습니다. GitHub 토큰이 없어 파일로 내려받았습니다.', 'info');
+            return;
+          }
+          try {
+            const r = await fetch('https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/supplier_map.json?t=' + Date.now());
+            const remote = r.ok ? await r.json() : {};
+            await uploadDataToGitHub('public/data/supplier_map.json',
+              { ...remote, contacts: clean }, '협력업체 담당자');
+          } catch (e) {
+            showToast(`저장 실패: ${e.message}`, 'error');
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+            onClick={() => { setContactEditOpen(false); setContactDraft(null); }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col"
+              style={{ maxHeight: '86vh' }} onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-3 border-b flex items-center gap-2">
+                <h3 className="font-bold text-gray-800">🏭 협력업체 담당자 관리</h3>
+                <span className="text-xs text-gray-500">{list.length}곳</span>
+                <input type="text" value={contactSearch} onChange={e => setContactSearch(e.target.value)}
+                  placeholder="업체 검색"
+                  className="ml-auto border border-gray-200 rounded-lg px-2.5 py-1 text-xs w-40 focus:outline-none focus:border-teal-400" />
+                <button onClick={() => { setContactEditOpen(false); setContactDraft(null); }}
+                  className="text-gray-400 hover:text-gray-700 text-xl leading-none ml-1">✕</button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto divide-y">
+                {list.map(code => {
+                  const rows = base[code] || [];
+                  const note = (supplierMap.emailNotes || {})[code];
+                  return (
+                    <div key={code} className="px-5 py-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-semibold text-gray-800">{nm(code)}</span>
+                        <span className="text-[11px] text-gray-400 font-mono">{code}</span>
+                        {!rows.length && <span className="text-[11px] text-red-500">주소 없음</span>}
+                        {note && <span className="text-[11px] text-amber-600" title={note}>⚠ 미확인</span>}
+                        <button onClick={() => addRow(code)}
+                          className="ml-auto text-[11px] px-2 py-0.5 border border-dashed border-gray-300 rounded-md text-gray-500 hover:border-teal-400 hover:text-teal-600">
+                          + 담당자 추가
+                        </button>
+                      </div>
+                      {rows.map((r, i) => (
+                        <div key={i} className="flex items-center gap-1.5 mb-1.5">
+                          <span className={`w-10 text-[10px] text-center shrink-0 ${i === 0 ? 'text-teal-600 font-semibold' : 'text-gray-300'}`}>
+                            {i === 0 ? '대표' : i + 1}
+                          </span>
+                          <input value={r.name || ''} onChange={e => edit(code, i, 'name', e.target.value)}
+                            placeholder="담당자 이름"
+                            className="w-32 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-teal-400" />
+                          <input value={r.email || ''} onChange={e => edit(code, i, 'email', e.target.value)}
+                            placeholder="name@company.com"
+                            className="flex-1 border border-gray-200 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:border-teal-400" />
+                          <button onClick={() => moveUp(code, i)} disabled={i === 0}
+                            title="대표로 올리기"
+                            className="px-1.5 py-1 text-xs text-gray-400 hover:text-teal-600 disabled:opacity-25">▲</button>
+                          <button onClick={() => delRow(code, i)}
+                            className="px-1.5 py-1 text-xs text-gray-400 hover:text-red-600">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+                {!list.length && <p className="px-5 py-8 text-center text-sm text-gray-400">맞는 업체가 없습니다.</p>}
+              </div>
+
+              <div className="px-5 py-3 border-t flex items-center gap-2">
+                <p className="text-[11px] text-gray-500">
+                  맨 위가 <b>대표</b> 담당자입니다. 메일 초안에서 기본으로 선택됩니다.
+                </p>
+                <div className="ml-auto flex gap-2">
+                  <button onClick={() => { setContactEditOpen(false); setContactDraft(null); }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">취소</button>
+                  <button onClick={save}
+                    className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700">저장</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ─── 대시보드 설정 모달 ─── */}
       {showDashSettings && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDashSettings(false)}>
@@ -21227,6 +21393,18 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
             </div>
             {/* 탭 목록 */}
             <div className="px-6 py-4 overflow-y-auto flex-1 min-h-0">
+              <button onClick={() => { setShowDashSettings(false); setContactDraft(null); setContactEditOpen(true); }}
+                className={`w-full mb-4 px-4 py-3 rounded-xl border text-left transition ${
+                  darkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <div className="flex items-center gap-2">
+                  <span>🏭</span>
+                  <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-800'}`}>협력업체 담당자 관리</span>
+                  <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
+                </div>
+                <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  납기 메일 받는 사람의 이름과 주소를 고칩니다
+                </p>
+              </button>
               <p className={`text-xs mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>표시할 탭을 선택하세요. 숨긴 탭은 네비게이션에서 사라집니다.</p>
               {['메인', '물류', '재고', '분석', '기타'].map(group => {
                 const groupTabs = ALL_TABS.filter(t => t.group === group && (!t.adminOnly || isAdmin));
