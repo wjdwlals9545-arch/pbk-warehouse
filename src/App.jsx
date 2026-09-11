@@ -15511,6 +15511,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   return String(a.nextDue || '9999').localeCompare(String(b.nextDue || '9999'));
                 }
                 if (delVendorSort === 'qty') return b.qty - a.qty;
+                if (delVendorSort === 'name') return String(a.name).localeCompare(String(b.name), 'ko');
                 return (b.late - a.late) || String(a.nextDue || '9999').localeCompare(String(b.nextDue || '9999'));
               });
 
@@ -15547,6 +15548,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         <SortBtn id="late" label="지연순" />
                         <SortBtn id="due" label="납기순" />
                         <SortBtn id="qty" label="수량순" />
+                        <SortBtn id="name" label="이름순" />
                         <button onClick={() => setDelVendorOpen(allOpen ? [] : vendors.map(v => v.key))}
                           className="px-2 py-0.5 rounded-md text-[11px] border border-dashed border-gray-300 text-gray-500 hover:border-teal-400 hover:text-teal-600">
                           {allOpen ? '모두 접기' : '모두 펼치기'}
@@ -15584,7 +15586,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   지연 {v.late}
                                 </span>
                               )}
-                              {v.delQty > 0 && (
+                              {delVendorShowDeleted && v.delQty > 0 && (
                                 <span className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 text-[10px] shrink-0"
                                   title="SAP 에서 삭제 표시된 발주">삭제 {v.delQty.toLocaleString()}</span>
                               )}
@@ -15605,9 +15607,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 <table className="w-full text-sm">
                                   <thead>
                                     <tr className="text-left text-[11px] text-gray-500 border-b border-gray-200">
-                                      <th className="pl-10 py-1.5 whitespace-nowrap" style={{width:'86px'}}>납기일</th>
-                                      <th className="py-1.5 whitespace-nowrap" style={{width:'92px'}}>PO</th>
-                                      <th className="py-1.5 whitespace-nowrap" style={{width:'68px'}}>Material</th>
+                                      <th className="pl-9 pr-3 py-1.5 whitespace-nowrap" style={{width:'124px'}}>납기일</th>
+                                      <th className="pr-3 py-1.5 whitespace-nowrap" style={{width:'106px'}}>PO</th>
+                                      <th className="pr-3 py-1.5 whitespace-nowrap" style={{width:'78px'}}>Material</th>
                                       <th className="py-1.5">Description</th>
                                       <th className="py-1.5 text-right whitespace-nowrap" style={{width:'80px'}}>미납</th>
                                       <th className="py-1.5 text-right pr-4 whitespace-nowrap" style={{width:'80px'}}>현재고</th>
@@ -15620,18 +15622,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                       return (
                                         <tr key={`${it.poNo}_${it.material}_${i}`}
                                           className={`border-b border-gray-100 last:border-0 ${it.deleted ? 'opacity-50' : 'hover:bg-white'}`}>
-                                          <td className="pl-10 py-1.5 text-xs whitespace-nowrap">
+                                          <td className="pl-9 pr-3 py-1.5 text-xs whitespace-nowrap">
                                             {it.due
                                               ? <span className={late ? 'text-red-600 font-semibold' : 'text-gray-600'}>
                                                   {late && '⚠ '}{it.due}
                                                 </span>
                                               : <span className="text-gray-300">미정</span>}
                                           </td>
-                                          <td className="py-1.5 text-xs text-gray-600 font-mono whitespace-nowrap">
+                                          <td className="pr-3 py-1.5 text-xs text-gray-600 font-mono whitespace-nowrap">
                                             {it.poNo || '-'}
                                             {it.deleted && <span className="ml-1 text-[10px] text-orange-600">삭제</span>}
                                           </td>
-                                          <td className="py-1.5 text-xs font-mono whitespace-nowrap">{it.material}</td>
+                                          <td className="pr-3 py-1.5 text-xs font-mono whitespace-nowrap">{it.material}</td>
                                           <td className="py-1.5 text-xs text-gray-600 truncate" title={it.description}>{it.description}</td>
                                           <td className="py-1.5 text-xs text-right font-bold whitespace-nowrap">
                                             {(it.qty || 0).toLocaleString()} {it.unit}
