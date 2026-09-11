@@ -15761,6 +15761,62 @@ ${lines}
 정지민 드림
 프로메가바이오시스템스`;
 
+              // Outlook 은 표가 읽기 좋다. mailto 로 떨어질 때만 평문을 쓴다.
+              const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              const tbl = (rows) =>
+                '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">'
+                + '<tr style="background:#f3f4f6;">'
+                + ['PO', 'Material', 'Description', '납기일', '경과', '미납'].map(h => `<th>${h}</th>`).join('')
+                + '</tr>'
+                + rows.map(d => {
+                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                    const qty = partial
+                      ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty}</b> ${esc(d.unit || 'EA')}`
+                      : `<b>${d.qty}</b> ${esc(d.unit || 'EA')}`;
+                    return '<tr>'
+                      + `<td>${esc(d.poNo)}</td><td><b>${esc(d.material)}</b></td><td>${esc(d.description)}</td>`
+                      + `<td style="color:#dc2626;">${esc(d.deliveryDate)}</td>`
+                      + `<td align="center">${daysPast(d.deliveryDate)}일</td><td>${qty}</td></tr>`;
+                  }).join('')
+                + '</table>';
+
+              const anyPartial = (internal ? src : cur.items).some(
+                d => d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+              const partialNote = anyPartial
+                ? '<p style="color:#b45309;">※ 일부만 입고된 건이 있습니다. <b>잔여분 납품 예정일 회신</b> 또는 <b>Order Close 여부</b> 확인 부탁드립니다.</p>'
+                : '';
+
+              const html = internal
+                ? `<div style="font-family:'Malgun Gothic',sans-serif;">`
+                  + `<p>안녕하세요, 정지민입니다.</p>`
+                  + `<p>아래 PO 건의 납기일이 경과하여 검토 요청드립니다.<br/>Order Close 또는 납품 예정 여부 확인 부탁드립니다.</p>`
+                  + `<p><b>납기 지연 ${src.length}건 / ${vsAll.length}개 업체</b></p>`
+                  + vsAll.map(v => `<p style="margin:14px 0 4px;"><b>[${esc(v.name)}]</b> ${v.items.length}건</p>` + tbl(v.items)).join('')
+                  + partialNote + `<p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p><p>정지민 드림</p></div>`
+                : `<div style="font-family:'Malgun Gothic',sans-serif;">`
+                  + `<p>안녕하세요, 프로메가바이오시스템스 정지민입니다.</p>`
+                  + `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`
+                  + tbl(cur.items) + partialNote
+                  + `<p>회신 부탁드립니다.<br/>감사합니다.</p><p>정지민 드림<br/>프로메가바이오시스템스</p></div>`;
+
+              const openDraft = async () => {
+                const cc = 'jimin.jung@promega.com';
+                try {
+                  const r = await fetch(`${MIGO_API}/api/mail/draft`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to: allTo.join('; '), cc, subject, html }),
+                    signal: AbortSignal.timeout(4000),
+                  });
+                  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.status);
+                  showToast('Outlook 에 초안을 띄웠습니다. 확인 후 보내십시오.', 'success');
+                  return;
+                } catch (e) {
+                  // 로컬 서버가 없으면 메일 앱으로 대체 (평문)
+                  showToast(`로컬 서버 연결 실패 — 메일 앱으로 엽니다 (${e.message})`, 'info');
+                  window.location.href = mailto;
+                }
+              };
+
               const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
                 + `?cc=${encodeURIComponent('jimin.jung@promega.com')}`
                 + `&subject=${encodeURIComponent(subject)}`
@@ -15824,6 +15880,9 @@ ${lines}
                                       on ? 'bg-teal-600 text-white border-teal-600'
                                          : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'}`}>
                                     {on && '✓ '}{a}
+                                    {(supplierMap.emailNotes || {})[cur.code] && (
+                                      <span className="ml-1 text-amber-500" title={supplierMap.emailNotes[cur.code]}>⚠</span>
+                                    )}
                                   </button>
                                 );
                               })}
@@ -15836,6 +15895,11 @@ ${lines}
                             placeholder="주소 직접 추가 (쉼표로 구분)"
                             className="mt-2 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-400" />
                           <p className="mt-1 text-[10px] text-gray-400">참조: jimin.jung@promega.com</p>
+                          {(supplierMap.emailNotes || {})[cur.code] && (
+                            <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                              ⚠ 미확인 주소 — {supplierMap.emailNotes[cur.code]}
+                            </p>
+                          )}
                         </div>
 
                         <div>
@@ -15863,10 +15927,15 @@ ${lines}
                         </button>
                         <button disabled={!allTo.length}
                           onClick={() => { window.location.href = mailto; }}
+                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
+                          메일 앱(mailto)
+                        </button>
+                        <button disabled={!allTo.length} onClick={openDraft}
                           className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 ${
                             allTo.length ? 'bg-teal-600 text-white hover:bg-teal-700'
-                                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                          <Mail className="w-3 h-3" /> 메일 앱에서 열기
+                                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                          title="로컬 서버(server.py)를 통해 Outlook 초안 창을 엽니다. 보내지는 않습니다.">
+                          <Mail className="w-3 h-3" /> Outlook 초안 열기
                         </button>
                       </div>
                     </div>
