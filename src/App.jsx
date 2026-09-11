@@ -15536,7 +15536,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <h3 className="font-bold text-gray-800 flex items-center gap-2">
                         🏭 업체별 Open PO
                         <span className="text-sm font-normal text-gray-500">
-                          {vendors.length}곳 · {totItems}건
+                          {vendors.length}곳 · {totItems}품목
                           {totLate > 0 && <span className="ml-1.5 text-red-600 font-semibold">지연 {totLate}건</span>}
                         </span>
                       </h3>
@@ -15583,7 +15583,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                               {v.code && <span className="text-[11px] text-gray-400 font-mono shrink-0">{v.code}</span>}
                               {v.late > 0 && (
                                 <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold shrink-0">
-                                  지연 {v.late}
+                                  지연 {v.late}건
                                 </span>
                               )}
                               {delVendorShowDeleted && v.delQty > 0 && (
@@ -15591,65 +15591,91 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   title="SAP 에서 삭제 표시된 발주">삭제 {v.delQty.toLocaleString()}</span>
                               )}
                               <span className="ml-auto flex items-center gap-3 text-[11px] text-gray-500 shrink-0">
-                                <span>{shown.length}건</span>
-                                <span>PO {v.pos.size}</span>
-                                <span className="tabular-nums">미납 <b className="text-gray-700">{v.qty.toLocaleString()}</b></span>
-                                <span className="w-14 text-right">
-                                  {v.nextDue
-                                    ? <span className={v.nextDue < todayStr ? 'text-red-600 font-semibold' : 'text-blue-600'}>{v.nextDue.slice(5)}</span>
-                                    : <span className="text-gray-300">-</span>}
+                                <span>{shown.length}품목</span>
+                                <span>PO {v.pos.size}건</span>
+                                <span className="text-right">
+                                  {v.nextDue ? (
+                                    <>
+                                      <span className="text-gray-400 mr-1">이번 납품일정</span>
+                                      <span className={v.nextDue < todayStr ? 'text-red-600 font-semibold' : 'text-blue-600 font-semibold'}>
+                                        {v.nextDue}
+                                      </span>
+                                    </>
+                                  ) : <span className="text-gray-300">납기 미정</span>}
                                 </span>
                               </span>
                             </button>
 
-                            {open && (
-                              <div className="overflow-x-auto bg-gray-50/60 border-t border-gray-100">
-                                <table className="w-full text-sm">
-                                  <thead>
-                                    <tr className="text-left text-[11px] text-gray-500 border-b border-gray-200">
-                                      <th className="pl-9 pr-3 py-1.5 whitespace-nowrap" style={{width:'124px'}}>납기일</th>
-                                      <th className="pr-3 py-1.5 whitespace-nowrap" style={{width:'106px'}}>PO</th>
-                                      <th className="pr-3 py-1.5 whitespace-nowrap" style={{width:'78px'}}>Material</th>
-                                      <th className="py-1.5">Description</th>
-                                      <th className="py-1.5 text-right whitespace-nowrap" style={{width:'80px'}}>미납</th>
-                                      <th className="py-1.5 text-right pr-4 whitespace-nowrap" style={{width:'80px'}}>현재고</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {shown.map((it, i) => {
-                                      const late = it.due && it.due < todayStr && !it.deleted;
-                                      const stock = stockOf(it.material);
+                            {open && (() => {
+                              // 같은 날 들어오는 것끼리 묶는다. 그래야 몇 번에 나눠
+                              // 들어오는지가 한눈에 보인다 (미르는 3번에 나눠 들어온다)
+                              const groups = [];
+                              shown.forEach(it => {
+                                const k = it.due || '';
+                                const g = groups.find(x => x.due === k);
+                                if (g) g.items.push(it); else groups.push({ due: k, items: [it] });
+                              });
+                              return (
+                                <div className="overflow-x-auto bg-gray-50/60 border-t border-gray-100">
+                                  <table className="w-full text-sm">
+                                    <thead>
+                                      <tr className="text-left text-[11px] text-gray-400 border-b border-gray-200">
+                                        <th className="pl-9 pr-3 py-1.5 whitespace-nowrap" style={{width:'84px'}}>Material</th>
+                                        <th className="pr-3 py-1.5">Description</th>
+                                        <th className="pr-3 py-1.5 text-right whitespace-nowrap" style={{width:'88px'}}>미납</th>
+                                        <th className="py-1.5 text-right pr-4 whitespace-nowrap" style={{width:'88px'}}>현재고</th>
+                                      </tr>
+                                    </thead>
+                                    {groups.map((g, gi) => {
+                                      const gLate = g.due && g.due < todayStr;
+                                      const pos = [...new Set(g.items.map(x => x.poNo).filter(Boolean))];
+                                      const dow = g.due ? ['일','월','화','수','목','금','토'][new Date(g.due + 'T00:00:00').getDay()] : '';
                                       return (
-                                        <tr key={`${it.poNo}_${it.material}_${i}`}
-                                          className={`border-b border-gray-100 last:border-0 ${it.deleted ? 'opacity-50' : 'hover:bg-white'}`}>
-                                          <td className="pl-9 pr-3 py-1.5 text-xs whitespace-nowrap">
-                                            {it.due
-                                              ? <span className={late ? 'text-red-600 font-semibold' : 'text-gray-600'}>
-                                                  {late && '⚠ '}{it.due}
+                                        <tbody key={g.due || gi} className="border-t-2 border-gray-200">
+                                          <tr className={gLate ? 'bg-red-50' : 'bg-white'}>
+                                            <td colSpan={4} className="pl-9 pr-4 py-1.5">
+                                              <div className="flex items-center gap-2.5 text-xs">
+                                                <span className={`font-bold ${gLate ? 'text-red-700' : 'text-gray-700'}`}>
+                                                  {gLate && '⚠ '}{g.due ? `${g.due} (${dow})` : '납기 미정'}
                                                 </span>
-                                              : <span className="text-gray-300">미정</span>}
-                                          </td>
-                                          <td className="pr-3 py-1.5 text-xs text-gray-600 font-mono whitespace-nowrap">
-                                            {it.poNo || '-'}
-                                            {it.deleted && <span className="ml-1 text-[10px] text-orange-600">삭제</span>}
-                                          </td>
-                                          <td className="pr-3 py-1.5 text-xs font-mono whitespace-nowrap">{it.material}</td>
-                                          <td className="py-1.5 text-xs text-gray-600 truncate" title={it.description}>{it.description}</td>
-                                          <td className="py-1.5 text-xs text-right font-bold whitespace-nowrap">
-                                            {(it.qty || 0).toLocaleString()} {it.unit}
-                                          </td>
-                                          <td className="py-1.5 text-xs text-right pr-4 whitespace-nowrap">
-                                            {stock > 0
-                                              ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(it.material)}</span>
-                                              : <span className="text-red-500 font-semibold">0</span>}
-                                          </td>
-                                        </tr>
+                                                <span className="text-gray-400">{g.items.length}품목</span>
+                                                <span className="text-gray-400 font-mono">
+                                                  PO {pos.length === 1 ? pos[0] : `${pos.length}건`}
+                                                </span>
+                                                {g.items.some(x => x.deleted) && (
+                                                  <span className="text-[10px] text-orange-600">삭제 포함</span>
+                                                )}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                          {g.items.map((it, i) => {
+                                            const stock = stockOf(it.material);
+                                            return (
+                                              <tr key={`${it.poNo}_${it.material}_${i}`}
+                                                className={`border-b border-gray-100 ${it.deleted ? 'opacity-50' : 'hover:bg-white'}`}>
+                                                <td className="pl-9 pr-3 py-1.5 text-xs font-mono whitespace-nowrap">
+                                                  {it.material}
+                                                  {it.deleted && <span className="ml-1 text-[10px] text-orange-600">삭제</span>}
+                                                </td>
+                                                <td className="pr-3 py-1.5 text-xs text-gray-600 truncate" title={it.description}>{it.description}</td>
+                                                <td className="pr-3 py-1.5 text-xs text-right font-bold whitespace-nowrap">
+                                                  {(it.qty || 0).toLocaleString()} {it.unit}
+                                                </td>
+                                                <td className="py-1.5 text-xs text-right pr-4 whitespace-nowrap">
+                                                  {stock > 0
+                                                    ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(it.material)}</span>
+                                                    : <span className="text-red-500 font-semibold">0</span>}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
                                       );
                                     })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
+                                  </table>
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
