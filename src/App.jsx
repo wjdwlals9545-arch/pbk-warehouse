@@ -2437,6 +2437,7 @@ export default function PBKWarehouseSystem() {
   const [contactEditOpen, setContactEditOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState(null);   // {코드: [{email,name}]}
   const [contactSearch, setContactSearch] = useState('');
+  const [vendorMailKind, setVendorMailKind] = useState('overdue'); // 'overdue' 납기경과 | 'reminder' 하루전 확인
   const [vendorMailOpen, setVendorMailOpen] = useState(false);
   const [vendorMailItems, setVendorMailItems] = useState(null);  // null = 지연 전체
   const [vendorMailPick, setVendorMailPick] = useState('');      // 지금 보고 있는 업체코드
@@ -15003,6 +15004,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           });
           const sortedDates = Object.keys(byDate).sort();
 
+          // 다음 영업일 — 금요일이면 월요일. 하루 전 확인 메일의 기준일이다.
+          const nextBizDay = (() => {
+            const d = new Date(koNow);
+            do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
+            return d.toISOString().slice(0, 10);
+          })();
+          const d1Items = poWithDates.filter(d => d.deliveryDate === nextBizDay && d.qty > 0);
+          const d1Vendors = new Set(d1Items.map(d => splitVendor(d.supplier).code || d.supplier));
+
           // 납기 지연 (납기일이 오늘 이전 + 미입고 수량 > 0, dismissed 제외)
           const allOverdueDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
           const overdueDeliveries = allOverdueDeliveries.filter(d => !overdueDismissed.includes(`${d.poNo}_${d.material}`));
@@ -15179,6 +15189,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
                           if (!sel.length) return;
                           setVendorMailItems(sel);
+                          setVendorMailKind('overdue');
                           setVendorMailOpen(true);
                         }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
                           <Mail className="w-3 h-3" /> 선택 건 메일 초안 ({overdueSelected.size})
@@ -15187,6 +15198,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     )}
                     <button onClick={() => {
                       setVendorMailItems(null);
+                      setVendorMailKind('overdue');
                       setVendorMailOpen(true);
                       setVendorMailPick('');
                     }} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1"
@@ -15239,6 +15251,30 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   </table>
                   {overdueDeliveries.length > 20 && <p className="text-xs text-red-500 mt-2 text-right">외 {overdueDeliveries.length - 20}건 더</p>}
                 </div>
+              </div>
+            )}
+
+            {/* 하루 전 확인 — 다음 영업일에 들어올 것이 있으면 알려준다 */}
+            {d1Items.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-50 to-white border border-amber-200 rounded-xl p-3.5 flex items-center gap-3 flex-wrap">
+                <span className="text-xl">🔔</span>
+                <div>
+                  <p className="text-sm font-bold text-amber-900">
+                    {nextBizDay === new Date(new Date(todayStr).getTime() + 86400000).toISOString().slice(0, 10)
+                      ? '내일' : '다음 영업일'} 납품 예정 · {nextBizDay}
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    {d1Items.length}품목 / {d1Vendors.size}개 업체 — 일정 확인 메일을 보내실 수 있습니다
+                  </p>
+                </div>
+                <button onClick={() => {
+                  setVendorMailItems(d1Items);
+                  setVendorMailKind('reminder');
+                  setVendorMailOpen(true);
+                  setVendorMailPick('');
+                }} className="ml-auto px-3 py-1.5 bg-amber-600 text-white rounded-lg text-xs hover:bg-amber-700 flex items-center gap-1">
+                  <Mail className="w-3 h-3" /> 하루 전 확인 메일 초안
+                </button>
               </div>
             )}
 
@@ -15701,24 +15737,41 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const allTo = [...picked, ...(extra ? extra.split(/[,;\s]+/).filter(Boolean) : [])];
 
               const daysPast = (d) => Math.floor((new Date(todayStr) - new Date(d)) / 86400000);
+              const reminder = vendorMailKind === 'reminder';
               const lines = cur.items
                 .slice()
                 .sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))
                 .map((d, i) => {
                   const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
                   let t = ` ${i + 1}) PO ${d.poNo} / ${d.material}  ${d.description || ''}\n`;
-                  t += `    납기 ${d.deliveryDate} (${daysPast(d.deliveryDate)}일 경과)`;
-                  if (partial) {
+                  t += reminder
+                    ? `    납품 예정일 ${d.deliveryDate}`
+                    : `    납기 ${d.deliveryDate} (${daysPast(d.deliveryDate)}일 경과)`;
+                  if (partial && !reminder) {
                     t += ` · 발주 ${d.orderQty} / 입고 ${d.receivedQty} / 잔여 ${d.remainQty} ${d.unit || 'EA'}\n`;
                     t += `    → 일부만 입고되었습니다. 잔여분 납품 예정일 회신 또는 Order Close 여부 확인 부탁드립니다.`;
                   } else {
-                    t += ` · 미입고 ${d.qty} ${d.unit || 'EA'}`;
+                    t += ` · ${reminder ? '수량' : '미입고'} ${d.qty} ${d.unit || 'EA'}`;
                   }
                   return t;
                 }).join('\n');
 
-              const subject = `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
-              const body =
+              const dueDate = reminder ? (cur.items[0] || {}).deliveryDate : '';
+              const subject = reminder
+                ? `[Promega] ${dueDate} 납품 예정 건 확인 요청 (${cur.items.length}건)`
+                : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
+              const body = reminder ?
+`안녕하세요 프로메가 정지민입니다.
+
+${dueDate} 납품 예정인 아래 건의 일정 확인 부탁드립니다.
+
+■ 납품 예정 (${cur.items.length}건)
+${lines}
+
+일정에 변동이 있으면 회신 부탁드립니다.
+감사합니다.
+
+정지민 드림` :
 `안녕하세요 프로메가 정지민입니다.
 
 아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.
@@ -15736,7 +15789,9 @@ ${lines}
               const tbl = (rows) =>
                 '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">'
                 + '<tr style="background:#f3f4f6;">'
-                + ['PO', 'Material', 'Description', '납기일', '경과', '미납'].map(h => `<th>${h}</th>`).join('')
+                + (reminder ? ['PO', 'Material', 'Description', '납품 예정일', '수량']
+                             : ['PO', 'Material', 'Description', '납기일', '경과', '미납']
+                  ).map(h => `<th>${h}</th>`).join('')
                 + '</tr>'
                 + rows.map(d => {
                     const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
@@ -15745,8 +15800,9 @@ ${lines}
                       : `<b>${d.qty}</b> ${esc(d.unit || 'EA')}`;
                     return '<tr>'
                       + `<td>${esc(d.poNo)}</td><td><b>${esc(d.material)}</b></td><td>${esc(d.description)}</td>`
-                      + `<td style="color:#dc2626;">${esc(d.deliveryDate)}</td>`
-                      + `<td align="center">${daysPast(d.deliveryDate)}일</td><td>${qty}</td></tr>`;
+                      + `<td style="color:${reminder ? '#2563eb' : '#dc2626'};">${esc(d.deliveryDate)}</td>`
+                      + (reminder ? '' : `<td align="center">${daysPast(d.deliveryDate)}일</td>`)
+                      + `<td>${reminder ? `<b>${d.qty}</b> ${esc(d.unit || 'EA')}` : qty}</td></tr>`;
                   }).join('')
                 + '</table>';
 
@@ -15758,9 +15814,14 @@ ${lines}
 
               const html = `<div style="font-family:'Malgun Gothic',sans-serif;">`
                 + `<p>안녕하세요 프로메가 정지민입니다.</p>`
-                + `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`
-                + tbl(cur.items) + partialNote
-                + `<p>회신 부탁드립니다.<br/>감사합니다.</p><p>정지민 드림</p></div>`;
+                + (reminder
+                    ? `<p><b>${dueDate}</b> 납품 예정인 아래 건의 일정 확인 부탁드립니다.</p>`
+                    : `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`)
+                + tbl(cur.items) + (reminder ? '' : partialNote)
+                + (reminder
+                    ? `<p>일정에 변동이 있으면 회신 부탁드립니다.<br/>감사합니다.</p>`
+                    : `<p>회신 부탁드립니다.<br/>감사합니다.</p>`)
+                + `<p>정지민 드림</p></div>`;
 
               const openDraft = async () => {
                 const cc = MAIL_CC;
@@ -15792,10 +15853,11 @@ ${lines}
                     onClick={e => e.stopPropagation()}>
                     <div className="px-5 py-3 border-b flex items-center gap-2">
                       <h3 className="font-bold text-gray-800">
-                        📧 업체별 납기 확인 메일 초안
+                        {reminder ? '🔔 하루 전 납품 확인 메일 초안' : '📧 업체별 납기 확인 메일 초안'}
                       </h3>
                       <span className="text-xs text-gray-500">
-                        {`${vs.length}개 업체 · 지연 ${src.length}건`}
+                        {reminder ? `${vs.length}개 업체 · ${src.length}품목`
+                                  : `${vs.length}개 업체 · 지연 ${src.length}건`}
                       </span>
                       <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         초안만 만듭니다. 발송은 직접 하십시오.
