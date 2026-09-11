@@ -15607,71 +15607,62 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             </button>
 
                             {open && (() => {
-                              // 같은 날 들어오는 것끼리 묶는다. 그래야 몇 번에 나눠
-                              // 들어오는지가 한눈에 보인다 (미르는 3번에 나눠 들어온다)
-                              const groups = [];
+                              // 납기일이 같은 줄끼리 배경색을 번갈아 칠한다.
+                              // 그룹 머리 행을 넣으면 표가 끊겨 보여서, 색으로만 구분한다.
+                              const dueOrder = [];
                               shown.forEach(it => {
                                 const k = it.due || '';
-                                const g = groups.find(x => x.due === k);
-                                if (g) g.items.push(it); else groups.push({ due: k, items: [it] });
+                                if (!dueOrder.includes(k)) dueOrder.push(k);
                               });
                               return (
-                                <div className="overflow-x-auto bg-gray-50/60 border-t border-gray-100">
+                                <div className="overflow-x-auto border-t border-gray-200">
                                   <table className="w-full text-sm">
                                     <thead>
-                                      <tr className="text-left text-[11px] text-gray-400 border-b border-gray-200">
-                                        <th className="pl-9 pr-3 py-1.5 whitespace-nowrap" style={{width:'84px'}}>Material</th>
+                                      <tr className="text-left text-[11px] text-gray-500 bg-gray-100/70 border-b border-gray-200">
+                                        <th className="pl-9 pr-3 py-1.5 whitespace-nowrap" style={{width:'124px'}}>납기일</th>
+                                        <th className="pr-3 py-1.5 whitespace-nowrap" style={{width:'106px'}}>PO</th>
+                                        <th className="pr-3 py-1.5 whitespace-nowrap" style={{width:'78px'}}>Material</th>
                                         <th className="pr-3 py-1.5">Description</th>
-                                        <th className="pr-3 py-1.5 text-right whitespace-nowrap" style={{width:'88px'}}>미납</th>
-                                        <th className="py-1.5 text-right pr-4 whitespace-nowrap" style={{width:'88px'}}>현재고</th>
+                                        <th className="pr-3 py-1.5 text-right whitespace-nowrap" style={{width:'84px'}}>미납</th>
+                                        <th className="py-1.5 text-right pr-4 whitespace-nowrap" style={{width:'84px'}}>현재고</th>
                                       </tr>
                                     </thead>
-                                    {groups.map((g, gi) => {
-                                      const gLate = g.due && g.due < todayStr;
-                                      const pos = [...new Set(g.items.map(x => x.poNo).filter(Boolean))];
-                                      const dow = g.due ? ['일','월','화','수','목','금','토'][new Date(g.due + 'T00:00:00').getDay()] : '';
-                                      return (
-                                        <tbody key={g.due || gi} className="border-t-2 border-gray-200">
-                                          <tr className={gLate ? 'bg-red-50' : 'bg-white'}>
-                                            <td colSpan={4} className="pl-9 pr-4 py-1.5">
-                                              <div className="flex items-center gap-2.5 text-xs">
-                                                <span className={`font-bold ${gLate ? 'text-red-700' : 'text-gray-700'}`}>
-                                                  {gLate && '⚠ '}{g.due ? `${g.due} (${dow})` : '납기 미정'}
-                                                </span>
-                                                <span className="text-gray-400">{g.items.length}품목</span>
-                                                <span className="text-gray-400 font-mono">
-                                                  PO {pos.length === 1 ? pos[0] : `${pos.length}건`}
-                                                </span>
-                                                {g.items.some(x => x.deleted) && (
-                                                  <span className="text-[10px] text-orange-600">삭제 포함</span>
-                                                )}
-                                              </div>
+                                    <tbody>
+                                      {shown.map((it, i) => {
+                                        const late = it.due && it.due < todayStr && !it.deleted;
+                                        const stock = stockOf(it.material);
+                                        const gi = dueOrder.indexOf(it.due || '');
+                                        const firstOfGroup = i === 0 || (shown[i - 1].due || '') !== (it.due || '');
+                                        const band = gi % 2 === 0 ? 'bg-white' : 'bg-slate-100/70';
+                                        return (
+                                          <tr key={`${it.poNo}_${it.material}_${i}`}
+                                            className={`${band} ${firstOfGroup && i > 0 ? 'border-t-2 border-gray-300' : 'border-t border-gray-100'} ${
+                                              it.deleted ? 'opacity-50' : 'hover:bg-teal-50/60'}`}>
+                                            <td className="pl-9 pr-3 py-1.5 text-xs whitespace-nowrap">
+                                              {it.due
+                                                ? <span className={late ? 'text-red-600 font-semibold' : 'text-gray-700'}>
+                                                    {late && '⚠ '}{it.due}
+                                                  </span>
+                                                : <span className="text-gray-300">미정</span>}
+                                            </td>
+                                            <td className="pr-3 py-1.5 text-xs text-gray-600 font-mono whitespace-nowrap">
+                                              {it.poNo || '-'}
+                                              {it.deleted && <span className="ml-1 text-[10px] text-orange-600">삭제</span>}
+                                            </td>
+                                            <td className="pr-3 py-1.5 text-xs font-mono whitespace-nowrap">{it.material}</td>
+                                            <td className="pr-3 py-1.5 text-xs text-gray-600 truncate" title={it.description}>{it.description}</td>
+                                            <td className="pr-3 py-1.5 text-xs text-right font-bold whitespace-nowrap">
+                                              {(it.qty || 0).toLocaleString()} {it.unit}
+                                            </td>
+                                            <td className="py-1.5 text-xs text-right pr-4 whitespace-nowrap">
+                                              {stock > 0
+                                                ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(it.material)}</span>
+                                                : <span className="text-red-500 font-semibold">0</span>}
                                             </td>
                                           </tr>
-                                          {g.items.map((it, i) => {
-                                            const stock = stockOf(it.material);
-                                            return (
-                                              <tr key={`${it.poNo}_${it.material}_${i}`}
-                                                className={`border-b border-gray-100 ${it.deleted ? 'opacity-50' : 'hover:bg-white'}`}>
-                                                <td className="pl-9 pr-3 py-1.5 text-xs font-mono whitespace-nowrap">
-                                                  {it.material}
-                                                  {it.deleted && <span className="ml-1 text-[10px] text-orange-600">삭제</span>}
-                                                </td>
-                                                <td className="pr-3 py-1.5 text-xs text-gray-600 truncate" title={it.description}>{it.description}</td>
-                                                <td className="pr-3 py-1.5 text-xs text-right font-bold whitespace-nowrap">
-                                                  {(it.qty || 0).toLocaleString()} {it.unit}
-                                                </td>
-                                                <td className="py-1.5 text-xs text-right pr-4 whitespace-nowrap">
-                                                  {stock > 0
-                                                    ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(it.material)}</span>
-                                                    : <span className="text-red-500 font-semibold">0</span>}
-                                                </td>
-                                              </tr>
-                                            );
-                                          })}
-                                        </tbody>
-                                      );
-                                    })}
+                                        );
+                                      })}
+                                    </tbody>
                                   </table>
                                 </div>
                               );
