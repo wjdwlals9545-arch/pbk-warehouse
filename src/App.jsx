@@ -2434,7 +2434,6 @@ export default function PBKWarehouseSystem() {
   const [overdueSelected, setOverdueSelected] = useState(new Set());
   // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
   const [vendorMailOpen, setVendorMailOpen] = useState(false);
-  const [vendorMailMode, setVendorMailMode] = useState('vendor'); // 'vendor' 업체별 | 'internal' 사내 검토
   const [vendorMailItems, setVendorMailItems] = useState(null);  // null = 지연 전체
   const [vendorMailPick, setVendorMailPick] = useState('');      // 지금 보고 있는 업체코드
   const [vendorMailTo, setVendorMailTo] = useState({});          // {코드: [주소]}
@@ -15167,23 +15166,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
                           if (!sel.length) return;
                           setVendorMailItems(sel);
-                          setVendorMailMode('internal');
                           setVendorMailOpen(true);
                         }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
-                          <Mail className="w-3 h-3" /> 선택 검토 초안 ({overdueSelected.size})
+                          <Mail className="w-3 h-3" /> 선택 건 메일 초안 ({overdueSelected.size})
                         </button>
                       </>
                     )}
                     <button onClick={() => {
                       setVendorMailItems(null);
-                      setVendorMailMode('internal');
-                      setVendorMailOpen(true);
-                    }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs hover:bg-red-700 flex items-center gap-1">
-                      <Mail className="w-3 h-3" /> 사내 검토메일 초안
-                    </button>
-                    <button onClick={() => {
-                      setVendorMailItems(null);
-                      setVendorMailMode('vendor');
                       setVendorMailOpen(true);
                       setVendorMailPick('');
                     }} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1"
@@ -15673,7 +15663,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {/* 업체별 메일 초안 — 발송하지 않는다. 외부로 나가는 메일은 사람이 보낸다 */}
             {vendorMailOpen && (() => {
               const src = vendorMailItems || overdueDeliveries;
-              const internal = vendorMailMode === 'internal';
+              // 수신은 항상 업체. 구매담당은 참조로만 들어간다.
+              const MAIL_CC = 'jiwon.hwang@promega.com; jimin.jung@promega.com';
               const byV = {};
               src.forEach(d => {
                 const { code, name } = splitVendor(d.supplier);
@@ -15683,14 +15674,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               });
               const vsAll = Object.values(byV).sort((a, b) => b.items.length - a.items.length);
               if (!vsAll.length) return null;
-              // 사내 검토는 업체를 나누지 않고 한 통에 다 담는다
-              const vs = internal
-                ? [{ code: '_internal', name: '사내 검토 (구매)', items: src.slice() }]
-                : vsAll;
+              const vs = vsAll;
               const cur = vs.find(v => v.code === vendorMailPick) || vs[0];
               const curKey = cur.code || cur.name;
 
-              const known = internal ? ['jiwon.hwang@promega.com'] : ((supplierMap.emails || {})[cur.code] || []);
+              const known = (supplierMap.emails || {})[cur.code] || [];
               const picked = vendorMailTo[curKey] !== undefined
                 ? vendorMailTo[curKey]
                 : (known.length ? [known[0]] : []);
@@ -15714,41 +15702,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   return t;
                 }).join('\n');
 
-              // 사내 검토본은 업체별로 묶어서 한 통에 담는다
-              const internalLines = () => vsAll.map(v => {
-                const ls = v.items
-                  .slice()
-                  .sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))
-                  .map((d, i) => {
-                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
-                    let t = ` ${i + 1}) PO ${d.poNo} / ${d.material}  ${d.description || ''}\n`;
-                    t += `    납기 ${d.deliveryDate} (${daysPast(d.deliveryDate)}일 경과)`;
-                    t += partial
-                      ? ` · 발주 ${d.orderQty} / 입고 ${d.receivedQty} / 잔여 ${d.remainQty} ${d.unit || 'EA'}  ← 부분입고`
-                      : ` · 미입고 ${d.qty} ${d.unit || 'EA'}`;
-                    return t;
-                  }).join('\n');
-                return `[${v.name}] ${v.items.length}건\n${ls}`;
-              }).join('\n\n');
-
-              const subject = internal
-                ? `[납기 지연 검토 요청] ${src.length}건 (${todayStr})`
-                : `[프로메가바이오시스템스] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
-              const body = internal ?
-`안녕하세요, 정지민입니다.
-
-아래 PO 건의 납기일이 경과하여 검토 요청드립니다.
-Order Close 또는 납품 예정 여부 확인 부탁드립니다.
-
-■ 납기 지연 (${src.length}건 / ${vsAll.length}개 업체)
-
-${internalLines()}
-
-검토 후 회신 부탁드립니다.
-감사합니다.
-
-정지민 드림` :
-`안녕하세요, 프로메가바이오시스템스 정지민입니다.
+              const subject = `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
+              const body =
+`안녕하세요 프로메가 정지민입니다.
 
 아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.
 
@@ -15758,8 +15714,7 @@ ${lines}
 회신 부탁드립니다.
 감사합니다.
 
-정지민 드림
-프로메가바이오시스템스`;
+정지민 드림`;
 
               // Outlook 은 표가 읽기 좋다. mailto 로 떨어질 때만 평문을 쓴다.
               const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -15780,27 +15735,20 @@ ${lines}
                   }).join('')
                 + '</table>';
 
-              const anyPartial = (internal ? src : cur.items).some(
+              const anyPartial = cur.items.some(
                 d => d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
               const partialNote = anyPartial
                 ? '<p style="color:#b45309;">※ 일부만 입고된 건이 있습니다. <b>잔여분 납품 예정일 회신</b> 또는 <b>Order Close 여부</b> 확인 부탁드립니다.</p>'
                 : '';
 
-              const html = internal
-                ? `<div style="font-family:'Malgun Gothic',sans-serif;">`
-                  + `<p>안녕하세요, 정지민입니다.</p>`
-                  + `<p>아래 PO 건의 납기일이 경과하여 검토 요청드립니다.<br/>Order Close 또는 납품 예정 여부 확인 부탁드립니다.</p>`
-                  + `<p><b>납기 지연 ${src.length}건 / ${vsAll.length}개 업체</b></p>`
-                  + vsAll.map(v => `<p style="margin:14px 0 4px;"><b>[${esc(v.name)}]</b> ${v.items.length}건</p>` + tbl(v.items)).join('')
-                  + partialNote + `<p>검토 후 회신 부탁드립니다.<br/>감사합니다.</p><p>정지민 드림</p></div>`
-                : `<div style="font-family:'Malgun Gothic',sans-serif;">`
-                  + `<p>안녕하세요, 프로메가바이오시스템스 정지민입니다.</p>`
-                  + `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`
-                  + tbl(cur.items) + partialNote
-                  + `<p>회신 부탁드립니다.<br/>감사합니다.</p><p>정지민 드림<br/>프로메가바이오시스템스</p></div>`;
+              const html = `<div style="font-family:'Malgun Gothic',sans-serif;">`
+                + `<p>안녕하세요 프로메가 정지민입니다.</p>`
+                + `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`
+                + tbl(cur.items) + partialNote
+                + `<p>회신 부탁드립니다.<br/>감사합니다.</p><p>정지민 드림</p></div>`;
 
               const openDraft = async () => {
-                const cc = 'jimin.jung@promega.com';
+                const cc = MAIL_CC;
                 try {
                   const r = await fetch(`${MIGO_API}/api/mail/draft`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -15818,7 +15766,7 @@ ${lines}
               };
 
               const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
-                + `?cc=${encodeURIComponent('jimin.jung@promega.com')}`
+                + `?cc=${encodeURIComponent(MAIL_CC)}`
                 + `&subject=${encodeURIComponent(subject)}`
                 + `&body=${encodeURIComponent(body)}`;
 
@@ -15829,11 +15777,10 @@ ${lines}
                     onClick={e => e.stopPropagation()}>
                     <div className="px-5 py-3 border-b flex items-center gap-2">
                       <h3 className="font-bold text-gray-800">
-                        {internal ? '📧 사내 검토메일 초안' : '📧 업체별 납기 확인 메일 초안'}
+                        📧 업체별 납기 확인 메일 초안
                       </h3>
                       <span className="text-xs text-gray-500">
-                        {internal ? `구매 담당 앞 · ${src.length}건 / ${vsAll.length}개 업체`
-                                  : `${vs.length}개 업체 · 지연 ${src.length}건`}
+                        {`${vs.length}개 업체 · 지연 ${src.length}건`}
                       </span>
                       <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         초안만 만듭니다. 발송은 직접 하십시오.
@@ -15845,7 +15792,7 @@ ${lines}
 
                     <div className="flex-1 flex overflow-hidden">
                       {/* 업체 목록 */}
-                      <div className={`w-56 border-r overflow-y-auto shrink-0 ${internal ? 'hidden' : ''}`}>
+                      <div className="w-56 border-r overflow-y-auto shrink-0">
                         {vs.map(v => {
                           const k = v.code || v.name;
                           const hasAddr = ((supplierMap.emails || {})[v.code] || []).length > 0
@@ -15894,7 +15841,7 @@ ${lines}
                             onChange={e => setVendorMailExtra(m => ({ ...m, [curKey]: e.target.value }))}
                             placeholder="주소 직접 추가 (쉼표로 구분)"
                             className="mt-2 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-400" />
-                          <p className="mt-1 text-[10px] text-gray-400">참조: jimin.jung@promega.com</p>
+                          <p className="mt-1 text-[10px] text-gray-400">참조: {MAIL_CC}</p>
                           {(supplierMap.emailNotes || {})[cur.code] && (
                             <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                               ⚠ 미확인 주소 — {supplierMap.emailNotes[cur.code]}
