@@ -15756,16 +15756,16 @@ ${lines}
                     const dateTxt = reminder
                       ? `납품 예정일 <span style="color:#2563eb;font-weight:600;">${esc(d.deliveryDate)}</span>`
                       : `납기 <span style="color:#dc2626;font-weight:600;">${esc(d.deliveryDate)}</span>`
-                        + ` <span style="color:#dc2626;">(${daysPast(d.deliveryDate)}일 경과)</span>`;
+                        + ` (${daysPast(d.deliveryDate)}일 경과)`;
                     const qtyTxt = (partial && !reminder)
                       ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty} ${esc(d.unit || 'EA')}</b>`
                       : `${reminder ? '수량' : '미입고'} <b>${d.qty} ${esc(d.unit || 'EA')}</b>`;
                     return '<div style="margin-bottom:12px;">'
                       + `<div><b>${i + 1})</b> PO ${esc(d.poNo)} / <b>${esc(d.material)}</b>`
                       + (d.description ? `&nbsp;&nbsp;${esc(d.description)}` : '') + '</div>'
-                      + `<div style="margin-left:20px;color:#444;">${dateTxt} &middot; ${qtyTxt}</div>`
+                      + `<div style="margin-left:20px;">${dateTxt} &middot; ${qtyTxt}</div>`
                       + (partial && !reminder
-                          ? '<div style="margin-left:20px;color:#b45309;">&rarr; 일부만 입고되었습니다.'
+                          ? '<div style="margin-left:20px;">&rarr; 일부만 입고되었습니다.'
                             + ' 잔여분 납품 예정일 회신 또는 Order Close 여부 확인 부탁드립니다.</div>'
                           : '')
                       + '</div>';
