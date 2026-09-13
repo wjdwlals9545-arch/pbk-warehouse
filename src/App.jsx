@@ -15747,25 +15747,37 @@ ${lines}
 
               // Outlook 은 표가 읽기 좋다. mailto 로 떨어질 때만 평문을 쓴다.
               const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              const tbl = (rows) =>
-                '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">'
-                + '<tr style="background:#f3f4f6;">'
-                + (reminder ? ['PO', 'Material', 'Description', '납품 예정일', '수량']
-                             : ['PO', 'Material', 'Description', '납기일', '경과', '미납']
-                  ).map(h => `<th>${h}</th>`).join('')
-                + '</tr>'
-                + rows.map(d => {
-                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
-                    const qty = partial
-                      ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty}</b> ${esc(d.unit || 'EA')}`
-                      : `<b>${d.qty}</b> ${esc(d.unit || 'EA')}`;
-                    return '<tr>'
-                      + `<td>${esc(d.poNo)}</td><td><b>${esc(d.material)}</b></td><td>${esc(d.description)}</td>`
-                      + `<td style="color:${reminder ? '#2563eb' : '#dc2626'};">${esc(d.deliveryDate)}</td>`
-                      + (reminder ? '' : `<td align="center">${daysPast(d.deliveryDate)}일</td>`)
-                      + `<td>${reminder ? `<b>${d.qty}</b> ${esc(d.unit || 'EA')}` : qty}</td></tr>`;
-                  }).join('')
-                + '</table>';
+              // 표 폭을 고정하지 않는다. 내용이 길면 넓어지고 짧으면 좁아진다.
+              // Description 만 접히게 두고 나머지는 줄바꿈을 막아 폭을 Description 이 흡수한다.
+              const CELL = 'padding:10px 14px;border:1px solid #dfe3e8;vertical-align:top;';
+              const NOWRAP = 'white-space:nowrap;';
+              const tbl = (rows) => {
+                const heads = reminder
+                  ? [['PO', 1], ['Material', 1], ['Description', 0], ['납품 예정일', 1], ['수량', 1]]
+                  : [['PO', 1], ['Material', 1], ['Description', 0], ['납기일', 1], ['경과', 1], ['미납', 1]];
+                return '<table cellpadding="0" cellspacing="0" role="presentation"'
+                  + ' style="border-collapse:collapse;table-layout:auto;font-size:13px;line-height:1.55;margin:12px 0;">'
+                  + '<tr style="background:#f1f5f9;">'
+                  + heads.map(([h, nw]) =>
+                      `<th style="${CELL}${nw ? NOWRAP : ''}text-align:left;font-weight:600;color:#334155;">${h}</th>`
+                    ).join('')
+                  + '</tr>'
+                  + rows.map(d => {
+                      const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                      const qty = partial
+                        ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty}</b> ${esc(d.unit || 'EA')}`
+                        : `<b>${d.qty}</b> ${esc(d.unit || 'EA')}`;
+                      return '<tr>'
+                        + `<td style="${CELL}${NOWRAP}">${esc(d.poNo)}</td>`
+                        + `<td style="${CELL}${NOWRAP}"><b>${esc(d.material)}</b></td>`
+                        + `<td style="${CELL}min-width:180px;">${esc(d.description)}</td>`
+                        + `<td style="${CELL}${NOWRAP}color:${reminder ? '#2563eb' : '#dc2626'};">${esc(d.deliveryDate)}</td>`
+                        + (reminder ? '' : `<td style="${CELL}${NOWRAP}text-align:center;">${daysPast(d.deliveryDate)}일</td>`)
+                        + `<td style="${CELL}${NOWRAP}">${reminder ? `<b>${d.qty}</b> ${esc(d.unit || 'EA')}` : qty}</td>`
+                        + '</tr>';
+                    }).join('')
+                  + '</table>';
+              };
 
               const anyPartial = cur.items.some(
                 d => d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
