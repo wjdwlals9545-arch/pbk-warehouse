@@ -5095,12 +5095,9 @@ export default function PBKWarehouseSystem() {
 
       setDueSoonTodos(dueSoon);
 
-      if (dueSoon.length > 0) {
-        setShowDueSoonAlert(true);
-        document.title = `(${dueSoon.length}) ⚠️ Warehouse Management`;
-      } else {
-        document.title = 'Warehouse Management';
-      }
+      // 탭 제목은 건드리지 않는다. 브라우저 탭에 알림이 뜨는 게 거슬린다는
+      // 책임님 요청 — 알림은 화면 안에서만 보여준다.
+      if (dueSoon.length > 0) setShowDueSoonAlert(true);
     };
 
     checkDueSoonTodos();
@@ -5139,34 +5136,6 @@ export default function PBKWarehouseSystem() {
       checkFullBins();
     }
   }, [inventoryData, rackSummary]);
-
-  // 탭이 보일 때 깜빡임 효과 (마감 임박 항목 있을 때)
-  useEffect(() => {
-    let interval;
-    const today = new Date().toISOString().split('T')[0];
-
-    const urgentCount = todoList.filter(todo => 
-      !todo.completed && 
-      todo.dueDate && 
-      (todo.dueDate === today || todo.dueDate < today)
-    ).length;
-
-    if (urgentCount > 0) {
-      let isAlert = true;
-      interval = setInterval(() => {
-        if (isAlert) {
-          document.title = `🚨 (${urgentCount}) 마감 임박!`;
-        } else {
-          document.title = `⏰ Warehouse Management`;
-        }
-        isAlert = !isAlert;
-      }, 1500);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [todoList]);
 
   // 온습도 미입력 알림 상태
   const [showTempAlert, setShowTempAlert] = useState(false);
