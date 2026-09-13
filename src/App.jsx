@@ -15747,50 +15747,38 @@ ${lines}
 
               // Outlook 은 표가 읽기 좋다. mailto 로 떨어질 때만 평문을 쓴다.
               const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              // 표 폭을 고정하지 않는다. 내용이 길면 넓어지고 짧으면 좁아진다.
-              // Description 만 접히게 두고 나머지는 줄바꿈을 막아 폭을 Description 이 흡수한다.
-              const CELL = 'padding:10px 14px;border:1px solid #dfe3e8;vertical-align:top;';
-              const NOWRAP = 'white-space:nowrap;';
-              const tbl = (rows) => {
-                const heads = reminder
-                  ? [['PO', 1], ['Material', 1], ['Description', 0], ['납품 예정일', 1], ['수량', 1]]
-                  : [['PO', 1], ['Material', 1], ['Description', 0], ['납기일', 1], ['경과', 1], ['미납', 1]];
-                return '<table cellpadding="0" cellspacing="0" role="presentation"'
-                  + ' style="border-collapse:collapse;table-layout:auto;font-size:13px;line-height:1.55;margin:12px 0;">'
-                  + '<tr style="background:#f1f5f9;">'
-                  + heads.map(([h, nw]) =>
-                      `<th style="${CELL}${nw ? NOWRAP : ''}text-align:left;font-weight:600;color:#334155;">${h}</th>`
-                    ).join('')
-                  + '</tr>'
-                  + rows.map(d => {
-                      const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
-                      const qty = partial
-                        ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty}</b> ${esc(d.unit || 'EA')}`
-                        : `<b>${d.qty}</b> ${esc(d.unit || 'EA')}`;
-                      return '<tr>'
-                        + `<td style="${CELL}${NOWRAP}">${esc(d.poNo)}</td>`
-                        + `<td style="${CELL}${NOWRAP}"><b>${esc(d.material)}</b></td>`
-                        + `<td style="${CELL}min-width:180px;">${esc(d.description)}</td>`
-                        + `<td style="${CELL}${NOWRAP}color:${reminder ? '#2563eb' : '#dc2626'};">${esc(d.deliveryDate)}</td>`
-                        + (reminder ? '' : `<td style="${CELL}${NOWRAP}text-align:center;">${daysPast(d.deliveryDate)}일</td>`)
-                        + `<td style="${CELL}${NOWRAP}">${reminder ? `<b>${d.qty}</b> ${esc(d.unit || 'EA')}` : qty}</td>`
-                        + '</tr>';
-                    }).join('')
-                  + '</table>';
-              };
+              // 평문판과 같은 모양의 리스트. 표는 열이 많아 답답하고
+              // 클라이언트마다 테두리가 다르게 나온다.
+              const lst = (rows) =>
+                '<div style="margin:14px 0 18px;">'
+                + rows.map((d, i) => {
+                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                    const dateTxt = reminder
+                      ? `납품 예정일 <span style="color:#2563eb;font-weight:600;">${esc(d.deliveryDate)}</span>`
+                      : `납기 <span style="color:#dc2626;font-weight:600;">${esc(d.deliveryDate)}</span>`
+                        + ` <span style="color:#dc2626;">(${daysPast(d.deliveryDate)}일 경과)</span>`;
+                    const qtyTxt = (partial && !reminder)
+                      ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty} ${esc(d.unit || 'EA')}</b>`
+                      : `${reminder ? '수량' : '미입고'} <b>${d.qty} ${esc(d.unit || 'EA')}</b>`;
+                    return '<div style="margin-bottom:12px;">'
+                      + `<div><b>${i + 1})</b> PO ${esc(d.poNo)} / <b>${esc(d.material)}</b>`
+                      + (d.description ? `&nbsp;&nbsp;${esc(d.description)}` : '') + '</div>'
+                      + `<div style="margin-left:20px;color:#444;">${dateTxt} &middot; ${qtyTxt}</div>`
+                      + (partial && !reminder
+                          ? '<div style="margin-left:20px;color:#b45309;">&rarr; 일부만 입고되었습니다.'
+                            + ' 잔여분 납품 예정일 회신 또는 Order Close 여부 확인 부탁드립니다.</div>'
+                          : '')
+                      + '</div>';
+                  }).join('')
+                + '</div>';
 
-              const anyPartial = cur.items.some(
-                d => d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
-              const partialNote = anyPartial
-                ? '<p style="color:#b45309;">※ 일부만 입고된 건이 있습니다. <b>잔여분 납품 예정일 회신</b> 또는 <b>Order Close 여부</b> 확인 부탁드립니다.</p>'
-                : '';
-
-              const html = `<div style="font-family:'Malgun Gothic',sans-serif;">`
+              const html = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
                 + `<p>안녕하세요 프로메가 정지민입니다.</p>`
                 + (reminder
                     ? `<p><b>${dueDate}</b> 납품 예정인 아래 건의 일정 확인 부탁드립니다.</p>`
                     : `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`)
-                + tbl(cur.items) + (reminder ? '' : partialNote)
+                + `<p style="margin-bottom:4px;"><b>■ ${reminder ? '납품 예정' : '납기 경과'} (${cur.items.length}건)</b></p>`
+                + lst(cur.items)
                 + (reminder
                     ? `<p>일정에 변동이 있으면 회신 부탁드립니다.<br/>감사합니다.</p>`
                     : `<p>회신 부탁드립니다.<br/>감사합니다.</p>`)
