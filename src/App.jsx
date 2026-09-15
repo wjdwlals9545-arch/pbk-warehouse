@@ -2307,6 +2307,7 @@ export default function PBKWarehouseSystem() {
   const ALL_TABS = [
     { id: 'home',        label: 'Home',          icon: '🏠', group: '메인' },
     { id: 'migo',        label: 'MIGO',          icon: '📋', group: '메인' },
+    { id: 'taxinvoice',  label: '세금계산서',     icon: '🧾', group: '메인' },
     { id: 'dashboard',   label: 'Production',    icon: '📊', group: '메인' },
     { id: 'delivery',    label: 'Delivery',      icon: '🚚', group: '물류' },
     { id: 'receive',     label: 'Receiving',     icon: '📥', group: '물류' },
