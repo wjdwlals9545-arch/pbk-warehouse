@@ -4772,7 +4772,8 @@ export default function PBKWarehouseSystem() {
   };
 
   useEffect(() => {
-    if (activeTab !== 'migo') return;
+    // 세금계산서 탭도 같은 데이터를 쓴다 — 여기서 갱신이 안 돌면 폴더에 넣어도 안 뜬다
+    if (activeTab !== 'migo' && activeTab !== 'taxinvoice') return;
     fetchMigoData();
     const interval = setInterval(fetchMigoData, 5000);
     return () => clearInterval(interval);
