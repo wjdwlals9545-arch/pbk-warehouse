@@ -15808,7 +15808,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {vendorMailOpen && (() => {
               const src = vendorMailItems || overdueDeliveries;
               // 수신은 항상 업체. 구매담당은 참조로만 들어간다.
-              const MAIL_CC = 'jiwon.hwang@promega.com; jimin.jung@promega.com';
+              // 보내는 사람이 정지민 책임이라 자기 주소를 참조로 또 넣을 이유가 없다.
+              const MAIL_CC = 'jiwon.hwang@promega.com';
               const byV = {};
               src.forEach(d => {
                 const { code, name } = splitVendor(d.supplier);
@@ -21594,7 +21595,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
         const nameOf = (a) => (rows.find(c => c.email === a) || {}).name || '';
         const extra = (taxMailExtra || '').trim();
         const allTo = [...taxMailTo, ...(extra ? extra.split(/[,;\s]+/).filter(Boolean) : [])];
-        const MAIL_CC = 'jimin.jung@promega.com';
+        // 본인이 보내는 메일이라 참조는 없다. 회신 주소는 본문에 적혀 있다.
+        const MAIL_CC = '';
         const note = (supplierMap.notes || {})[code];
 
         const subject = '[PROMEGA] 세금계산서 발행 요청';
@@ -21608,8 +21610,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           + `<p>납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.<br/>`
           + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p></div>`;
         const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
-          + `?cc=${encodeURIComponent(MAIL_CC)}`
-          + `&subject=${encodeURIComponent(subject)}`
+          + `?subject=${encodeURIComponent(subject)}`
+          + (MAIL_CC ? `&cc=${encodeURIComponent(MAIL_CC)}` : '')
           + `&body=${encodeURIComponent(body)}`;
 
         const close = () => { setTaxMailInv(null); setTaxMailTo([]); setTaxMailExtra(''); };
@@ -21695,7 +21697,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                   <input type="text" value={taxMailExtra} onChange={e => setTaxMailExtra(e.target.value)}
                     placeholder="주소 직접 추가 (쉼표로 구분)"
                     className="mt-2 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-400" />
-                  <p className="mt-1 text-[10px] text-gray-400">참조: {MAIL_CC}</p>
+                  {MAIL_CC && <p className="mt-1 text-[10px] text-gray-400">참조: {MAIL_CC}</p>}
                 </div>
 
                 <div>
