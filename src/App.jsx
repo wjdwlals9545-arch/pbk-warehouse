@@ -2445,6 +2445,7 @@ export default function PBKWarehouseSystem() {
   const [taxMailCode, setTaxMailCode] = useState('');   // 고른 업체코드
   const [taxMailTo, setTaxMailTo] = useState([]);       // 고른 주소
   const [taxMailExtra, setTaxMailExtra] = useState('');
+  const [taxMailFiles, setTaxMailFiles] = useState([]);  // 초안에 붙일 폴더 내 파일명
   const [contactEditOpen, setContactEditOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState(null);   // {코드: [{email,name}]}
   const [contactSearch, setContactSearch] = useState('');
@@ -19599,10 +19600,13 @@ ${lines}
                           </div>
                           <span className="text-[11px] text-gray-400">{when(g.delivery?.mtime)}</span>
                           <button onClick={() => {
-                            setTaxMailInv({ vendor: g.vendor, po_number: g.po_number });
+                            // 폴더에 있는 거래명세서를 초안에 그대로 붙인다
+                            const files = [g.delivery?.filename, g.tax?.filename].filter(Boolean);
+                            setTaxMailInv({ vendor: g.vendor, po_number: g.po_number, files });
                             setTaxMailCode(code);
                             setTaxMailTo(who.length ? [who[0].email] : []);
                             setTaxMailExtra('');
+                            setTaxMailFiles(files);
                           }}
                             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
                               requested(g.po_number)
@@ -20340,10 +20344,12 @@ ${lines}
                                     {migoSelectedStage === 'completed_month' && (
                                       <button onClick={() => {
                                         const code = vendorCodeOf(inv.vendor);
-                                        setTaxMailInv(inv);
+                                        const files = inv.filename ? [inv.filename] : [];
+                                        setTaxMailInv({ ...inv, files });
                                         setTaxMailCode(code);
                                         setTaxMailTo(code && vendorContacts(code).length ? [vendorContacts(code)[0].email] : []);
                                         setTaxMailExtra('');
+                                        setTaxMailFiles(files);
                                       }}
                                         className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
                                         📧 세금계산서 요청
@@ -21616,8 +21622,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
         const nameOf = (a) => (rows.find(c => c.email === a) || {}).name || '';
         const extra = (taxMailExtra || '').trim();
         const allTo = [...taxMailTo, ...(extra ? extra.split(/[,;\s]+/).filter(Boolean) : [])];
-        // 본인이 보내는 메일이라 참조는 없다. 회신 주소는 본문에 적혀 있다.
-        const MAIL_CC = '';
+        // 구매담당(황지원 책임)만 참조. 본인은 보내는 사람이라 넣지 않는다.
+        const MAIL_CC = 'jiwon.hwang@promega.com';
         const note = (supplierMap.notes || {})[code];
 
         const subject = '[PROMEGA] 세금계산서 발행 요청';
@@ -21635,16 +21641,22 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           + (MAIL_CC ? `&cc=${encodeURIComponent(MAIL_CC)}` : '')
           + `&body=${encodeURIComponent(body)}`;
 
-        const close = () => { setTaxMailInv(null); setTaxMailTo([]); setTaxMailExtra(''); };
+        const close = () => { setTaxMailInv(null); setTaxMailTo([]); setTaxMailExtra(''); setTaxMailFiles([]); };
         const openDraft = async () => {
           try {
             const r = await fetch(`${MIGO_API}/api/mail/draft`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ to: allTo.join('; '), cc: MAIL_CC, subject, html }),
-              signal: AbortSignal.timeout(4000),
+              body: JSON.stringify({ to: allTo.join('; '), cc: MAIL_CC, subject, html,
+                                     attachments: taxMailFiles }),
+              signal: AbortSignal.timeout(8000),
             });
             if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.status);
-            showToast('Outlook 에 초안을 띄웠습니다. 확인 후 보내십시오.', 'success');
+            const res = await r.json().catch(() => ({}));
+            const miss = (res.missing || []).length;
+            showToast(miss
+              ? `초안을 띄웠습니다. 첨부 ${(res.attached || []).length}건 · 못 찾은 파일 ${miss}건`
+              : `Outlook 에 초안을 띄웠습니다${(res.attached || []).length ? ` (첨부 ${res.attached.length}건)` : ''}. 확인 후 보내십시오.`,
+              miss ? 'info' : 'success');
             const next = new Set(taxRequestedPOs); next.add(inv.po_number);
             setTaxRequestedPOs(next);
             safeStorage.setItem('pbk_tax_requested', JSON.stringify([...next]));
@@ -21729,11 +21741,41 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                   <p className="text-xs font-semibold text-gray-600 mb-1">본문</p>
                   <pre className="text-[11px] leading-relaxed bg-gray-50 border rounded-lg p-3 whitespace-pre-wrap text-gray-700">{body}</pre>
                 </div>
+
+                {/* 첨부 — 폴더에 있는 PDF 를 그대로 붙인다. 빼고 싶으면 눌러서 끈다 */}
+                {(inv.files || []).length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 mb-1.5">
+                      첨부 <span className="text-gray-400 font-normal">· 세금계산서 폴더의 파일</span>
+                    </p>
+                    <div className="space-y-1">
+                      {(inv.files || []).map(f => {
+                        const on = taxMailFiles.includes(f);
+                        return (
+                          <button key={f}
+                            onClick={() => setTaxMailFiles(on ? taxMailFiles.filter(x => x !== f) : [...taxMailFiles, f])}
+                            className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-left transition ${
+                              on ? 'bg-teal-50 border-teal-300' : 'bg-white border-gray-200 hover:border-teal-300'}`}>
+                            <span className={`text-[11px] ${on ? 'text-teal-600' : 'text-gray-300'}`}>
+                              {on ? '✓' : '○'}
+                            </span>
+                            <span className="text-base leading-none">📄</span>
+                            <span className={`text-[11px] font-mono truncate ${on ? 'text-teal-800' : 'text-gray-400'}`}>{f}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1 text-[10px] text-gray-400">
+                      첨부는 Outlook 초안으로 열 때만 붙습니다. 메일 앱(mailto)으로는 파일을 실을 수 없습니다.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="px-5 py-3 border-t flex items-center gap-2">
                 <span className="text-[11px] text-gray-500">
                   {allTo.length ? `수신 ${allTo.length}명` : '수신자를 선택하세요'}
+                  {taxMailFiles.length > 0 && ` · 첨부 ${taxMailFiles.length}건`}
                 </span>
                 <div className="ml-auto flex gap-2">
                   <button onClick={() => { navigator.clipboard.writeText(body); showToast('본문을 복사했습니다', 'success'); }}
