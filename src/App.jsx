@@ -114,6 +114,7 @@ const SYNC_KEYS = [
   'pbk_last_auto_backup',
   'pbk_tab_order',
   'pbk_tax_requested',
+  'pbk_tax_requested_at',
   'pbk_work_issues',
 ];
 
@@ -4557,6 +4558,23 @@ export default function PBKWarehouseSystem() {
     try { return new Set(JSON.parse(safeStorage.getItem('pbk_tax_requested') || '[]')); }
     catch { return new Set(); }
   });
+  // 언제 요청했는지. 며칠째 답이 없는지 보려고 따로 둔다 { PO: ISO }
+  const [taxRequestedAt, setTaxRequestedAt] = useState(() => {
+    try { return JSON.parse(safeStorage.getItem('pbk_tax_requested_at') || '{}'); }
+    catch { return {}; }
+  });
+  // 요청 표시를 켜고 끈다. 메일을 띄운 뒤 '요청 중' 으로 옮기는 게 이걸로 된다.
+  const markTaxRequested = (po, on = true) => {
+    if (!po) return;
+    const next = new Set(taxRequestedPOs);
+    const at = { ...taxRequestedAt };
+    if (on) { next.add(po); at[po] = new Date().toISOString(); }
+    else { next.delete(po); delete at[po]; }
+    setTaxRequestedPOs(next);
+    setTaxRequestedAt(at);
+    safeStorage.setItem('pbk_tax_requested', JSON.stringify([...next]));
+    safeStorage.setItem('pbk_tax_requested_at', JSON.stringify(at));
+  };
   const [migoReportVendor, setMigoReportVendor] = useState(null);   // expanded vendor in report
   const [migoMonthFilter, setMigoMonthFilter]     = useState('');   // 'YYYY-MM' for history month filter
   const [migoLastUpdated, setMigoLastUpdated] = useState(null);
@@ -19503,12 +19521,21 @@ ${lines}
         {/* ─────────── 세금계산서 처리 ─────────── */}
         {activeTab === 'taxinvoice' && (() => {
           const { pending = [], mismatch = [], done = [] } = taxFlow;
-          // 거래명세서만 온 것 = 세금계산서 요청 대상
-          const waitTax = pending.filter(g => g.delivery && !g.tax);
-          const waitPair = pending.filter(g => g.tax && !g.delivery);
           const money = (v) => (v === null || v === undefined) ? '—' : Number(v).toLocaleString() + '원';
           const when = (t) => t ? new Date(t * 1000).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const requested = (po) => taxRequestedPOs.has(po);
+
+          // 거래명세서만 온 것 = 세금계산서 요청 대상.
+          // 메일을 띄우면 '요청 중' 으로 옮겨가고, 세금계산서가 들어오면 목록에서 빠진다.
+          const allWait   = pending.filter(g => g.delivery && !g.tax);
+          const waitTax   = allWait.filter(g => !requested(g.po_number));
+          const requesting = allWait.filter(g =>  requested(g.po_number));
+          // 요청한 지 며칠 됐나
+          const daysSince = (po) => {
+            const at = taxRequestedAt[po];
+            if (!at) return null;
+            return Math.floor((Date.now() - new Date(at).getTime()) / 86400000);
+          };
 
           const Card = ({ n, label, tone, desc }) => (
             <div className={`rounded-xl border p-3.5 ${tone}`}>
@@ -19531,12 +19558,12 @@ ${lines}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Card n={waitTax.length} label="세금계산서 요청 대기" tone="bg-amber-50 border-amber-200 text-amber-800"
-                  desc="거래명세서만 들어옴" />
-                <Card n={waitPair.length} label="짝 없는 세금계산서" tone="bg-slate-50 border-slate-200 text-slate-700"
-                  desc="거래명세서 대기 중" />
                 <Card n={mismatch.length} label="금액 불일치" tone="bg-red-50 border-red-200 text-red-700"
                   desc="확인 필요" />
+                <Card n={waitTax.length} label="세금계산서 요청 대기" tone="bg-amber-50 border-amber-200 text-amber-800"
+                  desc="거래명세서만 들어옴" />
+                <Card n={requesting.length} label="세금계산서 요청 중" tone="bg-indigo-50 border-indigo-200 text-indigo-700"
+                  desc="메일 보냄 · 발행 대기" />
                 <Card n={done.length} label="입고완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
                   desc="최근 40건" />
               </div>
@@ -19608,11 +19635,8 @@ ${lines}
                             setTaxMailExtra('');
                             setTaxMailFiles(files);
                           }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                              requested(g.po_number)
-                                ? 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                                : 'bg-amber-500 hover:bg-amber-600 text-white'}`}>
-                            {requested(g.po_number) ? '✓ 요청함 · 다시' : '📧 세금계산서 요청'}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-amber-500 hover:bg-amber-600 text-white">
+                            📧 세금계산서 요청
                           </button>
                         </div>
                       );
@@ -19622,21 +19646,62 @@ ${lines}
               </div>
 
               {/* 짝 없는 세금계산서 */}
-              {waitPair.length > 0 && (
+              {/* 세금계산서 요청 중 — 메일은 보냈고 발행을 기다리는 건.
+                  세금계산서가 폴더에 들어오면 짝이 맞아 이 목록에서 자동으로 빠진다. */}
+              {requesting.length > 0 && (
                 <div className="bg-white rounded-xl border shadow-sm">
                   <div className="p-4 border-b">
-                    <h3 className="font-bold text-gray-800 text-sm">
-                      세금계산서만 들어온 건 <span className="font-normal text-gray-500">{waitPair.length}건</span>
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                      📤 세금계산서 요청 중
+                      <span className="text-sm font-normal text-gray-500">{requesting.length}건</span>
+                      <span className="ml-auto text-[11px] font-normal text-gray-400">
+                        세금계산서가 폴더에 들어오면 자동으로 빠집니다
+                      </span>
                     </h3>
                   </div>
                   <div className="divide-y">
-                    {waitPair.map(g => (
-                      <div key={g.key} className="px-4 py-2.5 text-sm flex items-center gap-3">
-                        <span className="font-semibold text-gray-800">{g.vendor}</span>
-                        <span className="text-xs text-gray-400 font-mono">{g.po_number}</span>
-                        <span className="ml-auto text-xs text-gray-500">거래명세서를 기다리는 중</span>
-                      </div>
-                    ))}
+                    {requesting.map(g => {
+                      const code = vendorCodeOf(g.vendor);
+                      const who = code ? vendorContacts(code) : [];
+                      const d = daysSince(g.po_number);
+                      return (
+                        <div key={g.key} className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
+                          <div className="min-w-[180px]">
+                            <span className="font-semibold text-sm text-gray-800">{g.vendor || '(업체 미상)'}</span>
+                            <div className="text-[11px] text-gray-400 font-mono">{g.po_number}</div>
+                          </div>
+                          <div className="text-xs text-gray-600 min-w-[120px]">
+                            {money(g.delivery?.total_amount)}
+                          </div>
+                          <div className="text-[11px] text-gray-400 flex-1 truncate">
+                            {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
+                          </div>
+                          {d !== null && (
+                            <span className={`text-[11px] px-2 py-0.5 rounded border ${
+                              d >= 3 ? 'bg-red-50 border-red-200 text-red-700'
+                                     : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+                              {d === 0 ? '오늘 요청' : `요청 ${d}일 경과`}
+                            </span>
+                          )}
+                          <button onClick={() => {
+                            const files = [g.delivery?.filename, g.tax?.filename].filter(Boolean);
+                            setTaxMailInv({ vendor: g.vendor, po_number: g.po_number, files });
+                            setTaxMailCode(code);
+                            setTaxMailTo(who.length ? [who[0].email] : []);
+                            setTaxMailExtra('');
+                            setTaxMailFiles(files);
+                          }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 hover:bg-indigo-600 text-white transition">
+                            📧 다시 요청
+                          </button>
+                          <button onClick={() => markTaxRequested(g.po_number, false)}
+                            className="px-2 py-1.5 rounded-lg text-[11px] border border-gray-300 text-gray-500 hover:bg-gray-100"
+                            title="요청 표시를 지우고 '요청 대기' 로 되돌립니다">
+                            대기로
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -21657,9 +21722,7 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
               ? `초안을 띄웠습니다. 첨부 ${(res.attached || []).length}건 · 못 찾은 파일 ${miss}건`
               : `Outlook 에 초안을 띄웠습니다${(res.attached || []).length ? ` (첨부 ${res.attached.length}건)` : ''}. 확인 후 보내십시오.`,
               miss ? 'info' : 'success');
-            const next = new Set(taxRequestedPOs); next.add(inv.po_number);
-            setTaxRequestedPOs(next);
-            safeStorage.setItem('pbk_tax_requested', JSON.stringify([...next]));
+            markTaxRequested(inv.po_number);   // '요청 중' 으로 옮긴다
             close();
           } catch (e) {
             showToast(`로컬 서버 연결 실패 — 메일 앱으로 엽니다 (${e.message})`, 'info');
@@ -21780,7 +21843,8 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
                 <div className="ml-auto flex gap-2">
                   <button onClick={() => { navigator.clipboard.writeText(body); showToast('본문을 복사했습니다', 'success'); }}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">본문 복사</button>
-                  <button disabled={!allTo.length} onClick={() => { window.location.href = mailto; }}
+                  <button disabled={!allTo.length}
+                    onClick={() => { markTaxRequested(inv.po_number); window.location.href = mailto; }}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
                     메일 앱(mailto)
                   </button>
