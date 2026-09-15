@@ -2435,6 +2435,7 @@ export default function PBKWarehouseSystem() {
   // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
   // 협력업체 담당자 편집기
   // 세금계산서 발행 요청 메일 (업체 앞) — 초안만 만들고 발송은 사람이
+  const [taxFlow, setTaxFlow] = useState({ pending: [], mismatch: [], done: [] });
   const [taxMailInv, setTaxMailInv] = useState(null);   // 대상 거래명세서
   const [taxMailCode, setTaxMailCode] = useState('');   // 고른 업체코드
   const [taxMailTo, setTaxMailTo] = useState([]);       // 고른 주소
@@ -4648,6 +4649,8 @@ export default function PBKWarehouseSystem() {
         fetch(`${MIGO_API}/api/invoices`,    { signal: AbortSignal.timeout(1200) }),
         fetch(`${MIGO_API}/api/history`,     { signal: AbortSignal.timeout(1200) }),
         fetch(`${MIGO_API}/api/taxinvoices`, { signal: AbortSignal.timeout(1200) }),
+        fetch(`${MIGO_API}/api/taxflow`, { signal: AbortSignal.timeout(2500) }).then(r => r.ok ? r.json() : null)
+          .then(d => { if (d && d.pending) setTaxFlow(d); }).catch(() => {}),
       ]);
       if (invRes.ok && histRes.ok && taxRes.ok) {
         setMigoInvoices(await invRes.json());
@@ -4831,7 +4834,7 @@ export default function PBKWarehouseSystem() {
   };
 
   // ── 탭 순서 관리 (Admin drag-and-drop) ──
-  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','inventory','kitting','pick','kpi','analysis','locate','layout','view3d','temphumidity','testlog','todo'];
+  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','inventory','kitting','pick','kpi','analysis','locate','layout','view3d','temphumidity','testlog','todo', 'taxinvoice'];
   const [tabOrder, setTabOrder] = useState(() => {
     // 예전에 저장된 순서에 새 탭이 빠져 있으면 화면에서 아예 사라진다.
     // (Inventory 가 설정에는 보이는데 탭 바에 없던 원인)
@@ -11010,6 +11013,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 delivery: { label: 'Delivery', icon: Truck },
                 receive: { label: 'Receiving', icon: Database },
                 inventory: { label: 'Inventory', icon: Archive },
+  taxinvoice: { label: '세금계산서', icon: FileText },
                 kitting: { label: 'Kitting L/T', icon: Package },
                 pick: { label: 'Kitting Cycle', icon: Clock },
                 kpi: { label: 'KPI', icon: TrendingUp },
@@ -19340,6 +19344,191 @@ ${lines}
             </div>
           </div>
         )}
+
+        {/* ─────────── 세금계산서 처리 ─────────── */}
+        {activeTab === 'taxinvoice' && (() => {
+          const { pending = [], mismatch = [], done = [] } = taxFlow;
+          // 거래명세서만 온 것 = 세금계산서 요청 대상
+          const waitTax = pending.filter(g => g.delivery && !g.tax);
+          const waitPair = pending.filter(g => g.tax && !g.delivery);
+          const money = (v) => (v === null || v === undefined) ? '—' : Number(v).toLocaleString() + '원';
+          const when = (t) => t ? new Date(t * 1000).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+          const requested = (po) => taxRequestedPOs.has(po);
+
+          const Card = ({ n, label, tone, desc }) => (
+            <div className={`rounded-xl border p-3.5 ${tone}`}>
+              <p className="text-2xl font-bold leading-none">{n}</p>
+              <p className="text-xs font-semibold mt-1.5">{label}</p>
+              <p className="text-[11px] opacity-70 mt-0.5">{desc}</p>
+            </div>
+          );
+
+          return (
+            <div className="space-y-5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800">🧾 세금계산서 처리</h2>
+                  <p className="text-sm text-gray-500">거래명세서 → 발행 요청 → 세금계산서 → 금액 대조 → 입고완료</p>
+                </div>
+                <span className="ml-auto text-[11px] text-gray-400">
+                  SAP 자동 입고처리는 서버에서 막혀 있어 이 흐름에는 쓰이지 않습니다
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <Card n={waitTax.length} label="세금계산서 요청 대기" tone="bg-amber-50 border-amber-200 text-amber-800"
+                  desc="거래명세서만 들어옴" />
+                <Card n={waitPair.length} label="짝 없는 세금계산서" tone="bg-slate-50 border-slate-200 text-slate-700"
+                  desc="거래명세서 대기 중" />
+                <Card n={mismatch.length} label="금액 불일치" tone="bg-red-50 border-red-200 text-red-700"
+                  desc="확인 필요" />
+                <Card n={done.length} label="입고완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
+                  desc="최근 40건" />
+              </div>
+
+              {/* 금액 불일치 — 있으면 맨 위 */}
+              {mismatch.length > 0 && (
+                <div className="bg-red-50/60 border border-red-200 rounded-xl">
+                  <div className="px-4 py-2.5 border-b border-red-200">
+                    <h3 className="font-bold text-red-800 text-sm">⚠ 금액 불일치 {mismatch.length}건 — 확인 필요</h3>
+                  </div>
+                  <div className="divide-y divide-red-100">
+                    {mismatch.map(g => (
+                      <div key={g.key} className="px-4 py-2.5 text-sm flex items-center gap-3 flex-wrap">
+                        <span className="font-semibold text-gray-800">{g.vendor}</span>
+                        <span className="text-xs text-gray-500 font-mono">{g.po_number}</span>
+                        <span className="ml-auto text-xs">
+                          거래명세서 <b>{money(g.delivery?.total_amount)}</b>
+                          <span className="mx-2 text-gray-300">/</span>
+                          세금계산서 <b className="text-red-700">{money(g.tax?.total_amount)}</b>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="px-4 py-2 text-[11px] text-red-600 border-t border-red-100">
+                    '금액 불일치' 폴더에 있습니다. 확인 후 직접 옮기시면 됩니다.
+                  </p>
+                </div>
+              )}
+
+              {/* 세금계산서 요청 대기 */}
+              <div className="bg-white rounded-xl border shadow-sm">
+                <div className="p-4 border-b">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    📨 세금계산서 요청 대기
+                    <span className="text-sm font-normal text-gray-500">{waitTax.length}건</span>
+                  </h3>
+                </div>
+                {waitTax.length === 0 ? (
+                  <p className="p-8 text-center text-sm text-gray-400">
+                    요청할 건이 없습니다. 거래명세서를 '세금계산서 미처리' 폴더에 넣으면 여기 나타납니다.
+                  </p>
+                ) : (
+                  <div className="divide-y">
+                    {waitTax.map(g => {
+                      const code = vendorCodeOf(g.vendor);
+                      const who = code ? vendorContacts(code) : [];
+                      return (
+                        <div key={g.key} className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
+                          <div className="min-w-[180px]">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-semibold text-sm text-gray-800">{g.vendor || '(업체 미상)'}</span>
+                              {!code && <span className="text-[10px] text-red-500">매칭 안 됨</span>}
+                            </div>
+                            <div className="text-[11px] text-gray-400 font-mono">{g.po_number}</div>
+                          </div>
+                          <div className="text-xs text-gray-600 min-w-[120px]">
+                            {money(g.delivery?.total_amount)}
+                          </div>
+                          <div className="text-[11px] text-gray-400 flex-1 truncate" title={g.delivery?.filename}>
+                            {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
+                          </div>
+                          <span className="text-[11px] text-gray-400">{when(g.delivery?.mtime)}</span>
+                          <button onClick={() => {
+                            setTaxMailInv({ vendor: g.vendor, po_number: g.po_number });
+                            setTaxMailCode(code);
+                            setTaxMailTo(who.length ? [who[0].email] : []);
+                            setTaxMailExtra('');
+                          }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                              requested(g.po_number)
+                                ? 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                : 'bg-amber-500 hover:bg-amber-600 text-white'}`}>
+                            {requested(g.po_number) ? '✓ 요청함 · 다시' : '📧 세금계산서 요청'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 짝 없는 세금계산서 */}
+              {waitPair.length > 0 && (
+                <div className="bg-white rounded-xl border shadow-sm">
+                  <div className="p-4 border-b">
+                    <h3 className="font-bold text-gray-800 text-sm">
+                      세금계산서만 들어온 건 <span className="font-normal text-gray-500">{waitPair.length}건</span>
+                    </h3>
+                  </div>
+                  <div className="divide-y">
+                    {waitPair.map(g => (
+                      <div key={g.key} className="px-4 py-2.5 text-sm flex items-center gap-3">
+                        <span className="font-semibold text-gray-800">{g.vendor}</span>
+                        <span className="text-xs text-gray-400 font-mono">{g.po_number}</span>
+                        <span className="ml-auto text-xs text-gray-500">거래명세서를 기다리는 중</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 최근 입고완료 */}
+              <div className="bg-white rounded-xl border shadow-sm">
+                <div className="p-4 border-b">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    ✅ 입고완료
+                    <span className="text-sm font-normal text-gray-500">최근 {done.length}건</span>
+                  </h3>
+                </div>
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr className="text-left text-[11px] text-gray-500 border-b">
+                        <th className="px-4 py-2">업체</th>
+                        <th className="px-3 py-2">PO</th>
+                        <th className="px-3 py-2 text-right">금액</th>
+                        <th className="px-3 py-2 text-center">거래명세서</th>
+                        <th className="px-3 py-2 text-center">세금계산서</th>
+                        <th className="px-3 py-2">완료</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {done.map(g => (
+                        <tr key={g.key} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 font-medium text-gray-800">{g.vendor || '—'}</td>
+                          <td className="px-3 py-2 text-xs font-mono text-gray-500">{g.po_number}</td>
+                          <td className="px-3 py-2 text-xs text-right">{money(g.delivery?.total_amount ?? g.tax?.total_amount)}</td>
+                          <td className="px-3 py-2 text-center">{g.delivery ? '✅' : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-3 py-2 text-center">{g.tax ? '✅' : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-3 py-2 text-[11px] text-gray-400">{when(Math.max(g.delivery?.mtime || 0, g.tax?.mtime || 0))}</td>
+                        </tr>
+                      ))}
+                      {done.length === 0 && (
+                        <tr><td colSpan="6" className="px-4 py-8 text-center text-sm text-gray-400">아직 없습니다.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <p className="text-[11px] text-gray-400">
+                💡 세금계산서를 '세금계산서 미처리' 폴더에 넣으면 거래명세서와 금액을 맞춰보고,
+                같으면 입고완료로, 다르면 '금액 불일치' 폴더로 옮기고 메일로 알려드립니다.
+              </p>
+            </div>
+          );
+        })()}
 
         {/* ─────────── MIGO 자동화 ─────────── */}
         {activeTab === 'migo' && (() => {
