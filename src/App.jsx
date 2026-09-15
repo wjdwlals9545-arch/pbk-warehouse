@@ -14978,9 +14978,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const nextFriday = new Date(thisMonday);
           nextFriday.setDate(thisMonday.getDate() + 11); // 월~금 + 다음주 월~금 = 12일
           nextFriday.setHours(23,59,59,999);
-          const twoWeekEnd = nextFriday.toISOString().slice(0,10);
-          const twoWeekStart = thisMonday.toISOString().slice(0,10);
-          const todayStr = koNow.toISOString().slice(0,10);
+          // 로컬 자정 기준 Date 를 toISOString 으로 자르면 UTC 로 밀려 하루 전이 나온다.
+          // (이번주 월요일이 9/14 인데 9/13 으로 표시되던 원인) 로컬 연·월·일로 만든다.
+          const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const twoWeekEnd = ymd(nextFriday);
+          const twoWeekStart = ymd(thisMonday);
+          const todayStr = ymd(koNow);
 
           // Open PO 기반 + Delivery Date 매칭
           // Delivery data의 schedule line을 순서대로 매칭 (consumed tracking)
@@ -15018,16 +15021,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const nextBizDay = (() => {
             const d = new Date(koNow);
             do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
-            return d.toISOString().slice(0, 10);
+            return ymd(d);
           })();
           const d1Items = poWithDates.filter(d => d.deliveryDate === nextBizDay && d.qty > 0);
           const d1Vendors = new Set(d1Items.map(d => splitVendor(d.supplier).code || d.supplier));
 
           // 주간 납품 예정 — 하루 전으로는 조율이 안 돼서, 한 주치를 미리 묶어 보낸다.
           // 월~금 한 주. 이번주를 고르면 오늘 이후만 (지난 건은 '납기 경과' 쪽 일이다).
-          // thisMonday 는 로컬 자정이라 toISOString 을 쓰면 UTC 로 밀려 하루 전이 나온다.
-          // 날짜 문자열은 로컬 연·월·일에서 바로 만든다.
-          const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           const weekRange = (offsetWeeks) => {
             const mon = new Date(thisMonday);
             mon.setDate(thisMonday.getDate() + offsetWeeks * 7);
@@ -15543,6 +15543,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <SortTh label="Material" sortKey="material" width="65px" />
                                   <th className="py-1.5" style={{width:'30%'}}>Description</th>
                                   <SortTh label="공급업체" sortKey="supplier" width="20%" />
+                                  <th className="py-1.5 whitespace-nowrap" style={{width:'190px'}}
+                                      title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
                                   <SortTh label="미입고 수량" sortKey="remain" align="right" width="70px" />
                                   <SortTh label="현재 재고" sortKey="stock" align="right" width="65px" />
                                 </tr></thead>
@@ -15550,6 +15552,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   const stock = stockOf(d.material);
                                   const poOn = delFilterPO === String(d.poNo);
                                   const supOn = delFilterSupplier === String(d.supplier || '');
+                                  const pk = `${d.poNo}_${d.material}`;
+                                  const pd = promisedDates[pk] || {};
+                                  // 회신 일정이 원래 납기일보다 늦으면 밀렸다는 뜻이라 눈에 띄게 둔다
+                                  const late = pd.date && d.deliveryDate && pd.date > d.deliveryDate;
                                   return (
                                     <tr key={`${d.poNo}_${d.material}_${i}`} className="border-b border-gray-100 hover:bg-gray-50">
                                       <td className="pl-4 py-1.5 text-xs whitespace-nowrap">
@@ -15563,6 +15569,21 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                         <button onClick={() => setDelFilterSupplier(supOn ? null : String(d.supplier || ''))}
                                           className={`hover:underline text-left truncate max-w-full ${supOn ? 'text-teal-700 font-semibold' : 'text-gray-700 hover:text-teal-600'}`}
                                           title={d.supplier || ''}>{vendorName(d.supplier) || '-'}</button>
+                                      </td>
+                                      {/* 업체가 회신해 온 일정. SAP 납기일은 그대로 두고 여기에만 적는다 */}
+                                      <td className="py-1.5 pr-2">
+                                        <div className="flex items-center gap-1">
+                                          <input type="date" value={pd.date || ''}
+                                            onChange={e => setPromised(pk, { date: e.target.value })}
+                                            className={`border rounded px-1.5 py-0.5 text-[11px] w-[112px] ${
+                                              late ? 'border-amber-300 bg-amber-50 text-amber-800'
+                                                   : pd.date ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                                   : 'border-gray-200 text-gray-400'}`} />
+                                          <input type="text" value={pd.note || ''}
+                                            onChange={e => setPromised(pk, { note: e.target.value })}
+                                            placeholder="메모"
+                                            className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
+                                        </div>
                                       </td>
                                       <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
                                       <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">
