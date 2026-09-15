@@ -15035,10 +15035,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             fri.setDate(mon.getDate() + 4);
             return { from: ymd(mon), to: ymd(fri) };
           };
-          const weeklyRange = weekRange(weeklyMailWeek === 'this' ? 0 : 1);
-          const weeklyFrom = weeklyMailWeek === 'this'
-            ? (weeklyRange.from > todayStr ? weeklyRange.from : todayStr)
-            : weeklyRange.from;
+          const weeklyRange = weeklyMailWeek === 'both'
+            ? { from: weekRange(0).from, to: weekRange(1).to }
+            : weekRange(weeklyMailWeek === 'this' ? 0 : 1);
+          // 이번 주가 들어가면 이미 지난 날은 뺀다. 지난 건은 '납기 경과' 쪽 일이다.
+          const weeklyFrom = (weeklyMailWeek !== 'next' && weeklyRange.from < todayStr)
+            ? todayStr : weeklyRange.from;
           const weeklyItems = poWithDates.filter(d =>
             d.deliveryDate && d.qty > 0 &&
             d.deliveryDate >= weeklyFrom && d.deliveryDate <= weeklyRange.to &&
@@ -15340,13 +15342,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </p>
                 <p className="text-xs text-blue-700">
                   {weeklyItems.length > 0
-                    ? `${weeklyItems.length}품목 / ${weeklyVendors.size}개 업체 — 한 주치를 업체별로 묶어 보냅니다`
+                    ? `${weeklyItems.length}품목 / ${weeklyVendors.size}개 업체 — ${weeklyMailWeek === 'both' ? '2주치' : '한 주치'}를 업체별로 묶어 보냅니다`
                     : '해당 주에 예정된 납품이 없습니다'}
                 </p>
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <div className="flex rounded-lg border border-blue-200 overflow-hidden text-[11px]">
-                  {[['this', '이번 주'], ['next', '다음 주']].map(([k, lbl]) => (
+                  {[['this', '이번 주'], ['next', '다음 주'], ['both', '2주']].map(([k, lbl]) => (
                     <button key={k} onClick={() => setWeeklyMailWeek(k)}
                       className={`px-2.5 py-1 transition ${weeklyMailWeek === k
                         ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50'}`}>
@@ -15856,7 +15858,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const rng = vendorMailRange || {};
               const weekTxt = weekly ? `${rng.from} ~ ${rng.to}` : '';
               const subject = weekly
-                ? `[Promega] ${weekTxt} 주간 납품 예정 확인 요청 (${cur.items.length}건)`
+                ? `[Promega] ${weekTxt} 납품 예정 확인 요청 (${cur.items.length}건)`
                 : reminder
                 ? `[Promega] ${dueDate} 납품 예정 건 확인 요청 (${cur.items.length}건)`
                 : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
@@ -15866,7 +15868,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 ${weekTxt} 납품 예정인 건을 아래와 같이 안내드립니다.
 일정 확인 부탁드리며, 조정이 필요한 건은 미리 회신 부탁드립니다.
 
-■ 주간 납품 예정 (${cur.items.length}건)
+■ 납품 예정 (${cur.items.length}건)
 ${lines}
 
 감사합니다.` : reminder ?
@@ -15924,7 +15926,7 @@ ${lines}
                     : reminder
                     ? `<p><b>${dueDate}</b> 납품 예정인 아래 건의 일정 확인 부탁드립니다.</p>`
                     : `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`)
-                + `<p style="margin-bottom:4px;"><b>■ ${weekly ? '주간 납품 예정' : reminder ? '납품 예정' : '납기 경과'} (${cur.items.length}건)</b></p>`
+                + `<p style="margin-bottom:4px;"><b>■ ${reminder ? '납품 예정' : '납기 경과'} (${cur.items.length}건)</b></p>`
                 + lst(cur.items)
                 + (weekly
                     ? `<p>감사합니다.</p>`
