@@ -15860,7 +15860,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const subject = weekly
                 ? `[Promega] 납품 예정 확인 요청 (${cur.items.length}건)`
                 : reminder
-                ? `[Promega] ${dueDate} 납품 예정 건 확인 요청 (${cur.items.length}건)`
+                ? `[Promega] 납품 예정 건 확인 요청 (${cur.items.length}건)`
                 : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
               const body = weekly ?
 `안녕하세요 프로메가 정지민입니다.
