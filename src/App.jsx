@@ -1938,6 +1938,10 @@ function vendorName(v) {
   return splitVendor(v).name || '(업체 미기재)';
 }
 
+// 주간 납품 예정 확인에서 빼는 업체. 일정이 어긋난 적이 없어 물어볼 일이 없다.
+//   105339 미스미 · 105362 Digikey · 100046 McMaster
+const WEEKLY_MAIL_SKIP = new Set(['105339', '105362', '100046']);
+
 function fmtMdHm(v) {
   const d = parseTs(v);
   if (!d || isNaN(d.getTime())) return '-';
@@ -2444,7 +2448,9 @@ export default function PBKWarehouseSystem() {
   const [contactEditOpen, setContactEditOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState(null);   // {코드: [{email,name}]}
   const [contactSearch, setContactSearch] = useState('');
-  const [vendorMailKind, setVendorMailKind] = useState('overdue'); // 'overdue' 납기경과 | 'reminder' 하루전 확인
+  const [vendorMailKind, setVendorMailKind] = useState('overdue'); // 'overdue' 납기경과 | 'reminder' 하루전 확인 | 'weekly' 주간 예정
+  const [weeklyMailWeek, setWeeklyMailWeek] = useState('next');    // 주간 메일 대상 주. 기본은 다음주 (조율할 시간이 있어야 한다)
+  const [vendorMailRange, setVendorMailRange] = useState(null);    // 주간 메일의 대상 기간 {from,to}
   const [vendorMailOpen, setVendorMailOpen] = useState(false);
   const [vendorMailItems, setVendorMailItems] = useState(null);  // null = 지연 전체
   const [vendorMailPick, setVendorMailPick] = useState('');      // 지금 보고 있는 업체코드
@@ -2454,6 +2460,21 @@ export default function PBKWarehouseSystem() {
   const [overdueDismissed, setOverdueDismissed] = useState(() => {
     try { const s = safeStorage.getItem('pbk_overdue_dismissed'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
+
+  // 업체가 회신해 온 새 납품 예정일. SAP 납기일이 고쳐지기 전까지 여기서만 들고 있는다.
+  //   { 'PO_자재': { date: 'YYYY-MM-DD', note: '메모', savedAt } }
+  const [promisedDates, setPromisedDates] = useState(() => {
+    try { const s = safeStorage.getItem('pbk_promised_dates'); return s ? JSON.parse(s) : {}; } catch { return {}; }
+  });
+  const setPromised = (key, patch) => {
+    setPromisedDates(prev => {
+      const next = { ...prev, [key]: { ...(prev[key] || {}), ...patch, savedAt: new Date().toISOString() } };
+      // 날짜도 메모도 비면 기록 자체를 지운다
+      if (!next[key].date && !(next[key].note || '').trim()) delete next[key];
+      safeStorage.setItem('pbk_promised_dates', JSON.stringify(next));
+      return next;
+    });
+  };
 
   // BOM 데이터 (사용자 업로드 가능)
   const [customBomData, setCustomBomData] = useState(() => {
@@ -15002,6 +15023,29 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const d1Items = poWithDates.filter(d => d.deliveryDate === nextBizDay && d.qty > 0);
           const d1Vendors = new Set(d1Items.map(d => splitVendor(d.supplier).code || d.supplier));
 
+          // 주간 납품 예정 — 하루 전으로는 조율이 안 돼서, 한 주치를 미리 묶어 보낸다.
+          // 월~금 한 주. 이번주를 고르면 오늘 이후만 (지난 건은 '납기 경과' 쪽 일이다).
+          // thisMonday 는 로컬 자정이라 toISOString 을 쓰면 UTC 로 밀려 하루 전이 나온다.
+          // 날짜 문자열은 로컬 연·월·일에서 바로 만든다.
+          const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const weekRange = (offsetWeeks) => {
+            const mon = new Date(thisMonday);
+            mon.setDate(thisMonday.getDate() + offsetWeeks * 7);
+            const fri = new Date(mon);
+            fri.setDate(mon.getDate() + 4);
+            return { from: ymd(mon), to: ymd(fri) };
+          };
+          const weeklyRange = weekRange(weeklyMailWeek === 'this' ? 0 : 1);
+          const weeklyFrom = weeklyMailWeek === 'this'
+            ? (weeklyRange.from > todayStr ? weeklyRange.from : todayStr)
+            : weeklyRange.from;
+          const weeklyItems = poWithDates.filter(d =>
+            d.deliveryDate && d.qty > 0 &&
+            d.deliveryDate >= weeklyFrom && d.deliveryDate <= weeklyRange.to &&
+            !WEEKLY_MAIL_SKIP.has(splitVendor(d.supplier).code));
+          const weeklyVendors = new Set(weeklyItems.map(d => splitVendor(d.supplier).code || d.supplier));
+          const mdOf = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+
           // 납기 지연 (납기일이 오늘 이전 + 미입고 수량 > 0, dismissed 제외)
           const allOverdueDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
           const overdueDeliveries = allOverdueDeliveries.filter(d => !overdueDismissed.includes(`${d.poNo}_${d.material}`));
@@ -15160,6 +15204,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                   <h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
                     {overdueDismissed.length > 0 && <button onClick={() => { setOverdueDismissed([]); safeStorage.removeItem('pbk_overdue_dismissed'); }} className="text-[10px] font-normal text-gray-400 hover:text-red-500 ml-2">(숨김 {overdueDismissed.length}건 복원)</button>}
+                    {(() => {
+                      const n = overdueDeliveries.filter(d => (promisedDates[`${d.poNo}_${d.material}`] || {}).date).length;
+                      return n > 0 ? <span className="text-[11px] font-normal text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded ml-2">회신 일정 {n}건</span> : null;
+                    })()}
                   </h3>
                   <div className="flex gap-2">
                     {overdueSelected.size > 0 && (
@@ -15208,6 +15256,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <th className="pb-2" style={{width:'30%'}}>Description</th>
                       <th className="pb-2" style={{width:'20%'}}>공급업체</th>
                       <th className="pb-2 whitespace-nowrap" style={{width:'85px'}}>납기일</th>
+                      <th className="pb-2 whitespace-nowrap" style={{width:'190px'}} title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
                       <th className="pb-2 whitespace-nowrap text-right" style={{width:'70px'}}>미입고</th>
                       <th className="pb-2 whitespace-nowrap text-right pr-3" style={{width:'65px'}}>현재재고</th>
                     </tr></thead>
@@ -15227,6 +15276,21 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                           <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
                           <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
                           <td className="py-1.5 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
+                          {/* 업체가 회신해 온 일정. SAP 납기일은 그대로 두고 여기에만 적는다 */}
+                          <td className="py-1.5 pr-2">
+                            <div className="flex items-center gap-1">
+                              <input type="date" value={(promisedDates[key] || {}).date || ''}
+                                onChange={e => setPromised(key, { date: e.target.value })}
+                                className={`border rounded px-1.5 py-0.5 text-[11px] w-[112px] ${
+                                  (promisedDates[key] || {}).date
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                    : 'border-gray-200 text-gray-400'}`} />
+                              <input type="text" value={(promisedDates[key] || {}).note || ''}
+                                onChange={e => setPromised(key, { note: e.target.value })}
+                                placeholder="메모"
+                                className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
+                            </div>
+                          </td>
                           <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">
                             {d.qty} {d.unit}
                             {d.receivedQty > 0 && d.orderQty > 0 && (
@@ -15266,6 +15330,46 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </button>
               </div>
             )}
+
+            {/* 주간 납품 예정 — 한 주치를 미리 묶어 보낸다. 하루 전으로는 조율이 안 된다 */}
+            <div className="bg-gradient-to-r from-blue-50 to-white border border-blue-200 rounded-xl p-3.5 flex items-center gap-3 flex-wrap">
+              <span className="text-xl">🗓️</span>
+              <div>
+                <p className="text-sm font-bold text-blue-900">
+                  주간 납품 예정 · {mdOf(weeklyFrom)}~{mdOf(weeklyRange.to)}
+                </p>
+                <p className="text-xs text-blue-700">
+                  {weeklyItems.length > 0
+                    ? `${weeklyItems.length}품목 / ${weeklyVendors.size}개 업체 — 한 주치를 업체별로 묶어 보냅니다`
+                    : '해당 주에 예정된 납품이 없습니다'}
+                </p>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <div className="flex rounded-lg border border-blue-200 overflow-hidden text-[11px]">
+                  {[['this', '이번 주'], ['next', '다음 주']].map(([k, lbl]) => (
+                    <button key={k} onClick={() => setWeeklyMailWeek(k)}
+                      className={`px-2.5 py-1 transition ${weeklyMailWeek === k
+                        ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50'}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <button disabled={!weeklyItems.length} onClick={() => {
+                  setVendorMailItems(weeklyItems);
+                  setVendorMailKind('weekly');
+                  setVendorMailRange({ from: weeklyFrom, to: weeklyRange.to });
+                  setVendorMailOpen(true);
+                  setVendorMailPick('');
+                }} className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 ${weeklyItems.length
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                  <Mail className="w-3 h-3" /> 주간 납품 예정 메일 초안
+                </button>
+              </div>
+            </div>
+            <p className="-mt-4 text-[11px] text-gray-400 pl-1">
+              💡 미스미 · Digikey · McMaster 는 일정이 어긋난 적이 없어 이 메일에서 제외합니다.
+            </p>
 
             {/* 2주 납품 예정 — 업체·PO 로 좁혀 보고, 열 머리를 눌러 정렬한다 */}
             {(() => {
@@ -15726,7 +15830,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const allTo = [...picked, ...(extra ? extra.split(/[,;\s]+/).filter(Boolean) : [])];
 
               const daysPast = (d) => Math.floor((new Date(todayStr) - new Date(d)) / 86400000);
-              const reminder = vendorMailKind === 'reminder';
+              // 주간 메일도 줄 모양은 하루 전 확인과 같다 (납품 예정일 + 수량).
+              // 다른 건 인사말과 제목뿐이라 reminder 쪽에 태워 쓴다.
+              const weekly = vendorMailKind === 'weekly';
+              const reminder = vendorMailKind === 'reminder' || weekly;
               const lines = cur.items
                 .slice()
                 .sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate)))
@@ -15746,10 +15853,23 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 }).join('\n');
 
               const dueDate = reminder ? (cur.items[0] || {}).deliveryDate : '';
-              const subject = reminder
+              const rng = vendorMailRange || {};
+              const weekTxt = weekly ? `${rng.from} ~ ${rng.to}` : '';
+              const subject = weekly
+                ? `[Promega] ${weekTxt} 주간 납품 예정 확인 요청 (${cur.items.length}건)`
+                : reminder
                 ? `[Promega] ${dueDate} 납품 예정 건 확인 요청 (${cur.items.length}건)`
                 : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
-              const body = reminder ?
+              const body = weekly ?
+`안녕하세요 프로메가 정지민입니다.
+
+${weekTxt} 납품 예정인 건을 아래와 같이 안내드립니다.
+일정 확인 부탁드리며, 조정이 필요한 건은 미리 회신 부탁드립니다.
+
+■ 주간 납품 예정 (${cur.items.length}건)
+${lines}
+
+감사합니다.` : reminder ?
 `안녕하세요 프로메가 정지민입니다.
 
 ${dueDate} 납품 예정인 아래 건의 일정 확인 부탁드립니다.
@@ -15798,12 +15918,17 @@ ${lines}
 
               const html = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
                 + `<p>안녕하세요 프로메가 정지민입니다.</p>`
-                + (reminder
+                + (weekly
+                    ? `<p><b>${weekTxt}</b> 납품 예정인 건을 아래와 같이 안내드립니다.<br/>`
+                      + `일정 확인 부탁드리며, 조정이 필요한 건은 미리 회신 부탁드립니다.</p>`
+                    : reminder
                     ? `<p><b>${dueDate}</b> 납품 예정인 아래 건의 일정 확인 부탁드립니다.</p>`
                     : `<p>아래 발주 건의 납기일이 경과하여 진행 상황 확인 요청드립니다.</p>`)
-                + `<p style="margin-bottom:4px;"><b>■ ${reminder ? '납품 예정' : '납기 경과'} (${cur.items.length}건)</b></p>`
+                + `<p style="margin-bottom:4px;"><b>■ ${weekly ? '주간 납품 예정' : reminder ? '납품 예정' : '납기 경과'} (${cur.items.length}건)</b></p>`
                 + lst(cur.items)
-                + (reminder
+                + (weekly
+                    ? `<p>감사합니다.</p>`
+                    : reminder
                     ? `<p>일정에 변동이 있으면 회신 부탁드립니다.<br/>감사합니다.</p>`
                     : `<p>회신 부탁드립니다.<br/>감사합니다.</p>`)
                 + `</div>`;
@@ -15838,11 +15963,14 @@ ${lines}
                     onClick={e => e.stopPropagation()}>
                     <div className="px-5 py-3 border-b flex items-center gap-2">
                       <h3 className="font-bold text-gray-800">
-                        {reminder ? '🔔 하루 전 납품 확인 메일 초안' : '📧 업체별 납기 확인 메일 초안'}
+                        {weekly ? '🗓️ 주간 납품 예정 메일 초안'
+                                : reminder ? '🔔 하루 전 납품 확인 메일 초안'
+                                : '📧 업체별 납기 확인 메일 초안'}
                       </h3>
                       <span className="text-xs text-gray-500">
-                        {reminder ? `${vs.length}개 업체 · ${src.length}품목`
-                                  : `${vs.length}개 업체 · 지연 ${src.length}건`}
+                        {weekly ? `${weekTxt} · ${vs.length}개 업체 · ${src.length}품목`
+                                : reminder ? `${vs.length}개 업체 · ${src.length}품목`
+                                : `${vs.length}개 업체 · 지연 ${src.length}건`}
                       </span>
                       <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         초안만 만듭니다. 발송은 직접 하십시오.
