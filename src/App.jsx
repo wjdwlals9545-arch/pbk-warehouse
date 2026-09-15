@@ -15858,7 +15858,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
               const rng = vendorMailRange || {};
               const weekTxt = weekly ? `${rng.from} ~ ${rng.to}` : '';
               const subject = weekly
-                ? `[Promega] ${weekTxt} 납품 예정 확인 요청 (${cur.items.length}건)`
+                ? `[Promega] 납품 예정 확인 요청 (${cur.items.length}건)`
                 : reminder
                 ? `[Promega] ${dueDate} 납품 예정 건 확인 요청 (${cur.items.length}건)`
                 : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
