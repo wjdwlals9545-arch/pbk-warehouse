@@ -2434,6 +2434,11 @@ export default function PBKWarehouseSystem() {
   const [overdueSelected, setOverdueSelected] = useState(new Set());
   // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
   // 협력업체 담당자 편집기
+  // 세금계산서 발행 요청 메일 (업체 앞) — 초안만 만들고 발송은 사람이
+  const [taxMailInv, setTaxMailInv] = useState(null);   // 대상 거래명세서
+  const [taxMailCode, setTaxMailCode] = useState('');   // 고른 업체코드
+  const [taxMailTo, setTaxMailTo] = useState([]);       // 고른 주소
+  const [taxMailExtra, setTaxMailExtra] = useState('');
   const [contactEditOpen, setContactEditOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState(null);   // {코드: [{email,name}]}
   const [contactSearch, setContactSearch] = useState('');
@@ -3243,6 +3248,19 @@ export default function PBKWarehouseSystem() {
   };
 
   // 자재 → 협력업체 매핑을 받아 둔다. 하루 한 번만 확인한다.
+  // 파일명의 한글 업체명 -> 업체코드. 표기가 제각각이라 정규화 후 별칭표를 본다.
+  //   "SJ일레콤" / "sj일레콤" / " 에스제이일레콤" -> 111446
+  const vendorCodeOf = (raw) => {
+    const k = String(raw || '').trim().toLowerCase().replace(/\s+/g, '');
+    if (!k) return '';
+    const al = supplierMap.aliases || {};
+    if (al[k]) return al[k];
+    for (const [a, code] of Object.entries(al)) {
+      if (a.replace(/\s+/g, '') === k) return code;
+    }
+    return '';
+  };
+
   // contacts 가 정본. 옛 emails(주소 문자열 배열)도 읽어준다.
   const vendorContacts = (code) => {
     const c = (supplierMap.contacts || {})[code];
@@ -3255,7 +3273,7 @@ export default function PBKWarehouseSystem() {
     try {
       // 48KB 짜리라 매번 받는다. 담당자를 사람이 고치는 파일이라
       // 캐시를 오래 두면 고친 게 안 보인다 (24시간 가드 때문에 하루를 기다려야 했다).
-      const SUPMAP_VER = 5;
+      const SUPMAP_VER = 6;
       safeStorage.setItem('pbk_supmap_chk', String(Date.now()));
       const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/supplier_map.json?t=${Date.now()}`);
       if (!resp.ok) return;
@@ -3263,7 +3281,7 @@ export default function PBKWarehouseSystem() {
       if (!doc || !doc.materials || !Object.keys(doc.materials).length) return;
       const next = { materials: doc.materials, names: doc.names || {}, updated: doc.updated,
         notes: doc.notes || {}, emails: doc.emails || {}, emailNotes: doc.emailNotes || {},
-        contacts: doc.contacts || {} };
+        contacts: doc.contacts || {}, aliases: doc.aliases || {} };
       safeStorage.setItem('pbk_supplier_map', JSON.stringify(next));
       safeStorage.setItem('pbk_supmap_ver', String(SUPMAP_VER));
       setSupplierMap(next);
@@ -19971,26 +19989,12 @@ ${lines}
                                       </>
                                     )}
                                     {migoSelectedStage === 'completed_month' && (
-                                      <button onClick={async () => {
-                                        if (!window.confirm(`세금계산서 요청 메일을 발송하시겠습니까?\n\n${inv.vendor} (${inv.po_number})`)) return;
-                                        try {
-                                          const resp = await fetch(`${MIGO_API}/api/send-tax-email`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ po_number: inv.po_number, vendor: inv.vendor, pdf_path: inv.pdf_path || '' })
-                                          });
-                                          if (resp.ok) {
-                                            const newSet = new Set(taxRequestedPOs);
-                                            newSet.add(inv.po_number);
-                                            setTaxRequestedPOs(newSet);
-                                            safeStorage.setItem('pbk_tax_requested', JSON.stringify([...newSet]));
-                                            showToast(`📧 세금계산서 요청 메일 발송 완료 — ${inv.vendor}`, 'success');
-                                          } else {
-                                            showToast('메일 발송 실패', 'error');
-                                          }
-                                        } catch (e) {
-                                          showToast(`메일 발송 오류: ${e.message}`, 'error');
-                                        }
+                                      <button onClick={() => {
+                                        const code = vendorCodeOf(inv.vendor);
+                                        setTaxMailInv(inv);
+                                        setTaxMailCode(code);
+                                        setTaxMailTo(code && vendorContacts(code).length ? [vendorContacts(code)[0].email] : []);
+                                        setTaxMailExtra('');
                                       }}
                                         className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold transition shadow-sm">
                                         📧 세금계산서 요청
@@ -21254,6 +21258,152 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
           </div>
         )}
       </main>
+
+      {/* 세금계산서 발행 요청 — 업체 앞 메일. 초안만 만들고 보내는 건 사람이 한다 */}
+      {taxMailInv && (() => {
+        const inv = taxMailInv;
+        const code = taxMailCode;
+        const rows = code ? vendorContacts(code) : [];
+        const nameOf = (a) => (rows.find(c => c.email === a) || {}).name || '';
+        const extra = (taxMailExtra || '').trim();
+        const allTo = [...taxMailTo, ...(extra ? extra.split(/[,;\s]+/).filter(Boolean) : [])];
+        const MAIL_CC = 'jimin.jung@promega.com';
+        const note = (supplierMap.notes || {})[code];
+
+        const subject = '[PROMEGA] 세금계산서 발행 요청';
+        const body =
+`안녕하세요 프로메가 정지민입니다.
+
+납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.
+발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.`;
+        const html = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
+          + `<p>안녕하세요 프로메가 정지민입니다.</p>`
+          + `<p>납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.<br/>`
+          + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p></div>`;
+        const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
+          + `?cc=${encodeURIComponent(MAIL_CC)}`
+          + `&subject=${encodeURIComponent(subject)}`
+          + `&body=${encodeURIComponent(body)}`;
+
+        const close = () => { setTaxMailInv(null); setTaxMailTo([]); setTaxMailExtra(''); };
+        const openDraft = async () => {
+          try {
+            const r = await fetch(`${MIGO_API}/api/mail/draft`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ to: allTo.join('; '), cc: MAIL_CC, subject, html }),
+              signal: AbortSignal.timeout(4000),
+            });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.status);
+            showToast('Outlook 에 초안을 띄웠습니다. 확인 후 보내십시오.', 'success');
+            const next = new Set(taxRequestedPOs); next.add(inv.po_number);
+            setTaxRequestedPOs(next);
+            safeStorage.setItem('pbk_tax_requested', JSON.stringify([...next]));
+            close();
+          } catch (e) {
+            showToast(`로컬 서버 연결 실패 — 메일 앱으로 엽니다 (${e.message})`, 'info');
+            window.location.href = mailto;
+          }
+        };
+
+        const vendors = Object.entries(supplierMap.names || {})
+          .filter(([c]) => vendorContacts(c).length)
+          .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'ko'));
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={close}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col"
+              style={{ maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-3 border-b flex items-center gap-2">
+                <h3 className="font-bold text-gray-800">📧 세금계산서 발행 요청</h3>
+                <span className="text-xs text-gray-500">{inv.vendor} · PO {inv.po_number}</span>
+                <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                  초안만 만듭니다
+                </span>
+                <button onClick={close} className="text-gray-400 hover:text-gray-700 text-xl leading-none ml-1">✕</button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-1.5">
+                    업체 {code ? <span className="text-teal-600">· {(supplierMap.names || {})[code]} ({code})</span>
+                               : <span className="text-red-500">· 자동으로 못 찾았습니다. 직접 고르세요</span>}
+                  </p>
+                  <select value={code}
+                    onChange={e => {
+                      const c = e.target.value;
+                      setTaxMailCode(c);
+                      setTaxMailTo(c && vendorContacts(c).length ? [vendorContacts(c)[0].email] : []);
+                    }}
+                    className={`w-full border rounded-lg px-2.5 py-1.5 text-xs ${code ? 'border-gray-200' : 'border-red-300'}`}>
+                    <option value="">— 업체 선택 —</option>
+                    {vendors.map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
+                  </select>
+                  {note && (
+                    <p className="mt-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                      ⚠ {note}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-1.5">받는 사람</p>
+                  {rows.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {rows.map(c => {
+                        const on = taxMailTo.includes(c.email);
+                        return (
+                          <button key={c.email}
+                            onClick={() => setTaxMailTo(on ? taxMailTo.filter(x => x !== c.email) : [...taxMailTo, c.email])}
+                            className={`px-2 py-1 rounded-md text-[11px] border transition ${
+                              on ? 'bg-teal-600 text-white border-teal-600'
+                                 : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'}`}>
+                            {on && '✓ '}{c.name ? `${c.name} · ` : ''}{c.email}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-red-500">저장된 주소가 없습니다. 아래에 직접 입력하세요.</p>
+                  )}
+                  <input type="text" value={taxMailExtra} onChange={e => setTaxMailExtra(e.target.value)}
+                    placeholder="주소 직접 추가 (쉼표로 구분)"
+                    className="mt-2 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-400" />
+                  <p className="mt-1 text-[10px] text-gray-400">참조: {MAIL_CC}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-1">제목</p>
+                  <div className="text-xs bg-gray-50 border rounded-lg px-2.5 py-1.5 text-gray-700">{subject}</div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-600 mb-1">본문</p>
+                  <pre className="text-[11px] leading-relaxed bg-gray-50 border rounded-lg p-3 whitespace-pre-wrap text-gray-700">{body}</pre>
+                </div>
+              </div>
+
+              <div className="px-5 py-3 border-t flex items-center gap-2">
+                <span className="text-[11px] text-gray-500">
+                  {allTo.length ? `수신 ${allTo.length}명` : '수신자를 선택하세요'}
+                </span>
+                <div className="ml-auto flex gap-2">
+                  <button onClick={() => { navigator.clipboard.writeText(body); showToast('본문을 복사했습니다', 'success'); }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">본문 복사</button>
+                  <button disabled={!allTo.length} onClick={() => { window.location.href = mailto; }}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
+                    메일 앱(mailto)
+                  </button>
+                  <button disabled={!allTo.length} onClick={openDraft}
+                    className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 ${
+                      allTo.length ? 'bg-teal-600 text-white hover:bg-teal-700'
+                                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                    <Mail className="w-3 h-3" /> Outlook 초안 열기
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {contactEditOpen && (() => {
         const base = contactDraft || Object.fromEntries(
