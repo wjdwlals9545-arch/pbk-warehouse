@@ -19508,7 +19508,13 @@ ${lines}
                       {done.map(g => (
                         <tr key={g.key} className="hover:bg-gray-50">
                           <td className="px-4 py-2 font-medium text-gray-800">{g.vendor || '—'}</td>
-                          <td className="px-3 py-2 text-xs font-mono text-gray-500">{g.po_number}</td>
+                          <td className="px-3 py-2 text-xs font-mono text-gray-500">
+                            {g.po_number}
+                            {/* 5105... 은 F&A 가 MIRO 후 붙이는 송장번호. PO 가 아니다 */}
+                            {g.miro_number && (
+                              <div className="text-[10px] text-gray-400">MIRO {g.miro_number}</div>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-xs text-right">{money(g.delivery?.total_amount ?? g.tax?.total_amount)}</td>
                           <td className="px-3 py-2 text-center">{g.delivery ? '✅' : <span className="text-gray-300">—</span>}</td>
                           <td className="px-3 py-2 text-center">{g.tax ? '✅' : <span className="text-gray-300">—</span>}</td>
