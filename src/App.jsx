@@ -19775,25 +19775,6 @@ ${lines}
                 </div>
               ))}
 
-              {/* 월 마감 묶음 — 마감일까지 모으는 중인 것.
-                  개별 건과 달리 도착 즉시 보낼 대상이 아니라 따로 둔다. */}
-              {collecting.length > 0 && (
-                <div className="bg-white rounded-xl border shadow-sm">
-                  <div className="p-4 border-b flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                      🗓 월 마감 묶음
-                      <span className="text-sm font-normal text-gray-500">{collecting.length}건 · 수집 중</span>
-                    </h3>
-                    <span className="ml-auto text-[11px] text-gray-400">
-                      마감 주간이 되면 위 '요청 대기' 로 올라옵니다
-                    </span>
-                  </div>
-                  <div className="divide-y">
-                    {collecting.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
-                  </div>
-                </div>
-              )}
-
               {/* 금액 불일치 — 있으면 맨 위 */}
               {mismatch.length > 0 && (
                 <div className="bg-red-50/60 border border-red-200 rounded-xl">
@@ -19877,6 +19858,25 @@ ${lines}
               </div>
 
               {/* 짝 없는 세금계산서 */}
+              {/* 월 마감 묶음 — 마감일까지 모으는 중인 것.
+                  개별 건과 달리 도착 즉시 보낼 대상이 아니라 따로 둔다. */}
+              {collecting.length > 0 && (
+                <div className="bg-white rounded-xl border shadow-sm">
+                  <div className="p-4 border-b flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                      🗓 월 마감 묶음
+                      <span className="text-sm font-normal text-gray-500">{collecting.length}건 · 수집 중</span>
+                    </h3>
+                    <span className="ml-auto text-[11px] text-gray-400">
+                      마감 주간이 되면 위 '요청 대기' 로 올라옵니다
+                    </span>
+                  </div>
+                  <div className="divide-y">
+                    {collecting.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
+                  </div>
+                </div>
+              )}
+
               {/* 세금계산서 요청 중 — 메일은 보냈고 발행을 기다리는 건.
                   세금계산서가 폴더에 들어오면 짝이 맞아 이 목록에서 자동으로 빠진다. */}
               {(requesting.length + reqBatch.length) > 0 && (
