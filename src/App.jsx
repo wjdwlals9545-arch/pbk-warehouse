@@ -19520,7 +19520,8 @@ ${lines}
 
         {/* ─────────── 세금계산서 처리 ─────────── */}
         {activeTab === 'taxinvoice' && (() => {
-          const { pending = [], mismatch = [], done = [] } = taxFlow;
+          const { pending = [], mismatch = [], done = [],
+                  pending_batches: pendBatch = [], mismatch_batches: misBatch = [] } = taxFlow;
           const money = (v) => (v === null || v === undefined) ? '—' : Number(v).toLocaleString() + '원';
           const when = (t) => t ? new Date(t * 1000).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const requested = (po) => taxRequestedPOs.has(po);
@@ -19535,6 +19536,83 @@ ${lines}
             const at = taxRequestedAt[po];
             if (!at) return null;
             return Math.floor((Date.now() - new Date(at).getTime()) / 86400000);
+          };
+
+          // 일괄 마감 묶음 — 하위 폴더 하나가 묶음 하나.
+          // 미스미는 월말 25일 전후 한 장, 경제정공은 1차(2주차)·2차(4주차)로 묶어 발행한다.
+          // PO 가 여럿이라 요청 표시는 폴더 이름으로 건다.
+          const batchKey = (b) => `batch:${b.batch}`;
+          const waitBatch  = pendBatch.filter(b => !requested(batchKey(b)));
+          const reqBatch   = pendBatch.filter(b =>  requested(batchKey(b)));
+
+          // 묶음 메일 — 업체마다 문구가 다르다.
+          //   미스미   : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
+          //   경제정공 등 : 거래명세서를 첨부해 검토 후 발행을 요청한다
+          const openBatchMail = (b) => {
+            const code = vendorCodeOf(b.vendor) || vendorCodeOf(b.batch);
+            const who = code ? vendorContacts(code) : [];
+            const files = (b.deliveries || []).map(d => d.filename);
+            const misumi = /미스미|misumi/i.test(`${b.batch} ${b.vendor}`);
+            setTaxMailInv({ vendor: b.vendor, po_number: batchKey(b), batch: b.batch,
+                            po_numbers: b.po_numbers || [], files, misumi });
+            setTaxMailCode(code);
+            setTaxMailTo(who.length ? [who[0].email] : []);
+            setTaxMailExtra('');
+            setTaxMailFiles(misumi ? [] : files);
+          };
+
+          // 묶음 한 줄
+          const BatchRow = ({ b, mode }) => {
+            const code = vendorCodeOf(b.vendor) || vendorCodeOf(b.batch);
+            const who = code ? vendorContacts(code) : [];
+            const d = mode === 'requesting' ? daysSince(batchKey(b)) : null;
+            return (
+              <div className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
+                <div className="min-w-[180px]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200 font-semibold">
+                      묶음
+                    </span>
+                    <span className="font-semibold text-sm text-gray-800">{b.batch}</span>
+                  </div>
+                  <div className="text-[11px] text-gray-400">
+                    {b.vendor}{!code && <span className="text-red-500 ml-1">매칭 안 됨</span>}
+                  </div>
+                </div>
+                <div className="min-w-[150px]">
+                  <div className="text-xs text-gray-600">
+                    거래명세서 <b>{(b.deliveries || []).length}건</b>
+                    {(b.taxes || []).length > 0 && <span className="text-emerald-600 ml-1.5">· 세금계산서 도착</span>}
+                  </div>
+                  <div className="text-[10px] text-gray-400 font-mono truncate" title={(b.po_numbers || []).join(', ')}>
+                    {(b.po_numbers || []).slice(0, 2).join(', ')}
+                    {(b.po_numbers || []).length > 2 && ` 외 ${b.po_numbers.length - 2}`}
+                  </div>
+                </div>
+                <div className="text-xs text-gray-600 min-w-[110px]">{money(b.delivery_total)}</div>
+                <div className="text-[11px] text-gray-400 flex-1 truncate">
+                  {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
+                </div>
+                {d !== null && (
+                  <span className={`text-[11px] px-2 py-0.5 rounded border ${
+                    d >= 3 ? 'bg-red-50 border-red-200 text-red-700'
+                           : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+                    {d === 0 ? '오늘 요청' : `요청 ${d}일 경과`}
+                  </span>
+                )}
+                <button onClick={() => openBatchMail(b)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition ${
+                    mode === 'requesting' ? 'bg-indigo-500 hover:bg-indigo-600'
+                                          : 'bg-violet-500 hover:bg-violet-600'}`}>
+                  📧 {mode === 'requesting' ? '다시 요청' : '마감 요청'}
+                </button>
+                {mode === 'requesting' && (
+                  <button onClick={() => markTaxRequested(batchKey(b), false)}
+                    className="px-2 py-1.5 rounded-lg text-[11px] border border-gray-300 text-gray-500 hover:bg-gray-100"
+                    title="요청 표시를 지우고 '요청 대기' 로 되돌립니다">대기로</button>
+                )}
+              </div>
+            );
           };
 
           const Card = ({ n, label, tone, desc }) => (
@@ -19558,11 +19636,11 @@ ${lines}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Card n={mismatch.length} label="금액 불일치" tone="bg-red-50 border-red-200 text-red-700"
+                <Card n={mismatch.length + misBatch.length} label="금액 불일치" tone="bg-red-50 border-red-200 text-red-700"
                   desc="확인 필요" />
-                <Card n={waitTax.length} label="세금계산서 요청 대기" tone="bg-amber-50 border-amber-200 text-amber-800"
-                  desc="거래명세서만 들어옴" />
-                <Card n={requesting.length} label="세금계산서 요청 중" tone="bg-indigo-50 border-indigo-200 text-indigo-700"
+                <Card n={waitTax.length + waitBatch.length} label="세금계산서 요청 대기" tone="bg-amber-50 border-amber-200 text-amber-800"
+                  desc={waitBatch.length ? `개별 ${waitTax.length} · 묶음 ${waitBatch.length}` : '거래명세서만 들어옴'} />
+                <Card n={requesting.length + reqBatch.length} label="세금계산서 요청 중" tone="bg-indigo-50 border-indigo-200 text-indigo-700"
                   desc="메일 보냄 · 발행 대기" />
                 <Card n={done.length} label="입고완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
                   desc="최근 40건" />
@@ -19598,15 +19676,20 @@ ${lines}
                 <div className="p-4 border-b">
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
                     📨 세금계산서 요청 대기
-                    <span className="text-sm font-normal text-gray-500">{waitTax.length}건</span>
+                    <span className="text-sm font-normal text-gray-500">
+                      {waitTax.length + waitBatch.length}건
+                      {waitBatch.length > 0 && <span className="text-violet-500 ml-1">(묶음 {waitBatch.length})</span>}
+                    </span>
                   </h3>
                 </div>
-                {waitTax.length === 0 ? (
+                {waitTax.length === 0 && waitBatch.length === 0 ? (
                   <p className="p-8 text-center text-sm text-gray-400">
                     요청할 건이 없습니다. 거래명세서를 '세금계산서 미처리' 폴더에 넣으면 여기 나타납니다.
                   </p>
                 ) : (
                   <div className="divide-y">
+                    {/* 일괄 마감 묶음 먼저 */}
+                    {waitBatch.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
                     {waitTax.map(g => {
                       const code = vendorCodeOf(g.vendor);
                       const who = code ? vendorContacts(code) : [];
@@ -19648,18 +19731,22 @@ ${lines}
               {/* 짝 없는 세금계산서 */}
               {/* 세금계산서 요청 중 — 메일은 보냈고 발행을 기다리는 건.
                   세금계산서가 폴더에 들어오면 짝이 맞아 이 목록에서 자동으로 빠진다. */}
-              {requesting.length > 0 && (
+              {(requesting.length + reqBatch.length) > 0 && (
                 <div className="bg-white rounded-xl border shadow-sm">
                   <div className="p-4 border-b">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2">
                       📤 세금계산서 요청 중
-                      <span className="text-sm font-normal text-gray-500">{requesting.length}건</span>
+                      <span className="text-sm font-normal text-gray-500">
+                        {requesting.length + reqBatch.length}건
+                        {reqBatch.length > 0 && <span className="text-violet-500 ml-1">(묶음 {reqBatch.length})</span>}
+                      </span>
                       <span className="ml-auto text-[11px] font-normal text-gray-400">
                         세금계산서가 폴더에 들어오면 자동으로 빠집니다
                       </span>
                     </h3>
                   </div>
                   <div className="divide-y">
+                    {reqBatch.map(b => <BatchRow key={b.key} b={b} mode="requesting" />)}
                     {requesting.map(g => {
                       const code = vendorCodeOf(g.vendor);
                       const who = code ? vendorContacts(code) : [];
@@ -21691,16 +21778,50 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
         const MAIL_CC = 'jiwon.hwang@promega.com';
         const note = (supplierMap.notes || {})[code];
 
-        const subject = '[PROMEGA] 세금계산서 발행 요청';
-        const body =
+        // 문구가 세 가지다.
+        //   미스미 묶음 : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
+        //   차수 묶음   : 첨부한 거래명세서를 검토한 뒤 발행 요청 (경제정공 1·2차)
+        //   개별 건     : 기존 문구
+        const mon = new Date().getMonth() + 1;
+        const chaM = (inv.batch || '').match(/(\d+)\s*차/);
+        const cha = chaM ? `${chaM[1]}차 ` : '';
+        const HEAD = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`;
+
+        let subject, body, html;
+        if (inv.misumi) {
+          subject = `[PROMEGA] ${mon}월 마감 리스트 요청`;
+          body =
+`미스미 담당자님 안녕하세요. 프로메가 정지민입니다.
+
+${mon}월 25일까지 납품되는 모든 품목에 대해 마감 리스트 요청드립니다.
+추가로 문의사항이 있으신 경우, 회신 부탁드립니다.`;
+          html = HEAD
+            + `<p>미스미 담당자님 안녕하세요. 프로메가 정지민입니다.</p>`
+            + `<p><b>${mon}월 25일</b>까지 납품되는 모든 품목에 대해 마감 리스트 요청드립니다.<br/>`
+            + `추가로 문의사항이 있으신 경우, 회신 부탁드립니다.</p></div>`;
+        } else if (inv.batch) {
+          subject = `[PROMEGA] ${mon}월 세금계산서 ${cha}마감 요청`;
+          body =
+`안녕하세요, 프로메가 정지민입니다.
+
+${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
+첨부된 거래명세서 검토 후 이상이 없으신 경우, 금일 자로 세금계산서 발행 부탁드립니다.`;
+          html = HEAD
+            + `<p>안녕하세요, 프로메가 정지민입니다.</p>`
+            + `<p><b>${mon}월 세금계산서 ${cha}마감</b>을 진행하려고 합니다.<br/>`
+            + `첨부된 거래명세서 검토 후 이상이 없으신 경우, 금일 자로 세금계산서 발행 부탁드립니다.</p></div>`;
+        } else {
+          subject = '[PROMEGA] 세금계산서 발행 요청';
+          body =
 `안녕하세요 프로메가 정지민입니다.
 
 납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.
 발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.`;
-        const html = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
-          + `<p>안녕하세요 프로메가 정지민입니다.</p>`
-          + `<p>납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.<br/>`
-          + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p></div>`;
+          html = HEAD
+            + `<p>안녕하세요 프로메가 정지민입니다.</p>`
+            + `<p>납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.<br/>`
+            + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p></div>`;
+        }
         const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
           + `?subject=${encodeURIComponent(subject)}`
           + (MAIL_CC ? `&cc=${encodeURIComponent(MAIL_CC)}` : '')
@@ -21739,8 +21860,15 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col"
               style={{ maxHeight: '88vh' }} onClick={e => e.stopPropagation()}>
               <div className="px-5 py-3 border-b flex items-center gap-2">
-                <h3 className="font-bold text-gray-800">📧 세금계산서 발행 요청</h3>
-                <span className="text-xs text-gray-500">{inv.vendor} · PO {inv.po_number}</span>
+                <h3 className="font-bold text-gray-800">
+                  📧 {inv.misumi ? '마감 리스트 요청' : inv.batch ? '세금계산서 마감 요청' : '세금계산서 발행 요청'}
+                </h3>
+                <span className="text-xs text-gray-500">
+                  {inv.vendor}
+                  {inv.batch
+                    ? ` · 묶음 ${inv.batch} · PO ${(inv.po_numbers || []).length}건`
+                    : ` · PO ${inv.po_number}`}
+                </span>
                 <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                   초안만 만듭니다
                 </span>
