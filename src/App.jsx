@@ -115,6 +115,7 @@ const SYNC_KEYS = [
   'pbk_tab_order',
   'pbk_tax_requested',
   'pbk_tax_requested_at',
+  'pbk_close_dismissed',
   'pbk_work_issues',
 ];
 
@@ -1942,6 +1943,43 @@ function vendorName(v) {
 // 주간 납품 예정 확인에서 빼는 업체. 일정이 어긋난 적이 없어 물어볼 일이 없다.
 //   105339 미스미 · 105362 Digikey · 100046 McMaster
 const WEEKLY_MAIL_SKIP = new Set(['105339', '105362', '100046']);
+
+// ── 일괄 마감 주기 ────────────────────────────────────────────────
+// 미스미는 월말 25일 전후, 경제정공은 1차(2주차)·2차(4주차) 전후로 마감한다.
+// "전후" 라 날짜를 딱 맞출 수는 없다. 놓치지 않게 돕는 힌트로만 쓴다.
+// 과거 마감 기록 네 건(7·8·9월)이 아래 주차 정의와 맞는 것을 확인했다.
+const CLOSE_RULES = [
+  { id: 'kj1',    name: '경제1차', match: /경제[^0-9]*1\s*차/,  week: 2, desc: '2주차 전후' },
+  { id: 'kj2',    name: '경제2차', match: /경제[^0-9]*2\s*차/,  week: 4, desc: '4주차 전후' },
+  { id: 'misumi', name: '미스미',  match: /미스미|misumi/i,      day: 25, desc: '월말 25일 전후' },
+];
+
+// 그 달 N주차의 월~금. 1주차 = 1일이 든 주.
+function nthWeekRange(year, month, n) {
+  const first = new Date(year, month - 1, 1);
+  const mon1 = new Date(first);
+  mon1.setDate(1 - ((first.getDay() + 6) % 7));   // 1일이 든 주의 월요일
+  const from = new Date(mon1);
+  from.setDate(mon1.getDate() + (n - 1) * 7);
+  const to = new Date(from);
+  to.setDate(from.getDate() + 4);
+  return { from, to };
+}
+
+// 규칙 하나의 이번 달 마감 창. soon = 며칠 전부터 '임박' 으로 볼지.
+function closeWindow(rule, year, month, soonDays = 3) {
+  let from, to;
+  if (rule.week) {
+    ({ from, to } = nthWeekRange(year, month, rule.week));
+  } else {
+    from = new Date(year, month - 1, rule.day);
+    to = new Date(year, month, 0);                // 말일
+  }
+  const soon = new Date(from);
+  soon.setDate(from.getDate() - soonDays);
+  const p = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: p(from), to: p(to), soon: p(soon) };
+}
 
 function fmtMdHm(v) {
   const d = parseTs(v);
@@ -4558,6 +4596,16 @@ export default function PBKWarehouseSystem() {
     try { return new Set(JSON.parse(safeStorage.getItem('pbk_tax_requested') || '[]')); }
     catch { return new Set(); }
   });
+  // 마감 알림을 덮은 목록. 'YYYY-M-규칙id'
+  const [closeDismissed, setCloseDismissed] = useState(() => {
+    try { return JSON.parse(safeStorage.getItem('pbk_close_dismissed') || '[]'); }
+    catch { return []; }
+  });
+  const dismissClose = (id) => {
+    const next = [...new Set([...closeDismissed, id])];
+    setCloseDismissed(next);
+    safeStorage.setItem('pbk_close_dismissed', JSON.stringify(next));
+  };
   // 언제 요청했는지. 며칠째 답이 없는지 보려고 따로 둔다 { PO: ISO }
   const [taxRequestedAt, setTaxRequestedAt] = useState(() => {
     try { return JSON.parse(safeStorage.getItem('pbk_tax_requested_at') || '{}'); }
@@ -19522,6 +19570,8 @@ ${lines}
         {activeTab === 'taxinvoice' && (() => {
           const { pending = [], mismatch = [], done = [],
                   pending_batches: pendBatch = [], mismatch_batches: misBatch = [] } = taxFlow;
+          const koNowTax = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
+          const todayTax = `${koNowTax.getFullYear()}-${String(koNowTax.getMonth() + 1).padStart(2, '0')}-${String(koNowTax.getDate()).padStart(2, '0')}`;
           const money = (v) => (v === null || v === undefined) ? '—' : Number(v).toLocaleString() + '원';
           const when = (t) => t ? new Date(t * 1000).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const requested = (po) => taxRequestedPOs.has(po);
@@ -19542,8 +19592,39 @@ ${lines}
           // 미스미는 월말 25일 전후 한 장, 경제정공은 1차(2주차)·2차(4주차)로 묶어 발행한다.
           // PO 가 여럿이라 요청 표시는 폴더 이름으로 건다.
           const batchKey = (b) => `batch:${b.batch}`;
-          const waitBatch  = pendBatch.filter(b => !requested(batchKey(b)));
+
+          // 마감 주기를 알면 '아직 모으는 중' 과 '이제 보낼 때' 를 가를 수 있다.
+          // 규칙에 없는 이름의 묶음은 일정을 모르니 바로 보낼 수 있는 것으로 둔다.
+          const nowY = koNowTax.getFullYear(), nowM = koNowTax.getMonth() + 1;
+          const ruleOf = (b) => CLOSE_RULES.find(r => r.match.test(`${b.batch} ${b.vendor}`));
+          const batchState = (b) => {
+            const r = ruleOf(b);
+            if (!r) return { stage: 'due', rule: null, win: null };
+            const win = closeWindow(r, nowY, nowM);
+            const stage = todayTax > win.to ? 'late'
+                        : todayTax >= win.from ? 'due'
+                        : todayTax >= win.soon ? 'soon'
+                        : 'collecting';
+            return { stage, rule: r, win };
+          };
+          // 마감 창에 들어온 것만 '보낼 때' 로 센다. 모으는 중인 건 오늘 할 일이 아니다.
+          const batchDue = (b) => ['due', 'late'].includes(batchState(b).stage);
+
+          const openBatch  = pendBatch.filter(b => !requested(batchKey(b)));
           const reqBatch   = pendBatch.filter(b =>  requested(batchKey(b)));
+          const waitBatch  = openBatch.filter(batchDue);        // 지금 보낼 묶음
+          const collecting = openBatch.filter(b => !batchDue(b)); // 아직 모으는 중
+
+          // 규칙에 있는 마감인데 이번 달 폴더가 안 보이면 알려준다.
+          // 이름이 규칙과 다르게 적힌 경우도 여기 걸리므로 하루 단위로 덮을 수 있게 둔다.
+          const allBatchNames = [...pendBatch, ...misBatch, ...(taxFlow.done_batches || [])]
+            .map(b => `${b.batch} ${b.vendor}`);
+          const missingCloses = CLOSE_RULES.filter(r => {
+            const win = closeWindow(r, nowY, nowM);
+            if (todayTax < win.soon) return false;              // 아직 이르다
+            if (closeDismissed.includes(`${nowY}-${nowM}-${r.id}`)) return false;
+            return !allBatchNames.some(n => r.match.test(n));
+          }).map(r => ({ rule: r, win: closeWindow(r, nowY, nowM) }));
 
           // 묶음 메일 — 업체마다 문구가 다르다.
           //   미스미   : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
@@ -19561,11 +19642,22 @@ ${lines}
             setTaxMailFiles(misumi ? [] : files);
           };
 
+          const STAGE = {
+            collecting: { label: '수집 중',   cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+            soon:       { label: '마감 임박', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+            due:        { label: '마감 주간', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+            late:       { label: '마감 지남', cls: 'bg-red-50 text-red-700 border-red-200' },
+          };
+          const md = (s) => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : '';
+
           // 묶음 한 줄
           const BatchRow = ({ b, mode }) => {
             const code = vendorCodeOf(b.vendor) || vendorCodeOf(b.batch);
             const who = code ? vendorContacts(code) : [];
             const d = mode === 'requesting' ? daysSince(batchKey(b)) : null;
+            const { stage, rule, win } = batchState(b);
+            const st = STAGE[stage];
+            const soft = stage === 'collecting' || stage === 'soon';
             return (
               <div className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
                 <div className="min-w-[180px]">
@@ -19590,6 +19682,20 @@ ${lines}
                   </div>
                 </div>
                 <div className="text-xs text-gray-600 min-w-[110px]">{money(b.delivery_total)}</div>
+                {/* 마감 주기를 아는 묶음은 언제쯤 보낼 때인지 같이 보여준다 */}
+                <div className="min-w-[150px]">
+                  {rule ? (
+                    <>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${st.cls}`}>{st.label}</span>
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        마감 {win.week === undefined && rule.day ? `${rule.day}일` : `${md(win.from)}~${md(win.to)}`}
+                        <span className="text-gray-300"> · {rule.desc}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-gray-400">마감 주기 미등록</span>
+                  )}
+                </div>
                 <div className="text-[11px] text-gray-400 flex-1 truncate">
                   {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
                 </div>
@@ -19600,10 +19706,13 @@ ${lines}
                     {d === 0 ? '오늘 요청' : `요청 ${d}일 경과`}
                   </span>
                 )}
+                {/* 모으는 중이어도 눌리게 둔다. 일찍 마감할 일이 있으면 누르면 된다 */}
                 <button onClick={() => openBatchMail(b)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition ${
-                    mode === 'requesting' ? 'bg-indigo-500 hover:bg-indigo-600'
-                                          : 'bg-violet-500 hover:bg-violet-600'}`}>
+                  title={soft ? '아직 모으는 중입니다. 일찍 마감하시려면 누르십시오' : ''}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    mode === 'requesting' ? 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                    : soft ? 'border border-violet-300 text-violet-600 hover:bg-violet-50'
+                           : 'bg-violet-500 hover:bg-violet-600 text-white'}`}>
                   📧 {mode === 'requesting' ? '다시 요청' : '마감 요청'}
                 </button>
                 {mode === 'requesting' && (
@@ -19645,6 +19754,45 @@ ${lines}
                 <Card n={done.length} label="입고완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
                   desc="최근 40건" />
               </div>
+
+              {/* 마감 알림 — 규칙상 마감인데 이번 달 폴더가 안 보이는 것 */}
+              {missingCloses.map(({ rule, win }) => (
+                <div key={rule.id} className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+                  <span className="text-lg">🗓️</span>
+                  <div>
+                    <p className="text-sm font-bold text-amber-900">
+                      {nowM}월 {rule.name} 마감 시점인데 폴더가 안 보입니다
+                    </p>
+                    <p className="text-[11px] text-amber-700">
+                      마감 {rule.day ? `${rule.day}일` : `${md(win.from)}~${md(win.to)}`} · {rule.desc}
+                      <span className="text-amber-500"> — 폴더 이름이 다르게 적혀 있을 수도 있습니다</span>
+                    </p>
+                  </div>
+                  <button onClick={() => dismissClose(`${nowY}-${nowM}-${rule.id}`)}
+                    className="ml-auto px-2.5 py-1 text-[11px] border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-100">
+                    이번 달은 넘기기
+                  </button>
+                </div>
+              ))}
+
+              {/* 월 마감 묶음 — 마감일까지 모으는 중인 것.
+                  개별 건과 달리 도착 즉시 보낼 대상이 아니라 따로 둔다. */}
+              {collecting.length > 0 && (
+                <div className="bg-white rounded-xl border shadow-sm">
+                  <div className="p-4 border-b flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                      🗓 월 마감 묶음
+                      <span className="text-sm font-normal text-gray-500">{collecting.length}건 · 수집 중</span>
+                    </h3>
+                    <span className="ml-auto text-[11px] text-gray-400">
+                      마감 주간이 되면 위 '요청 대기' 로 올라옵니다
+                    </span>
+                  </div>
+                  <div className="divide-y">
+                    {collecting.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
+                  </div>
+                </div>
+              )}
 
               {/* 금액 불일치 — 있으면 맨 위 */}
               {mismatch.length > 0 && (
