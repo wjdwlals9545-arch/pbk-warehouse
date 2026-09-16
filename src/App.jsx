@@ -1948,9 +1948,10 @@ const WEEKLY_MAIL_SKIP = new Set(['105339', '105362', '100046']);
 // 미스미는 월말 25일 전후, 경제정공은 1차(2주차)·2차(4주차) 전후로 마감한다.
 // "전후" 라 날짜를 딱 맞출 수는 없다. 놓치지 않게 돕는 힌트로만 쓴다.
 // 과거 마감 기록 네 건(7·8·9월)이 아래 주차 정의와 맞는 것을 확인했다.
+// group/seq 가 같은 규칙은 순서대로 도는 마감이다. 뒤 차수가 보이면 앞 차수는 끝난 것.
 const CLOSE_RULES = [
-  { id: 'kj1',    name: '경제1차', match: /경제[^0-9]*1\s*차/,  week: 2, desc: '2주차 전후' },
-  { id: 'kj2',    name: '경제2차', match: /경제[^0-9]*2\s*차/,  week: 4, desc: '4주차 전후' },
+  { id: 'kj1',    name: '경제1차', match: /경제[^0-9]*1\s*차/,  week: 2, desc: '2주차 전후', group: 'kj', seq: 1 },
+  { id: 'kj2',    name: '경제2차', match: /경제[^0-9]*2\s*차/,  week: 4, desc: '4주차 전후', group: 'kj', seq: 2 },
   { id: 'misumi', name: '미스미',  match: /미스미|misumi/i,      day: 25, desc: '월말 25일 전후' },
 ];
 
@@ -19619,12 +19620,20 @@ ${lines}
           // 이름이 규칙과 다르게 적힌 경우도 여기 걸리므로 하루 단위로 덮을 수 있게 둔다.
           const allBatchNames = [...pendBatch, ...misBatch, ...(taxFlow.done_batches || [])]
             .map(b => `${b.batch} ${b.vendor}`);
+          const seen = (rule) => allBatchNames.some(n => rule.match.test(n));
           const missingCloses = CLOSE_RULES.filter(r => {
             const win = closeWindow(r, nowY, nowM);
             if (todayTax < win.soon) return false;              // 아직 이르다
             if (closeDismissed.includes(`${nowY}-${nowM}-${r.id}`)) return false;
-            return !allBatchNames.some(n => r.match.test(n));
-          }).map(r => ({ rule: r, win: closeWindow(r, nowY, nowM) }));
+            if (seen(r)) return false;
+            // 뒤 차수가 이미 있으면 앞 차수는 끝난 것이다. 폴더 이름이 달라도 마찬가지.
+            if (r.group && CLOSE_RULES.some(o => o.group === r.group && o.seq > r.seq && seen(o))) return false;
+            return true;
+          }).map(r => {
+            const win = closeWindow(r, nowY, nowM);
+            const when = todayTax > win.to ? 'past' : todayTax >= win.from ? 'now' : 'soon';
+            return { rule: r, win, when };
+          });
 
           // 묶음 메일 — 업체마다 문구가 다르다.
           //   미스미   : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
@@ -19756,12 +19765,14 @@ ${lines}
               </div>
 
               {/* 마감 알림 — 규칙상 마감인데 이번 달 폴더가 안 보이는 것 */}
-              {missingCloses.map(({ rule, win }) => (
+              {missingCloses.map(({ rule, win, when }) => (
                 <div key={rule.id} className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
                   <span className="text-lg">🗓️</span>
                   <div>
                     <p className="text-sm font-bold text-amber-900">
-                      {nowM}월 {rule.name} 마감 시점인데 폴더가 안 보입니다
+                      {nowM}월 {rule.name} 마감{' '}
+                      {when === 'past' ? '기간이 지났는데' : when === 'now' ? '주간인데' : '이 곧인데'}
+                      {' '}폴더가 안 보입니다
                     </p>
                     <p className="text-[11px] text-amber-700">
                       마감 {rule.day ? `${rule.day}일` : `${md(win.from)}~${md(win.to)}`} · {rule.desc}
