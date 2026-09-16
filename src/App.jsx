@@ -19573,7 +19573,15 @@ ${lines}
                   pending_batches: pendBatch = [], mismatch_batches: misBatch = [] } = taxFlow;
           const koNowTax = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
           const todayTax = `${koNowTax.getFullYear()}-${String(koNowTax.getMonth() + 1).padStart(2, '0')}-${String(koNowTax.getDate()).padStart(2, '0')}`;
-          const money = (v) => (v === null || v === undefined) ? '—' : Number(v).toLocaleString() + '원';
+          // 해외 업체 인보이스는 달러다(McMaster $42.78). 통화를 모르면 원으로 본다.
+          const money = (v, cur) => {
+            if (v === null || v === undefined) return '—';
+            const c = (cur || 'KRW').toUpperCase();
+            if (c === 'KRW') return Number(v).toLocaleString() + '원';
+            const sym = { USD: '$', EUR: '€', JPY: '¥', CNY: '¥' }[c];
+            const n = Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return sym ? `${sym}${n}` : `${n} ${c}`;
+          };
           const when = (t) => t ? new Date(t * 1000).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const requested = (po) => taxRequestedPOs.has(po);
 
@@ -19635,6 +19643,33 @@ ${lines}
             return { rule: r, win, when };
           });
 
+          // 세금계산서 없이 입고완료로. McMaster·Digikey 는 Invoice 가 끝이다.
+          const closeWithoutTax = async (g) => {
+            const files = [g.delivery?.filename, g.tax?.filename].filter(Boolean);
+            const what = g.batch ? `묶음 ${g.batch}` : `${g.vendor} (${g.po_number})`;
+            if (!window.confirm(
+              `세금계산서 없이 입고완료로 옮깁니다.\n\n${what}\n${files.join('\n')}\n\n`
+              + `되돌리려면 폴더에서 직접 옮기셔야 합니다. 진행하시겠습니까?`)) return;
+            try {
+              const r = await fetch(`${MIGO_API}/api/taxflow/close`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(g.batch ? { batch: g.batch } : { files }),
+                signal: AbortSignal.timeout(15000),
+              });
+              const res = await r.json().catch(() => ({}));
+              if (!r.ok || res.status === 'error') throw new Error(res.message || r.status);
+              const bad = (res.failed || []).length;
+              showToast(bad
+                ? `${(res.moved || []).length}건 이동 · ${bad}건 실패 (${res.failed.join(', ')})`
+                : `입고완료로 옮겼습니다 (${(res.moved || []).length}건)`, bad ? 'info' : 'success');
+              markTaxRequested(g.batch ? `batch:${g.batch}` : g.po_number, false);
+              fetchMigoData();          // 목록을 바로 다시 읽어 사라진 것을 반영
+
+            } catch (e) {
+              showToast(`이동 실패 — 로컬 서버를 확인하십시오 (${e.message})`, 'error');
+            }
+          };
+
           // 묶음 메일 — 업체마다 문구가 다르다.
           //   미스미   : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
           //   경제정공 등 : 거래명세서를 첨부해 검토 후 발행을 요청한다
@@ -19690,7 +19725,7 @@ ${lines}
                     {(b.po_numbers || []).length > 2 && ` 외 ${b.po_numbers.length - 2}`}
                   </div>
                 </div>
-                <div className="text-xs text-gray-600 min-w-[110px]">{money(b.delivery_total)}</div>
+                <div className="text-xs text-gray-600 min-w-[110px]">{money(b.delivery_total, b.currency)}</div>
                 {/* 마감 주기를 아는 묶음은 언제쯤 보낼 때인지 같이 보여준다 */}
                 <div className="min-w-[150px]">
                   {rule ? (
@@ -19798,9 +19833,9 @@ ${lines}
                         <span className="font-semibold text-gray-800">{g.vendor}</span>
                         <span className="text-xs text-gray-500 font-mono">{g.po_number}</span>
                         <span className="ml-auto text-xs">
-                          거래명세서 <b>{money(g.delivery?.total_amount)}</b>
+                          거래명세서 <b>{money(g.delivery?.total_amount, g.currency)}</b>
                           <span className="mx-2 text-gray-300">/</span>
-                          세금계산서 <b className="text-red-700">{money(g.tax?.total_amount)}</b>
+                          세금계산서 <b className="text-red-700">{money(g.tax?.total_amount, g.currency)}</b>
                         </span>
                       </div>
                     ))}
@@ -19843,7 +19878,7 @@ ${lines}
                             <div className="text-[11px] text-gray-400 font-mono">{g.po_number}</div>
                           </div>
                           <div className="text-xs text-gray-600 min-w-[120px]">
-                            {money(g.delivery?.total_amount)}
+                            {money(g.delivery?.total_amount, g.currency)}
                           </div>
                           <div className="text-[11px] text-gray-400 flex-1 truncate" title={g.delivery?.filename}>
                             {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
@@ -19860,6 +19895,13 @@ ${lines}
                           }}
                             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-amber-500 hover:bg-amber-600 text-white">
                             📧 세금계산서 요청
+                          </button>
+                          {/* McMaster·Digikey 처럼 Invoice 가 끝인 업체는 세금계산서가 안 온다.
+                              짝을 기다리면 영원히 미처리에 남으므로 눌러서 넘긴다. */}
+                          <button onClick={() => closeWithoutTax(g)}
+                            title="세금계산서 없이 입고완료 폴더로 옮깁니다"
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition">
+                            ✅ 세금계산서 없이 완료
                           </button>
                         </div>
                       );
@@ -19917,7 +19959,7 @@ ${lines}
                             <div className="text-[11px] text-gray-400 font-mono">{g.po_number}</div>
                           </div>
                           <div className="text-xs text-gray-600 min-w-[120px]">
-                            {money(g.delivery?.total_amount)}
+                            {money(g.delivery?.total_amount, g.currency)}
                           </div>
                           <div className="text-[11px] text-gray-400 flex-1 truncate">
                             {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
@@ -19983,7 +20025,7 @@ ${lines}
                               <div className="text-[10px] text-gray-400">MIRO {g.miro_number}</div>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-xs text-right">{money(g.delivery?.total_amount ?? g.tax?.total_amount)}</td>
+                          <td className="px-3 py-2 text-xs text-right">{money(g.delivery?.total_amount ?? g.tax?.total_amount, g.currency)}</td>
                           <td className="px-3 py-2 text-center">{g.delivery ? '✅' : <span className="text-gray-300">—</span>}</td>
                           <td className="px-3 py-2 text-center">{g.tax ? '✅' : <span className="text-gray-300">—</span>}</td>
                           <td className="px-3 py-2 text-[11px] text-gray-400">{when(Math.max(g.delivery?.mtime || 0, g.tax?.mtime || 0))}</td>
