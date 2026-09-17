@@ -16105,7 +16105,18 @@ ${lines}
                       {/* 본문 */}
                       <div className="flex-1 overflow-y-auto p-4 space-y-3">
                         <div>
-                          <p className="text-xs font-semibold text-gray-600 mb-1.5">받는 사람</p>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <p className="text-xs font-semibold text-gray-600">받는 사람</p>
+                            {known.length > 1 && (() => {
+                              const all = known.every(a => picked.includes(a));
+                              return (
+                                <button onClick={() => setVendorMailTo(m => ({ ...m, [curKey]: all ? [] : [...known] }))}
+                                  className="text-[11px] px-2 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+                                  {all ? '전체 해제' : `전체 선택 (${known.length})`}
+                                </button>
+                              );
+                            })()}
+                          </div>
                           {known.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
                               {known.map(a => {
@@ -19679,7 +19690,7 @@ ${lines}
             const pos = grp.items.map(g => g.po_number).filter(Boolean);
             setTaxMailInv({ vendor: grp.vendor, po_number: pos[0] || '', po_numbers: pos, files });
             setTaxMailCode(grp.code);
-            setTaxMailTo(who.length ? [who[0].email] : []);
+            setTaxMailTo(who.map(c => c.email));          // 등록된 담당자 전원
             setTaxMailExtra('');
             setTaxMailFiles(files);
           };
@@ -19725,7 +19736,7 @@ ${lines}
             setTaxMailInv({ vendor: b.vendor, po_number: batchKey(b), batch: b.batch,
                             po_numbers: b.po_numbers || [], files, misumi });
             setTaxMailCode(code);
-            setTaxMailTo(who.length ? [who[0].email] : []);
+            setTaxMailTo(who.map(c => c.email));          // 등록된 담당자 전원
             setTaxMailExtra('');
             setTaxMailFiles(misumi ? [] : files);
           };
@@ -20738,7 +20749,7 @@ ${lines}
                                         const files = inv.filename ? [inv.filename] : [];
                                         setTaxMailInv({ ...inv, files });
                                         setTaxMailCode(code);
-                                        setTaxMailTo(code && vendorContacts(code).length ? [vendorContacts(code)[0].email] : []);
+                                        setTaxMailTo(code ? vendorContacts(code).map(c => c.email) : []);   // 담당자 전원
                                         setTaxMailExtra('');
                                         setTaxMailFiles(files);
                                       }}
@@ -22128,7 +22139,7 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                     onChange={e => {
                       const c = e.target.value;
                       setTaxMailCode(c);
-                      setTaxMailTo(c && vendorContacts(c).length ? [vendorContacts(c)[0].email] : []);
+                      setTaxMailTo(c ? vendorContacts(c).map(c2 => c2.email) : []);   // 담당자 전원
                     }}
                     className={`w-full border rounded-lg px-2.5 py-1.5 text-xs ${code ? 'border-gray-200' : 'border-red-300'}`}>
                     <option value="">— 업체 선택 —</option>
@@ -22142,7 +22153,18 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold text-gray-600 mb-1.5">받는 사람</p>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <p className="text-xs font-semibold text-gray-600">받는 사람</p>
+                    {rows.length > 1 && (() => {
+                      const all = rows.every(c => taxMailTo.includes(c.email));
+                      return (
+                        <button onClick={() => setTaxMailTo(all ? [] : rows.map(c => c.email))}
+                          className="text-[11px] px-2 py-0.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50">
+                          {all ? '전체 해제' : `전체 선택 (${rows.length})`}
+                        </button>
+                      );
+                    })()}
+                  </div>
                   {rows.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {rows.map(c => {
