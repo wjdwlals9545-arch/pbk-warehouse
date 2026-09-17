@@ -22050,28 +22050,18 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             + `<p><b>${mon}월 세금계산서 ${cha}마감</b>을 진행하려고 합니다.<br/>`
             + `첨부된 거래명세서 검토 후 이상이 없으신 경우, 금일 자로 세금계산서 발행 부탁드립니다.</p></div>`;
         } else {
-          // 같은 업체 건을 한 통으로 묶었으면 어떤 PO 인지 적어준다
+          // 여러 건을 묶어도 본문은 그대로. 어떤 건인지는 첨부 파일명에 다 있다.
           const pos = inv.po_numbers || [];
-          const listTxt = pos.length > 1
-            ? '\n\n■ 대상 (' + pos.length + '건)\n' + pos.map((v, i) => ` ${i + 1}) PO ${v}`).join('\n')
-            : '';
-          const listHtml = pos.length > 1
-            ? `<p style="margin-bottom:4px;"><b>■ 대상 (${pos.length}건)</b></p>`
-              + `<div style="margin:0 0 14px 8px;">`
-              + pos.map((v, i) => `<div><b>${i + 1})</b> PO ${v}</div>`).join('')
-              + `</div>`
-            : '';
           subject = '[PROMEGA] 세금계산서 발행 요청' + (pos.length > 1 ? ` (${pos.length}건)` : '');
           body =
 `안녕하세요 프로메가 정지민입니다.
 
 납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.
-발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.${listTxt}`;
+발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.`;
           html = HEAD
             + `<p>안녕하세요 프로메가 정지민입니다.</p>`
             + `<p>납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.<br/>`
-            + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p>`
-            + listHtml + `</div>`;
+            + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p></div>`;
         }
         const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
           + `?subject=${encodeURIComponent(subject)}`
