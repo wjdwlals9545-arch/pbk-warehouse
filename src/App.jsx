@@ -19911,7 +19911,7 @@ ${lines}
               <div className="flex items-center gap-2 flex-wrap">
                 <div>
                   <h2 className="text-xl font-bold text-gray-800">🧾 세금계산서 처리</h2>
-                  <p className="text-sm text-gray-500">거래명세서 → 발행 요청 → 세금계산서 → 금액 대조 → 입고완료</p>
+                  <p className="text-sm text-gray-500">거래명세서 → 발행 요청 → 세금계산서 → 금액 대조 → 처리 완료</p>
                 </div>
                 <span className="ml-auto text-[11px] text-gray-400">
                   SAP 자동 입고처리는 서버에서 막혀 있어 이 흐름에는 쓰이지 않습니다
@@ -19925,7 +19925,7 @@ ${lines}
                   desc={waitBatch.length ? `개별 ${waitTax.length} · 묶음 ${waitBatch.length}` : '거래명세서만 들어옴'} />
                 <Card n={requesting.length + reqBatch.length} label="세금계산서 요청 중" tone="bg-indigo-50 border-indigo-200 text-indigo-700"
                   desc="메일 보냄 · 발행 대기" />
-                <Card n={done.length} label="입고완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
+                <Card n={done.length} label="세금계산서 처리 완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
                   desc="최근 40건" />
               </div>
 
@@ -20000,26 +20000,6 @@ ${lines}
                 )}
               </div>
 
-              {/* 짝 없는 세금계산서 */}
-              {/* 월 마감 묶음 — 마감일까지 모으는 중인 것.
-                  개별 건과 달리 도착 즉시 보낼 대상이 아니라 따로 둔다. */}
-              {collecting.length > 0 && (
-                <div className="bg-white rounded-xl border shadow-sm">
-                  <div className="p-4 border-b flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                      🗓 월 마감 묶음
-                      <span className="text-sm font-normal text-gray-500">{collecting.length}건 · 수집 중</span>
-                    </h3>
-                    <span className="ml-auto text-[11px] text-gray-400">
-                      마감 주간이 되면 위 '요청 대기' 로 올라옵니다
-                    </span>
-                  </div>
-                  <div className="divide-y">
-                    {collecting.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
-                  </div>
-                </div>
-              )}
-
               {/* 세금계산서 요청 중 — 메일은 보냈고 발행을 기다리는 건.
                   세금계산서가 폴더에 들어오면 짝이 맞아 이 목록에서 자동으로 빠진다. */}
               {(requesting.length + reqBatch.length) > 0 && (
@@ -20043,11 +20023,30 @@ ${lines}
                 </div>
               )}
 
-              {/* 최근 입고완료 */}
+              {/* 월마감 리스트 — 마감일까지 모으는 중인 것.
+                  개별 건과 달리 도착 즉시 보낼 대상이 아니라 따로 둔다. */}
+              {collecting.length > 0 && (
+                <div className="bg-white rounded-xl border shadow-sm">
+                  <div className="p-4 border-b flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                      🗓 월마감 리스트
+                      <span className="text-sm font-normal text-gray-500">{collecting.length}건 · 수집 중</span>
+                    </h3>
+                    <span className="ml-auto text-[11px] text-gray-400">
+                      마감 주간이 되면 위 '요청 대기' 로 올라옵니다
+                    </span>
+                  </div>
+                  <div className="divide-y">
+                    {collecting.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
+                  </div>
+                </div>
+              )}
+
+              {/* 세금계산서 처리 완료 (입고완료 폴더) */}
               <div className="bg-white rounded-xl border shadow-sm">
                 <div className="p-4 border-b">
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                    ✅ 입고완료
+                    ✅ 세금계산서 처리 완료
                     <span className="text-sm font-normal text-gray-500">최근 {done.length}건</span>
                   </h3>
                 </div>
@@ -20090,7 +20089,7 @@ ${lines}
 
               <p className="text-[11px] text-gray-400">
                 💡 세금계산서를 '세금계산서 미처리' 폴더에 넣으면 거래명세서와 금액을 맞춰보고,
-                같으면 입고완료로, 다르면 '금액 불일치' 폴더로 옮기고 메일로 알려드립니다.
+                같으면 '입고완료' 폴더로, 다르면 '금액 불일치' 폴더로 옮기고 메일로 알려드립니다.
               </p>
             </div>
           );
