@@ -5254,8 +5254,8 @@ export default function PBKWarehouseSystem() {
     }
   }, [inventoryData, rackSummary]);
 
-  // 온습도 미입력 알림 상태
-  const [showTempAlert, setShowTempAlert] = useState(false);
+  // 재고·Open PO 업로드 알림 상태
+  //   (온습도 미입력 알림은 담당이 바뀌어 2026-09-18 제거)
   const [showUploadAlert, setShowUploadAlert] = useState(false);
   const [showOpenPOAlert, setShowOpenPOAlert] = useState(false);
 
@@ -5272,14 +5272,6 @@ export default function PBKWarehouseSystem() {
       // 공휴일이면 체크 안함
       const todayStr = now.toISOString().split('T')[0];
       if (KR_HOLIDAYS.has(todayStr)) return;
-
-      // 오후 2시(14시) 이후면 온습도 체크
-      if (currentHour >= 14) {
-        const today = now.toISOString().split('T')[0];
-        const todayData = tempHumidityData[today];
-        const hasInput = todayData && (todayData.temp || todayData.humidity);
-        setShowTempAlert(!hasInput);
-      }
 
       // 오전 9시 이후면 재고/Open PO 업로드 체크 (오늘 업로드 여부)
       if (currentHour >= 9) {
@@ -10972,7 +10964,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                     return (now - new Date(r.startTime)) / (1000 * 60 * 60) >= 4;
                   }).length;
                   const unreadCount = notifications.filter(n => !n.read).length;
-                  const totalAlerts = unreadCount + overdueReceiveCount + (showTempAlert ? 1 : 0) + (showUploadAlert ? 1 : 0) + (showOpenPOAlert ? 1 : 0);
+                  const totalAlerts = unreadCount + overdueReceiveCount + (showUploadAlert ? 1 : 0) + (showOpenPOAlert ? 1 : 0);
                   return totalAlerts > 0 ? (
                     <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
                       {totalAlerts}
@@ -11573,40 +11565,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 </button>}
               </div>
             )}
-            {/* 온습도 미입력 알림 */}
-            {showTempAlert && (
-              <div className="bg-red-50 border border-red-300 rounded-xl p-5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">🌡️</span>
-                  <div>
-                    <p className="font-bold text-red-800">온습도 미입력!</p>
-                    <p className="text-sm text-red-600">오늘의 온도/습도가 아직 입력되지 않았습니다.</p>
-                  </div>
-                </div>
-                <button onClick={() => setActiveTab('temphumidity')} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
-                  입력하러 가기
-                </button>
-              </div>
-            )}
           </div>
         )}
         {activeTab === 'dashboard' && inventoryData.length > 0 && (
           <div className="space-y-6">
-            {/* 온습도 미입력 알림 배너 */}
-            {showTempAlert && (
-              <div className="bg-red-50 border border-red-300 rounded-xl p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">🌡️</span>
-                  <div>
-                    <p className="font-bold text-red-800">온습도 미입력!</p>
-                    <p className="text-sm text-red-600">오늘의 온도/습도가 아직 입력되지 않았습니다. 온습도 관리 탭에서 입력해주세요.</p>
-                  </div>
-                </div>
-                <button onClick={() => setActiveTab('temphumidity')} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium">
-                  입력하러 가기
-                </button>
-              </div>
-            )}
             {/* 재고 데이터 미업로드 알림 */}
             {showUploadAlert && (
               <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-center justify-between">
@@ -25270,10 +25232,9 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
               </div>
             </div>
             <div className="flex-1 overflow-y-auto space-y-2">
-              {/* 시스템 알림 (온습도, 업로드, 입고 미처리) */}
+              {/* 시스템 알림 (업로드, 입고 미처리) */}
               {(() => {
                 const sysAlerts = [];
-                if (showTempAlert) sysAlerts.push({ id: 'sys-temp', type: 'warning', title: '🌡️ 온습도 미입력', message: '오늘의 온도/습도가 아직 입력되지 않았습니다.', action: () => { setActiveTab('temphumidity'); setShowNotificationCenter(false); } });
                 if (showUploadAlert) sysAlerts.push({ id: 'sys-stock', type: 'error', title: '📊 재고 데이터 미갱신', message: 'SAP에서 ZBIN 다운로드 → SAP_Drop\\zbin 폴더에 저장하면 자동 반영됩니다.', action: () => { setShowDataUploadModal(true); setShowNotificationCenter(false); } });
                 if (showOpenPOAlert) sysAlerts.push({ id: 'sys-po', type: 'error', title: '📋 Open PO 미갱신', message: 'SAP에서 ME2N 다운로드 → SAP_Drop\\me2n 폴더에 저장하면 자동 반영됩니다.', action: () => { setShowOpenPOModal(true); setShowNotificationCenter(false); } });
                 // 입고 미처리
@@ -25302,7 +25263,7 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                 ) : null;
               })()}
               
-              {notifications.length === 0 && !showTempAlert && !showUploadAlert && !showOpenPOAlert ? (
+              {notifications.length === 0 && !showUploadAlert && !showOpenPOAlert ? (
                 <div className={`text-center py-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   <BellOff className="w-12 h-12 mx-auto mb-2 opacity-50" />
                   <p>알림이 없습니다</p>
