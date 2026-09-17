@@ -4613,12 +4613,17 @@ export default function PBKWarehouseSystem() {
     catch { return {}; }
   });
   // 요청 표시를 켜고 끈다. 메일을 띄운 뒤 '요청 중' 으로 옮기는 게 이걸로 된다.
+  // 한 통으로 여러 건을 묶어 보내는 경우가 있어 배열도 받는다.
   const markTaxRequested = (po, on = true) => {
-    if (!po) return;
+    const list = (Array.isArray(po) ? po : [po]).filter(Boolean);
+    if (!list.length) return;
     const next = new Set(taxRequestedPOs);
     const at = { ...taxRequestedAt };
-    if (on) { next.add(po); at[po] = new Date().toISOString(); }
-    else { next.delete(po); delete at[po]; }
+    const now = new Date().toISOString();
+    list.forEach(k => {
+      if (on) { next.add(k); at[k] = now; }
+      else { next.delete(k); delete at[k]; }
+    });
     setTaxRequestedPOs(next);
     setTaxRequestedAt(at);
     safeStorage.setItem('pbk_tax_requested', JSON.stringify([...next]));
@@ -19643,10 +19648,49 @@ ${lines}
             return { rule: r, win, when };
           });
 
+          // 같은 업체의 거래명세서가 여러 건 와 있으면 한 통으로 묶어 요청한다.
+          // 두 번 보낼 일도 아니고, 업체도 한 번에 받는 게 낫다.
+          const byVendor = (rows) => {
+            const m = new Map();
+            rows.forEach(g => {
+              const code = vendorCodeOf(g.vendor);
+              const key = code || g.vendor || '(업체 미상)';
+              if (!m.has(key)) m.set(key, { key, code, vendor: g.vendor, items: [] });
+              m.get(key).items.push(g);
+            });
+            return [...m.values()].sort((a, b) => b.items.length - a.items.length);
+          };
+          const waitGroups = byVendor(waitTax);
+          const reqGroups  = byVendor(requesting);
+
+          // 묶음 합계 — 통화가 섞이면 더하지 않는다
+          const groupTotal = (grp) => {
+            const curs = new Set(grp.items.map(g => g.currency || 'KRW'));
+            if (curs.size > 1) return [null, null];
+            const vals = grp.items.map(g => g.delivery?.total_amount);
+            return vals.every(v => v !== null && v !== undefined)
+              ? [vals.reduce((a, b) => a + Number(b), 0), [...curs][0]]
+              : [null, [...curs][0]];
+          };
+
+          const openGroupMail = (grp) => {
+            const who = grp.code ? vendorContacts(grp.code) : [];
+            const files = grp.items.flatMap(g => [g.delivery?.filename, g.tax?.filename].filter(Boolean));
+            const pos = grp.items.map(g => g.po_number).filter(Boolean);
+            setTaxMailInv({ vendor: grp.vendor, po_number: pos[0] || '', po_numbers: pos, files });
+            setTaxMailCode(grp.code);
+            setTaxMailTo(who.length ? [who[0].email] : []);
+            setTaxMailExtra('');
+            setTaxMailFiles(files);
+          };
+
           // 세금계산서 없이 입고완료로. McMaster·Digikey 는 Invoice 가 끝이다.
-          const closeWithoutTax = async (g) => {
-            const files = [g.delivery?.filename, g.tax?.filename].filter(Boolean);
-            const what = g.batch ? `묶음 ${g.batch}` : `${g.vendor} (${g.po_number})`;
+          const closeWithoutTax = async (arg) => {
+            const rows = Array.isArray(arg) ? arg : [arg];
+            const g = rows[0];
+            const files = rows.flatMap(r => [r.delivery?.filename, r.tax?.filename].filter(Boolean));
+            const what = g.batch ? `묶음 ${g.batch}`
+              : `${g.vendor} (${rows.map(r => r.po_number).join(', ')})`;
             if (!window.confirm(
               `세금계산서 없이 입고완료로 옮깁니다.\n\n${what}\n${files.join('\n')}\n\n`
               + `되돌리려면 폴더에서 직접 옮기셔야 합니다. 진행하시겠습니까?`)) return;
@@ -19662,7 +19706,7 @@ ${lines}
               showToast(bad
                 ? `${(res.moved || []).length}건 이동 · ${bad}건 실패 (${res.failed.join(', ')})`
                 : `입고완료로 옮겼습니다 (${(res.moved || []).length}건)`, bad ? 'info' : 'success');
-              markTaxRequested(g.batch ? `batch:${g.batch}` : g.po_number, false);
+              markTaxRequested(g.batch ? `batch:${g.batch}` : rows.map(r => r.po_number), false);
               fetchMigoData();          // 목록을 바로 다시 읽어 사라진 것을 반영
 
             } catch (e) {
@@ -19684,6 +19728,81 @@ ${lines}
             setTaxMailTo(who.length ? [who[0].email] : []);
             setTaxMailExtra('');
             setTaxMailFiles(misumi ? [] : files);
+          };
+
+          // 업체 한 줄. 거래명세서가 여러 건이면 PO 를 아래에 펼쳐 보여준다.
+          const VendorRow = ({ grp, mode }) => {
+            const who = grp.code ? vendorContacts(grp.code) : [];
+            const n = grp.items.length;
+            const [sum, cur] = groupTotal(grp);
+            const pos = grp.items.map(g => g.po_number).filter(Boolean);
+            const d = mode === 'requesting' ? daysSince(pos[0]) : null;
+            return (
+              <div className="px-4 py-3 hover:bg-gray-50">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="min-w-[180px]">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-sm text-gray-800">{grp.vendor || '(업체 미상)'}</span>
+                      {n > 1 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200 font-semibold">
+                          {n}건 묶음
+                        </span>
+                      )}
+                      {!grp.code && <span className="text-[10px] text-red-500">매칭 안 됨</span>}
+                    </div>
+                    <div className="text-[11px] text-gray-400 font-mono">
+                      {n === 1 ? pos[0] : `PO ${n}건`}
+                    </div>
+                  </div>
+                  <div className="text-xs text-gray-600 min-w-[120px]">
+                    {sum === null && n > 1 ? '—' : money(n === 1 ? grp.items[0].delivery?.total_amount : sum, cur)}
+                  </div>
+                  <div className="text-[11px] text-gray-400 flex-1 truncate">
+                    {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
+                  </div>
+                  {d !== null ? (
+                    <span className={`text-[11px] px-2 py-0.5 rounded border ${
+                      d >= 3 ? 'bg-red-50 border-red-200 text-red-700'
+                             : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+                      {d === 0 ? '오늘 요청' : `요청 ${d}일 경과`}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-400">{when(grp.items[0].delivery?.mtime)}</span>
+                  )}
+                  <button onClick={() => openGroupMail(grp)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition ${
+                      mode === 'requesting' ? 'bg-indigo-500 hover:bg-indigo-600'
+                                            : 'bg-amber-500 hover:bg-amber-600'}`}>
+                    📧 {mode === 'requesting' ? '다시 요청' : '세금계산서 요청'}{n > 1 ? ` (${n}건)` : ''}
+                  </button>
+                  {mode === 'requesting' ? (
+                    <button onClick={() => markTaxRequested(pos, false)}
+                      className="px-2 py-1.5 rounded-lg text-[11px] border border-gray-300 text-gray-500 hover:bg-gray-100"
+                      title="요청 표시를 지우고 '요청 대기' 로 되돌립니다">대기로</button>
+                  ) : (
+                    /* McMaster·Digikey 처럼 Invoice 가 끝인 업체는 세금계산서가 안 온다 */
+                    <button onClick={() => closeWithoutTax(grp.items)}
+                      title="세금계산서 없이 입고완료 폴더로 옮깁니다"
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition">
+                      ✅ 세금계산서 없이 완료
+                    </button>
+                  )}
+                </div>
+                {/* 여러 건이면 무엇이 묶였는지 보이게 */}
+                {n > 1 && (
+                  <div className="mt-2 ml-1 space-y-0.5">
+                    {grp.items.map(g => (
+                      <div key={g.key} className="flex items-center gap-2 text-[11px] text-gray-500">
+                        <span className="text-gray-300">└</span>
+                        <span className="font-mono">{g.po_number}</span>
+                        <span className="text-gray-400">{money(g.delivery?.total_amount, g.currency)}</span>
+                        <span className="text-gray-300 truncate">{g.delivery?.filename}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
           };
 
           const STAGE = {
@@ -19865,47 +19984,7 @@ ${lines}
                   <div className="divide-y">
                     {/* 일괄 마감 묶음 먼저 */}
                     {waitBatch.map(b => <BatchRow key={b.key} b={b} mode="wait" />)}
-                    {waitTax.map(g => {
-                      const code = vendorCodeOf(g.vendor);
-                      const who = code ? vendorContacts(code) : [];
-                      return (
-                        <div key={g.key} className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
-                          <div className="min-w-[180px]">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-semibold text-sm text-gray-800">{g.vendor || '(업체 미상)'}</span>
-                              {!code && <span className="text-[10px] text-red-500">매칭 안 됨</span>}
-                            </div>
-                            <div className="text-[11px] text-gray-400 font-mono">{g.po_number}</div>
-                          </div>
-                          <div className="text-xs text-gray-600 min-w-[120px]">
-                            {money(g.delivery?.total_amount, g.currency)}
-                          </div>
-                          <div className="text-[11px] text-gray-400 flex-1 truncate" title={g.delivery?.filename}>
-                            {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
-                          </div>
-                          <span className="text-[11px] text-gray-400">{when(g.delivery?.mtime)}</span>
-                          <button onClick={() => {
-                            // 폴더에 있는 거래명세서를 초안에 그대로 붙인다
-                            const files = [g.delivery?.filename, g.tax?.filename].filter(Boolean);
-                            setTaxMailInv({ vendor: g.vendor, po_number: g.po_number, files });
-                            setTaxMailCode(code);
-                            setTaxMailTo(who.length ? [who[0].email] : []);
-                            setTaxMailExtra('');
-                            setTaxMailFiles(files);
-                          }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition bg-amber-500 hover:bg-amber-600 text-white">
-                            📧 세금계산서 요청
-                          </button>
-                          {/* McMaster·Digikey 처럼 Invoice 가 끝인 업체는 세금계산서가 안 온다.
-                              짝을 기다리면 영원히 미처리에 남으므로 눌러서 넘긴다. */}
-                          <button onClick={() => closeWithoutTax(g)}
-                            title="세금계산서 없이 입고완료 폴더로 옮깁니다"
-                            className="px-2.5 py-1.5 rounded-lg text-[11px] border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition">
-                            ✅ 세금계산서 없이 완료
-                          </button>
-                        </div>
-                      );
-                    })}
+                    {waitGroups.map(grp => <VendorRow key={grp.key} grp={grp} mode="wait" />)}
                   </div>
                 )}
               </div>
@@ -19948,48 +20027,7 @@ ${lines}
                   </div>
                   <div className="divide-y">
                     {reqBatch.map(b => <BatchRow key={b.key} b={b} mode="requesting" />)}
-                    {requesting.map(g => {
-                      const code = vendorCodeOf(g.vendor);
-                      const who = code ? vendorContacts(code) : [];
-                      const d = daysSince(g.po_number);
-                      return (
-                        <div key={g.key} className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
-                          <div className="min-w-[180px]">
-                            <span className="font-semibold text-sm text-gray-800">{g.vendor || '(업체 미상)'}</span>
-                            <div className="text-[11px] text-gray-400 font-mono">{g.po_number}</div>
-                          </div>
-                          <div className="text-xs text-gray-600 min-w-[120px]">
-                            {money(g.delivery?.total_amount, g.currency)}
-                          </div>
-                          <div className="text-[11px] text-gray-400 flex-1 truncate">
-                            {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
-                          </div>
-                          {d !== null && (
-                            <span className={`text-[11px] px-2 py-0.5 rounded border ${
-                              d >= 3 ? 'bg-red-50 border-red-200 text-red-700'
-                                     : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
-                              {d === 0 ? '오늘 요청' : `요청 ${d}일 경과`}
-                            </span>
-                          )}
-                          <button onClick={() => {
-                            const files = [g.delivery?.filename, g.tax?.filename].filter(Boolean);
-                            setTaxMailInv({ vendor: g.vendor, po_number: g.po_number, files });
-                            setTaxMailCode(code);
-                            setTaxMailTo(who.length ? [who[0].email] : []);
-                            setTaxMailExtra('');
-                            setTaxMailFiles(files);
-                          }}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-500 hover:bg-indigo-600 text-white transition">
-                            📧 다시 요청
-                          </button>
-                          <button onClick={() => markTaxRequested(g.po_number, false)}
-                            className="px-2 py-1.5 rounded-lg text-[11px] border border-gray-300 text-gray-500 hover:bg-gray-100"
-                            title="요청 표시를 지우고 '요청 대기' 로 되돌립니다">
-                            대기로
-                          </button>
-                        </div>
-                      );
-                    })}
+                    {reqGroups.map(grp => <VendorRow key={grp.key} grp={grp} mode="requesting" />)}
                   </div>
                 </div>
               )}
@@ -22012,16 +22050,28 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             + `<p><b>${mon}월 세금계산서 ${cha}마감</b>을 진행하려고 합니다.<br/>`
             + `첨부된 거래명세서 검토 후 이상이 없으신 경우, 금일 자로 세금계산서 발행 부탁드립니다.</p></div>`;
         } else {
-          subject = '[PROMEGA] 세금계산서 발행 요청';
+          // 같은 업체 건을 한 통으로 묶었으면 어떤 PO 인지 적어준다
+          const pos = inv.po_numbers || [];
+          const listTxt = pos.length > 1
+            ? '\n\n■ 대상 (' + pos.length + '건)\n' + pos.map((v, i) => ` ${i + 1}) PO ${v}`).join('\n')
+            : '';
+          const listHtml = pos.length > 1
+            ? `<p style="margin-bottom:4px;"><b>■ 대상 (${pos.length}건)</b></p>`
+              + `<div style="margin:0 0 14px 8px;">`
+              + pos.map((v, i) => `<div><b>${i + 1})</b> PO ${v}</div>`).join('')
+              + `</div>`
+            : '';
+          subject = '[PROMEGA] 세금계산서 발행 요청' + (pos.length > 1 ? ` (${pos.length}건)` : '');
           body =
 `안녕하세요 프로메가 정지민입니다.
 
 납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.
-발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.`;
+발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.${listTxt}`;
           html = HEAD
             + `<p>안녕하세요 프로메가 정지민입니다.</p>`
             + `<p>납품 건에 대해 금일 자로 세금계산서 발행 부탁드립니다.<br/>`
-            + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p></div>`;
+            + `발행 주소는 본 메일인 jimin.jung@promega.com 으로 부탁드립니다.</p>`
+            + listHtml + `</div>`;
         }
         const mailto = `mailto:${encodeURIComponent(allTo.join(';'))}`
           + `?subject=${encodeURIComponent(subject)}`
@@ -22044,7 +22094,8 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
               ? `초안을 띄웠습니다. 첨부 ${(res.attached || []).length}건 · 못 찾은 파일 ${miss}건`
               : `Outlook 에 초안을 띄웠습니다${(res.attached || []).length ? ` (첨부 ${res.attached.length}건)` : ''}. 확인 후 보내십시오.`,
               miss ? 'info' : 'success');
-            markTaxRequested(inv.po_number);   // '요청 중' 으로 옮긴다
+            // 묶어 보냈으면 묶인 PO 전부를 '요청 중' 으로 옮긴다
+            markTaxRequested((inv.po_numbers && inv.po_numbers.length) ? inv.po_numbers : inv.po_number);
             close();
           } catch (e) {
             showToast(`로컬 서버 연결 실패 — 메일 앱으로 엽니다 (${e.message})`, 'info');
@@ -22068,6 +22119,8 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                   {inv.vendor}
                   {inv.batch
                     ? ` · 묶음 ${inv.batch} · PO ${(inv.po_numbers || []).length}건`
+                    : (inv.po_numbers || []).length > 1
+                    ? ` · PO ${inv.po_numbers.length}건 묶음`
                     : ` · PO ${inv.po_number}`}
                 </span>
                 <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
@@ -22173,7 +22226,7 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                   <button onClick={() => { navigator.clipboard.writeText(body); showToast('본문을 복사했습니다', 'success'); }}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">본문 복사</button>
                   <button disabled={!allTo.length}
-                    onClick={() => { markTaxRequested(inv.po_number); window.location.href = mailto; }}
+                    onClick={() => { markTaxRequested((inv.po_numbers && inv.po_numbers.length) ? inv.po_numbers : inv.po_number); window.location.href = mailto; }}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
                     메일 앱(mailto)
                   </button>
