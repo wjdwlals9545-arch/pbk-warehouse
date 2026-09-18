@@ -1955,6 +1955,76 @@ const CLOSE_RULES = [
   { id: 'misumi', name: '미스미',  match: /미스미|misumi/i,      day: 25, desc: '월말 25일 전후' },
 ];
 
+// (useEffect 안에 있어 업로드 모달에서 부를 수 없던 것을 끌어올렸다)
+// Delivery Data Excel 파싱 — 모듈 스코프. 업로드 모달과 자동 로드가 함께 쓴다.
+const parseDeliveryExcel = (arrayBuf) => {
+  const XLSX = window.XLSX;
+  const workbook = XLSX.read(arrayBuf);
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // 배열 모드
+  // 헤더 찾기 (Row 0)
+  const headers = rows[0] || [];
+  const colIdx = {};
+  headers.forEach((h, i) => { if (h) colIdx[String(h).trim()] = i; });
+  const iMat = colIdx['Material'] ?? 7;
+  const iDesc = colIdx['Short Text'] ?? 8;
+  const iSupplier = colIdx['Supplier/Supplying Plant'] ?? 6;
+  const iSchedQty = colIdx['Scheduled Quantity'] ?? 20;
+  const iOrderQty = colIdx['Order Quantity'] ?? 15;
+  const iUnit = colIdx['Order Unit'] ?? 16;
+  const iDelivery = colIdx['Delivery Date'] ?? 21;
+  const iQtyRecv = colIdx['Quantity Received'] ?? 25;
+  const iDeletion = colIdx['Deletion Indicator'] ?? 10;
+
+  let currentPO = '';
+  const items = []; // 개별 아이템 리스트
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || row.length === 0) continue;
+    const a = String(row[0] || '').trim();
+    // PO 그룹 헤더
+    if (a.startsWith('Purchasing Document')) {
+      currentPO = a.replace('Purchasing Document', '').trim();
+      continue;
+    }
+    // Item 헤더 → skip
+    if (a.startsWith('Item')) continue;
+    // 데이터 행 (Schedule Line = 숫자)
+    if (/^\d+$/.test(a) && currentPO) {
+      const deletion = String(row[iDeletion] || '').trim();
+      if (deletion === 'L') continue; // 삭제된 항목 skip
+      const material = String(row[iMat] || '').trim();
+      if (!material) continue;
+      const schedQty = parseFloat(row[iSchedQty]) || 0;
+      const qtyRecv = parseFloat(row[iQtyRecv]) || 0;
+      const remainQty = schedQty - qtyRecv;
+      if (remainQty <= 0) continue; // 이미 전량 입고된 건 skip
+      let deliveryDate = '';
+      const rawDel = row[iDelivery];
+      if (rawDel) {
+        if (rawDel instanceof Date) { deliveryDate = rawDel.toISOString().slice(0, 10); }
+        else if (typeof rawDel === 'number') {
+          const d = new Date((rawDel - 25569) * 86400000);
+          deliveryDate = d.toISOString().slice(0, 10);
+        } else { deliveryDate = String(rawDel).slice(0, 10); }
+      }
+      items.push({
+        poNo: currentPO,
+        material,
+        description: String(row[iDesc] || '').trim(),
+        supplier: String(row[iSupplier] || '').trim(),
+        orderQty: parseFloat(row[iOrderQty]) || 0,
+        scheduledQty: schedQty,
+        receivedQty: qtyRecv,
+        remainQty,
+        unit: String(row[iUnit] || 'EA').trim(),
+        deliveryDate,
+      });
+    }
+  }
+  return items;
+};
+
 // 그 달 N주차의 월~금. 1주차 = 1일이 든 주.
 function nthWeekRange(year, month, n) {
   const first = new Date(year, month - 1, 1);
@@ -5498,74 +5568,6 @@ export default function PBKWarehouseSystem() {
       return { aggregated: Object.values(poByMaterial), rawItems };
     };
 
-    // Delivery Data Excel 파싱 (V열추가 계층구조: PO헤더 → Item → 데이터행)
-    const parseDeliveryExcel = (arrayBuf) => {
-      const XLSX = window.XLSX;
-      const workbook = XLSX.read(arrayBuf);
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // 배열 모드
-      // 헤더 찾기 (Row 0)
-      const headers = rows[0] || [];
-      const colIdx = {};
-      headers.forEach((h, i) => { if (h) colIdx[String(h).trim()] = i; });
-      const iMat = colIdx['Material'] ?? 7;
-      const iDesc = colIdx['Short Text'] ?? 8;
-      const iSupplier = colIdx['Supplier/Supplying Plant'] ?? 6;
-      const iSchedQty = colIdx['Scheduled Quantity'] ?? 20;
-      const iOrderQty = colIdx['Order Quantity'] ?? 15;
-      const iUnit = colIdx['Order Unit'] ?? 16;
-      const iDelivery = colIdx['Delivery Date'] ?? 21;
-      const iQtyRecv = colIdx['Quantity Received'] ?? 25;
-      const iDeletion = colIdx['Deletion Indicator'] ?? 10;
-
-      let currentPO = '';
-      const items = []; // 개별 아이템 리스트
-      for (let r = 1; r < rows.length; r++) {
-        const row = rows[r];
-        if (!row || row.length === 0) continue;
-        const a = String(row[0] || '').trim();
-        // PO 그룹 헤더
-        if (a.startsWith('Purchasing Document')) {
-          currentPO = a.replace('Purchasing Document', '').trim();
-          continue;
-        }
-        // Item 헤더 → skip
-        if (a.startsWith('Item')) continue;
-        // 데이터 행 (Schedule Line = 숫자)
-        if (/^\d+$/.test(a) && currentPO) {
-          const deletion = String(row[iDeletion] || '').trim();
-          if (deletion === 'L') continue; // 삭제된 항목 skip
-          const material = String(row[iMat] || '').trim();
-          if (!material) continue;
-          const schedQty = parseFloat(row[iSchedQty]) || 0;
-          const qtyRecv = parseFloat(row[iQtyRecv]) || 0;
-          const remainQty = schedQty - qtyRecv;
-          if (remainQty <= 0) continue; // 이미 전량 입고된 건 skip
-          let deliveryDate = '';
-          const rawDel = row[iDelivery];
-          if (rawDel) {
-            if (rawDel instanceof Date) { deliveryDate = rawDel.toISOString().slice(0, 10); }
-            else if (typeof rawDel === 'number') {
-              const d = new Date((rawDel - 25569) * 86400000);
-              deliveryDate = d.toISOString().slice(0, 10);
-            } else { deliveryDate = String(rawDel).slice(0, 10); }
-          }
-          items.push({
-            poNo: currentPO,
-            material,
-            description: String(row[iDesc] || '').trim(),
-            supplier: String(row[iSupplier] || '').trim(),
-            orderQty: parseFloat(row[iOrderQty]) || 0,
-            scheduledQty: schedQty,
-            receivedQty: qtyRecv,
-            remainQty,
-            unit: String(row[iUnit] || 'EA').trim(),
-            deliveryDate,
-          });
-        }
-      }
-      return items;
-    };
 
     // GitHub 파일의 마지막 커밋 날짜 확인 (오늘 업데이트된 파일만 로드)
     // GitHub 커밋 시간 조회 — epoch(ms) 기반 비교로 타임존 문제 완전 제거
