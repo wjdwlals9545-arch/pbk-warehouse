@@ -6095,7 +6095,10 @@ export default function PBKWarehouseSystem() {
     if (hasChanges) {
       setKittingData(updatedKitting);
     }
-  }, [pickCycles]);
+    // kittingData 도 봐야 한다. 불출 Cycle 이 먼저 있는 상태에서 Kitting 을 새로
+    // 올리면 pickCycles 가 안 바뀌어 동기화가 아예 안 돌았다.
+    // 세 분기 모두 "이미 같으면 건드리지 않는" 가드가 있어 한 번 더 돌고 멈춘다.
+  }, [pickCycles, kittingData]);
 
   // 이전에 입력한 협력업체 목록 (자동완성용)
   const previousVendors = React.useMemo(() => {
