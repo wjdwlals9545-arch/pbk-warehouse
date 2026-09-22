@@ -21998,6 +21998,12 @@ td{padding:6px 8px;border:1px solid #e5e7eb}
         //   미스미 묶음 : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
         //   차수 묶음   : 첨부한 거래명세서를 검토한 뒤 발행 요청 (경제정공 1·2차)
         //   개별 건     : 기존 문구
+        // 요청 표시를 걸 키. 묶음은 폴더 이름(batch:경제2차)으로 판정하므로
+        // po_numbers(실제 PO들)를 쓰면 '요청 중' 으로 넘어가지 않는다.
+        const reqKeys = inv.batch
+          ? inv.po_number
+          : ((inv.po_numbers && inv.po_numbers.length) ? inv.po_numbers : inv.po_number);
+
         const mon = new Date().getMonth() + 1;
         const chaM = (inv.batch || '').match(/(\d+)\s*차/);
         const cha = chaM ? `${chaM[1]}차 ` : '';
@@ -22061,7 +22067,7 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
               : `Outlook 에 초안을 띄웠습니다${(res.attached || []).length ? ` (첨부 ${res.attached.length}건)` : ''}. 확인 후 보내십시오.`,
               miss ? 'info' : 'success');
             // 묶어 보냈으면 묶인 PO 전부를 '요청 중' 으로 옮긴다
-            markTaxRequested((inv.po_numbers && inv.po_numbers.length) ? inv.po_numbers : inv.po_number);
+            markTaxRequested(reqKeys);
             close();
           } catch (e) {
             showToast(`로컬 서버 연결 실패 — 메일 앱으로 엽니다 (${e.message})`, 'info');
@@ -22203,7 +22209,7 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                   <button onClick={() => { navigator.clipboard.writeText(body); showToast('본문을 복사했습니다', 'success'); }}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50">본문 복사</button>
                   <button disabled={!allTo.length}
-                    onClick={() => { markTaxRequested((inv.po_numbers && inv.po_numbers.length) ? inv.po_numbers : inv.po_number); window.location.href = mailto; }}
+                    onClick={() => { markTaxRequested(reqKeys); window.location.href = mailto; }}
                     className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
                     메일 앱(mailto)
                   </button>
