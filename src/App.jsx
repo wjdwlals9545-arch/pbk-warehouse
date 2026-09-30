@@ -16344,7 +16344,9 @@ ${lines}
                                     return <span className="text-gray-300" title="BOM 에 없는 자재">-</span>;
                                   }
                                   const style = {
-                                    stop:   ['bg-red-100 text-red-700 border-red-200', '생산중단'],
+                                    // 0대 = 가장 급함. urgent 와 같은 '긴급' 이고 정도만 색으로 가른다
+                                    // ('생산중단' 은 품목이 단종된 것으로 읽혀 바꿨다)
+                                    stop:   ['bg-red-100 text-red-700 border-red-200', '긴급'],
                                     short:  ['bg-orange-100 text-orange-700 border-orange-200', '수량부족'],
                                     urgent: ['bg-amber-100 text-amber-800 border-amber-200', '긴급'],
                                     watch:  ['bg-yellow-50 text-yellow-700 border-yellow-200', '주의'],
@@ -16378,7 +16380,8 @@ ${lines}
                   <p className="text-xs text-gray-400 mt-3">
                     💡 Q Stock = MIGO(입고처리) 후 수입검사(Incoming Inspection) 대기 중인 재고. F1/S1 위치 품목은 제외됩니다.<br />
                     🏭 <b>BOM 여유</b> = 창고 가용재고(전체 − 검사대기)로 만들 수 있는 대수 → 이 검사를 통과시켰을 때의 대수.
-                    <span className="text-red-600 font-semibold">생산중단</span>은 창고 재고로 한 대도 못 만드는데 이 검사만 통과하면 풀리는 것이라 가장 먼저 봐야 합니다.
+                    <span className="text-red-600 font-semibold">긴급(빨강)</span>은 창고 재고로 한 대도 못 만드는데 이 검사만 통과하면 풀리는 것이라 가장 먼저 봐야 합니다.
+                    <span className="text-amber-600 font-semibold">긴급(주황)</span>은 아직 만들 수는 있지만 기준 미만입니다.
                     <span className="text-orange-600 font-semibold">수량부족</span>은 검사해도 모자라 추가 입고가 필요합니다.
                     기준은 10대 미만(HSM3는 3대 미만)입니다.
                   </p>
