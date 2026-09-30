@@ -1931,6 +1931,25 @@ function parseTs(v) {
 // 직접 문자열을 자르면 '2026-08-05T07:37:28+09:00' 이 '08-0507:37:2809:00' 처럼 깨진다.
 // SAP 공급업체 문자열은 "105388     kyungje Precision" 처럼 코드와 이름이
 // 공백 덩어리로 붙어 온다. 코드와 이름을 갈라 쓴다.
+// 'YYYY-MM-DD' 를 로컬 자정으로 읽는다. new Date('2026-10-01') 은 UTC 자정이라
+// KST 에서는 09:00 이 되고, 그래서 오늘 입고 건의 경과일이 -1 로 나왔다.
+function ymdLocal(v) {
+  const m = String(v || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) {
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+// 그 날짜부터 오늘까지 며칠 지났나. 오늘 = 0, 어제 = 1.
+function daysSinceYmd(v, now) {
+  const a = ymdLocal(v);
+  if (!a) return null;
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((b - a) / 86400000);
+}
+
 function splitVendor(v) {
   const t = String(v || '').trim().replace(/\s+/g, ' ');
   const m = t.match(/^(\d{4,})\s+(.+)$/);
@@ -9063,8 +9082,7 @@ ${tableRows}</tbody>
       const koNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
       const items = (Array.isArray(qStockData) ? qStockData : []).filter(i => !i.bin?.startsWith('F1') && !i.bin?.startsWith('S1'))
         .map(i => {
-          const gr = i.grDate ? new Date(i.grDate) : null;
-          return { material: i.material, description: i.description, stock: i.stock, unit: i.unit, bin: i.bin, grDate: i.grDate, daysElapsed: gr ? Math.floor((koNow - gr) / 86400000) : null };
+          return { material: i.material, description: i.description, stock: i.stock, unit: i.unit, bin: i.bin, grDate: i.grDate, daysElapsed: i.grDate ? daysSinceYmd(i.grDate, koNow) : null };
         }).sort((a, b) => (b.daysElapsed || 0) - (a.daysElapsed || 0));
       return { count: items.length, over8Days: items.filter(i => i.daysElapsed >= 8).length, note: '지연 기준 8일', items: items.slice(0, 30) };
     },
@@ -16173,9 +16191,9 @@ ${lines}
               const bomLv = (mat) => (qStockBomUrgency[String(mat)] || {}).level || 'none';
               const BOM_RANK = { stop: 0, short: 1, urgent: 2, watch: 3, ok: 4, none: 5 };
               const qItems = filteredQStock.map(item => {
-                const grDate = item.grDate ? new Date(item.grDate) : null;
-                const daysElapsed = grDate && !isNaN(grDate.getTime()) ? Math.floor((koNow - grDate) / (1000 * 60 * 60 * 24)) : null;
-                const grDateTs = grDate && !isNaN(grDate.getTime()) ? grDate.getTime() : 0;
+                const grDate = item.grDate ? ymdLocal(item.grDate) : null;
+                const daysElapsed = item.grDate ? daysSinceYmd(item.grDate, koNow) : null;
+                const grDateTs = grDate ? grDate.getTime() : 0;
                 return { ...item, daysElapsed, grDateTs };
               }).sort((a, b) => {
                 const dir = qStockSortDir === 'asc' ? 1 : -1;
