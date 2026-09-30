@@ -5867,9 +5867,17 @@ export default function PBKWarehouseSystem() {
   // ──── 읽기 전용 PC: 5분마다 GitHub에서 최신 데이터 자동 로드 ────
   useEffect(() => {
     const isMaster = safeStorage.getItem('pbk_sync_master') === 'true';
-    if (isMaster) return; // 마스터 PC는 자기가 올리니까 불필요
 
     const interval = setInterval(async () => {
+      // 마스터도 Excel 은 다시 받아야 한다.
+      // 예전엔 대시보드가 직접 올려서 '내가 올리니까 불필요' 가 맞았지만,
+      // 지금은 sap_watcher 가 백그라운드로 올린다. 탭을 열어둔 채 파일을 넣으면
+      // 화면이 계속 옛 데이터를 들고 있었다 (납기 지연 32건 vs 실제 8건).
+      // 다만 loadDashboardState 는 내 로컬 상태를 원격으로 덮을 수 있어 건너뛴다.
+      if (isMaster) {
+        if (fetchGitHubDataRef.current) await fetchGitHubDataRef.current();
+        return;
+      }
       console.log('[DashSync] Read-only PC: auto-refreshing from GitHub...');
       await loadDashboardState();
       // 동기화 복원이 KPI 를 덮어쓴 뒤에 자동 집계분을 다시 얹는다.
