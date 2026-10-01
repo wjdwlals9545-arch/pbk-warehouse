@@ -116,6 +116,7 @@ const SYNC_KEYS = [
   'pbk_tax_requested',
   'pbk_tax_requested_at',
   'pbk_close_dismissed',
+  'pbk_promised_dates',   // 업체 회신 일정 — 납기 변경 이력이라 날아가면 안 된다
   'pbk_work_issues',
 ];
 
@@ -2598,7 +2599,16 @@ export default function PBKWarehouseSystem() {
   });
   const setPromised = (key, patch) => {
     setPromisedDates(prev => {
-      const next = { ...prev, [key]: { ...(prev[key] || {}), ...patch, savedAt: new Date().toISOString() } };
+      const cur = prev[key] || {};
+      const rec = { ...cur, ...patch, savedAt: new Date().toISOString() };
+      // 날짜가 실제로 바뀐 때만 이력을 남긴다. 업체가 몇 번 밀었는지가
+      // 협력업체 재평가(QP-703)의 '납기 요구일 대비 준수 정도' 근거가 된다.
+      if (patch.date !== undefined && patch.date !== cur.date) {
+        const hist = Array.isArray(cur.history) ? [...cur.history] : [];
+        if (patch.date) hist.push({ date: patch.date, at: new Date().toISOString() });
+        rec.history = hist;
+      }
+      const next = { ...prev, [key]: rec };
       // 날짜도 메모도 비면 기록 자체를 지운다
       if (!next[key].date && !(next[key].note || '').trim()) delete next[key];
       safeStorage.setItem('pbk_promised_dates', JSON.stringify(next));
@@ -2986,7 +2996,9 @@ export default function PBKWarehouseSystem() {
         headers: { Authorization: `token ${TOKEN}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      if (putResp.ok) showToast(`☁️ ${label} GitHub 업로드 완료`, 'success');
+      // 업로드 성공 토스트는 띄우지 않는다. 자동 갱신마다 떠서 성가시고,
+      // 갱신 시각은 어차피 상단 헤더에 항목별로 표시된다.
+      if (putResp.ok) console.log(`[GitHub] ${label} 업로드 완료`);
     } catch (err) { console.error(`GitHub upload error (${label}):`, err); }
   };
 
@@ -15073,13 +15085,25 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             };
           });
 
-          // 2주 내 납품 예정 필터
-          const upcomingDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate >= todayStr && d.deliveryDate <= twoWeekEnd);
+          // 업체가 회신한 일정이 있으면 그 날짜에 들어온다고 본다.
+          // 원래 납기일(SAP)은 지우지 않는다 — 납기 지연 판정과 OTD 근거라서 그대로 둔다.
+          const effDate = (d) => {
+            const pd = (promisedDates[`${d.poNo}_${d.material}`] || {}).date;
+            return pd || d.deliveryDate;
+          };
+          // 2주 내 납품 예정 필터 — 회신 일정 기준으로 본다
+          const upcomingDeliveries = poWithDates
+            .filter(d => d.deliveryDate)
+            .map(d => {
+              const eff = effDate(d);
+              return { ...d, effDate: eff, movedFrom: eff !== d.deliveryDate ? d.deliveryDate : null };
+            })
+            .filter(d => d.effDate >= todayStr && d.effDate <= twoWeekEnd);
           // 날짜별 그룹
           const byDate = {};
           upcomingDeliveries.forEach(d => {
-            if (!byDate[d.deliveryDate]) byDate[d.deliveryDate] = [];
-            byDate[d.deliveryDate].push(d);
+            if (!byDate[d.effDate]) byDate[d.effDate] = [];
+            byDate[d.effDate].push(d);
           });
           const sortedDates = Object.keys(byDate).sort();
 
@@ -15125,8 +15149,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           });
 
           const thisFriday = new Date(new Date(thisMonday).setDate(thisMonday.getDate()+4)).toISOString().slice(0,10);
-          const thisWeekItems = upcomingDeliveries.filter(d => d.deliveryDate <= thisFriday);
-          const nextWeekItems = upcomingDeliveries.filter(d => d.deliveryDate > thisFriday);
+          const thisWeekItems = upcomingDeliveries.filter(d => d.effDate <= thisFriday);
+          const nextWeekItems = upcomingDeliveries.filter(d => d.effDate > thisFriday);
 
           return (
           <div className="space-y-6">
@@ -15629,7 +15653,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                           className={`hover:underline ${poOn ? 'text-indigo-700 font-semibold' : 'text-gray-700 hover:text-indigo-600'}`}
                                           title="이 PO만 보기">{d.poNo}</button>
                                       </td>
-                                      <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                                      <td className="py-1.5 font-mono text-xs whitespace-nowrap">
+                                        {d.material}
+                                        {/* 업체 회신으로 옮겨온 행 — 원래 납품 예정일을 같이 보여준다 */}
+                                        {d.movedFrom && (
+                                          <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 align-middle"
+                                            title={`원래 납품 예정일 ${d.movedFrom} → 업체 회신 ${d.effDate}`}>
+                                            {mdOf(d.movedFrom)}
+                                          </span>
+                                        )}
+                                      </td>
                                       <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
                                       <td className="py-1.5 text-xs truncate" title={d.supplier}>
                                         <button onClick={() => setDelFilterSupplier(supOn ? null : String(d.supplier || ''))}
