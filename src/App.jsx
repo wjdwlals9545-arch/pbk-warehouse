@@ -15622,9 +15622,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 {date} ({dayName}) {isToday && <span className="text-xs bg-teal-600 text-white px-1.5 py-0.5 rounded ml-1">오늘</span>}
                               </span>
                               <span className="text-xs text-gray-500">{items.length}건</span>
-                              <span className="ml-auto text-[11px] text-gray-400">
-                                미입고 {items.reduce((sum, d) => sum + (d.qty || 0), 0).toLocaleString()}
-                              </span>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full text-sm">
@@ -15653,16 +15650,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                           className={`hover:underline ${poOn ? 'text-indigo-700 font-semibold' : 'text-gray-700 hover:text-indigo-600'}`}
                                           title="이 PO만 보기">{d.poNo}</button>
                                       </td>
-                                      <td className="py-1.5 font-mono text-xs whitespace-nowrap">
-                                        {d.material}
-                                        {/* 업체 회신으로 옮겨온 행 — 원래 납품 예정일을 같이 보여준다 */}
-                                        {d.movedFrom && (
-                                          <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 align-middle"
-                                            title={`원래 납품 예정일 ${d.movedFrom} → 업체 회신 ${d.effDate}`}>
-                                            {mdOf(d.movedFrom)}
-                                          </span>
-                                        )}
-                                      </td>
+                                      <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
                                       <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
                                       <td className="py-1.5 text-xs truncate" title={d.supplier}>
                                         <button onClick={() => setDelFilterSupplier(supOn ? null : String(d.supplier || ''))}
@@ -15682,6 +15670,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                             onChange={e => setPromised(pk, { note: e.target.value })}
                                             placeholder="메모"
                                             className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
+                                          {/* 회신으로 옮겨온 행 — 원래 납품 예정일 */}
+                                          {d.movedFrom && (
+                                            <span className="text-[10px] px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 whitespace-nowrap"
+                                              title={`원래 납품 예정일 ${d.movedFrom} → 업체 회신 ${d.effDate}`}>
+                                              {mdOf(d.movedFrom)}
+                                            </span>
+                                          )}
                                         </div>
                                       </td>
                                       <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
