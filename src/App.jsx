@@ -15361,8 +15361,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                       <th className="pb-2" style={{width:'20%'}}>공급업체</th>
                       <th className="pb-2 whitespace-nowrap" style={{width:'85px'}}>납기일</th>
                       <th className="pb-2 whitespace-nowrap" style={{width:'190px'}} title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
-                      <th className="pb-2 whitespace-nowrap text-right" style={{width:'70px'}}>미입고</th>
-                      <th className="pb-2 whitespace-nowrap text-right pr-3" style={{width:'65px'}}>현재재고</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-5" style={{width:'80px'}}>단가</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'95px'}}>금액</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'80px'}}>미입고</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-4 pr-3" style={{width:'75px'}}>현재재고</th>
                     </tr></thead>
                     <tbody>{overdueDeliveries.slice(0, 20).map((d, i) => {
                       const inv = inventoryData.find(it => String(it.material) === d.material);
@@ -15395,13 +15397,19 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                 className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
                             </div>
                           </td>
-                          <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">
+                          <td className="py-1.5 text-xs font-bold text-right pl-5 text-gray-600 whitespace-nowrap tabular-nums">
+                            {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300 font-normal">-</span>}
+                          </td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-4 text-gray-800 whitespace-nowrap tabular-nums">
+                            {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300 font-normal">-</span>}
+                          </td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-4 whitespace-nowrap">
                             {d.qty} {d.unit}
                             {d.receivedQty > 0 && d.orderQty > 0 && (
                               <span className="block text-[10px] font-normal text-emerald-600">입고 {d.receivedQty}/{d.orderQty}</span>
                             )}
                           </td>
-                          <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">{stock > 0 ? `${stock} EA` : '-'}</td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-4 pr-3 whitespace-nowrap">{stock > 0 ? `${stock} EA` : '-'}</td>
                         </tr>
                       );
                     })}</tbody>
@@ -15520,10 +15528,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   else { setDelSortKey('none'); setDelSortDir('desc'); }
                 } else { setDelSortKey(key); setDelSortDir('desc'); }
               };
-              const SortTh = ({ label, sortKey, align, width }) => {
+              const SortTh = ({ label, sortKey, align, width, pad }) => {
                 const on = delSortKey === sortKey;
                 return (
-                  <th className={`py-1.5 whitespace-nowrap ${align === 'right' ? 'text-right' : ''}`} style={{ width }}>
+                  <th className={`py-1.5 whitespace-nowrap ${align === 'right' ? 'text-right' : ''} ${pad || ''}`} style={{ width }}>
                     <button onClick={() => toggleSort(sortKey)}
                       className={`inline-flex items-center gap-0.5 hover:text-teal-600 transition ${on ? 'text-teal-600 font-semibold' : ''}`}
                       title="눌러서 정렬 (같은 납품일 안에서만)">
@@ -15646,12 +15654,12 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <SortTh label="공급업체" sortKey="supplier" width="20%" />
                                   <th className="py-1.5 whitespace-nowrap" style={{width:'190px'}}
                                       title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
-                                  <th className="py-1.5 whitespace-nowrap" style={{width:'95px'}}
+                                  <th className="py-1.5 whitespace-nowrap pl-5" style={{width:'110px'}}
                                       title="업체 회신으로 날짜가 바뀐 건의 원래 납품 예정일(SAP)">기존 납품 일정</th>
-                                  <SortTh label="단가" sortKey="price" align="right" width="70px" />
-                                  <SortTh label="금액" sortKey="amount" align="right" width="85px" />
-                                  <SortTh label="미입고 수량" sortKey="remain" align="right" width="70px" />
-                                  <SortTh label="현재 재고" sortKey="stock" align="right" width="65px" />
+                                  <SortTh label="단가" sortKey="price" align="right" width="85px" pad="pl-5" />
+                                  <SortTh label="금액" sortKey="amount" align="right" width="100px" pad="pl-4" />
+                                  <SortTh label="미입고 수량" sortKey="remain" align="right" width="85px" pad="pl-4" />
+                                  <SortTh label="현재 재고" sortKey="stock" align="right" width="80px" pad="pl-4" />
                                 </tr></thead>
                                 <tbody>{items.map((d, i) => {
                                   const stock = stockOf(d.material);
@@ -15692,7 +15700,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                       </td>
                                       {/* 회신으로 날짜가 바뀐 건만 원래 일정을 보여준다.
                                           두 번 이상 밀렸으면 횟수도 같이 — 업체 평가 근거가 된다 */}
-                                      <td className="py-1.5 text-xs whitespace-nowrap">
+                                      <td className="py-1.5 text-xs whitespace-nowrap pl-5">
                                         {d.movedFrom ? (() => {
                                           const hist = pd.history || [];
                                           const chain = [d.movedFrom, ...hist.map(h => h.date)];
@@ -15709,14 +15717,14 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                         })() : <span className="text-gray-300">-</span>}
                                       </td>
                                       {/* 단가 = Net Price / Price Unit (SAP 가격단위 반영된 개당 값) */}
-                                      <td className="py-1.5 text-xs font-bold text-right text-gray-600 whitespace-nowrap tabular-nums">
+                                      <td className="py-1.5 text-xs font-bold text-right pl-5 text-gray-600 whitespace-nowrap tabular-nums">
                                         {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300 font-normal">-</span>}
                                       </td>
-                                      <td className="py-1.5 text-xs font-bold text-right text-gray-800 whitespace-nowrap tabular-nums">
+                                      <td className="py-1.5 text-xs font-bold text-right pl-4 text-gray-800 whitespace-nowrap tabular-nums">
                                         {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300 font-normal">-</span>}
                                       </td>
-                                      <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
-                                      <td className="py-1.5 text-xs font-bold text-right pr-3 whitespace-nowrap">
+                                      <td className="py-1.5 text-xs font-bold text-right pl-4 whitespace-nowrap">{d.qty} {d.unit}</td>
+                                      <td className="py-1.5 text-xs font-bold text-right pl-4 pr-3 whitespace-nowrap">
                                         {stock > 0
                                           ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(d.material)}</span>
                                           : <span className="text-gray-300 font-normal">-</span>}
