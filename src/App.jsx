@@ -15137,6 +15137,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             !WEEKLY_MAIL_SKIP.has(splitVendor(d.supplier).code));
           const weeklyVendors = new Set(weeklyItems.map(d => splitVendor(d.supplier).code || d.supplier));
           const mdOf = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+          // 해외 업체는 달러 발주가 있다 (현재 200건 중 3건)
+          const won = (v, cur) => {
+            if (v === null || v === undefined || !isFinite(v)) return '-';
+            const c = (cur || 'KRW').toUpperCase();
+            if (c === 'KRW') return Math.round(v).toLocaleString();
+            const sym = { USD: '$', EUR: '€', JPY: '¥' }[c];
+            const n = Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return sym ? sym + n : `${n} ${c}`;
+          };
 
           // 납기 지연 (납기일이 오늘 이전 + 미입고 수량 > 0, dismissed 제외)
           const allOverdueDeliveries = poWithDates.filter(d => d.deliveryDate && d.deliveryDate < todayStr && d.qty > 0);
@@ -15483,6 +15492,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 if (delSortKey === 'material') return dir * String(a.material).localeCompare(String(b.material));
                 if (delSortKey === 'supplier') return dir * String(a.supplier || '').localeCompare(String(b.supplier || ''));
                 if (delSortKey === 'remain') return dir * ((a.qty || 0) - (b.qty || 0));
+                if (delSortKey === 'price') return dir * ((a.unitPrice || 0) - (b.unitPrice || 0));
+                if (delSortKey === 'amount') return dir * (((a.unitPrice || 0) * (a.qty || 0)) - ((b.unitPrice || 0) * (b.qty || 0)));
                 if (delSortKey === 'stock') return dir * (stockOf(a.material) - stockOf(b.material));
                 return 0;
               };
@@ -15633,6 +15644,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <th className="py-1.5 whitespace-nowrap" style={{width:'190px'}}
                                       title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
                                   <SortTh label="미입고 수량" sortKey="remain" align="right" width="70px" />
+                                  <SortTh label="단가" sortKey="price" align="right" width="70px" />
+                                  <SortTh label="금액" sortKey="amount" align="right" width="85px" />
                                   <SortTh label="현재 재고" sortKey="stock" align="right" width="65px" />
                                 </tr></thead>
                                 <tbody>{items.map((d, i) => {
@@ -15680,6 +15693,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                         </div>
                                       </td>
                                       <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                                      {/* 단가 = Net Price / Price Unit (SAP 가격단위 반영된 개당 값) */}
+                                      <td className="py-1.5 text-xs text-right text-gray-500 whitespace-nowrap tabular-nums">
+                                        {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300">-</span>}
+                                      </td>
+                                      <td className="py-1.5 text-xs text-right text-gray-700 whitespace-nowrap tabular-nums">
+                                        {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300">-</span>}
+                                      </td>
                                       <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">
                                         {stock > 0
                                           ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(d.material)}</span>
