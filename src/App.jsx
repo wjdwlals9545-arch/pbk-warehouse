@@ -15355,11 +15355,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                         if (e.target.checked) setOverdueSelected(new Set(overdueDeliveries.map(d => `${d.poNo}_${d.material}`)));
                         else setOverdueSelected(new Set());
                       }} /></th>
-                      <th className="pb-2 whitespace-nowrap" style={{width:'90px'}}>PO</th>
-                      <th className="pb-2 whitespace-nowrap" style={{width:'65px'}}>Material</th>
-                      <th className="pb-2" style={{width:'30%'}}>Description</th>
-                      <th className="pb-2" style={{width:'20%'}}>공급업체</th>
-                      <th className="pb-2 whitespace-nowrap" style={{width:'85px'}}>납기일</th>
+                      <th className="pb-2 whitespace-nowrap pl-2" style={{width:'100px'}}>PO</th>
+                      <th className="pb-2 whitespace-nowrap pl-4" style={{width:'85px'}}>Material</th>
+                      <th className="pb-2 pl-4" style={{width:'26%'}}>Description</th>
+                      <th className="pb-2 pl-4" style={{width:'18%'}}>공급업체</th>
+                      <th className="pb-2 whitespace-nowrap pl-4" style={{width:'95px'}}>납기일</th>
                       <th className="pb-2 whitespace-nowrap" style={{width:'190px'}} title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
                       <th className="pb-2 whitespace-nowrap text-right pl-5" style={{width:'80px'}}>단가</th>
                       <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'95px'}}>금액</th>
@@ -15377,11 +15377,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             if (e.target.checked) next.add(key); else next.delete(key);
                             setOverdueSelected(next);
                           }} /></td>
-                          <td className="py-1.5 text-xs whitespace-nowrap">{d.poNo}</td>
-                          <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
-                          <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
-                          <td className="py-1.5 text-xs truncate" title={d.supplier}>{d.supplier}</td>
-                          <td className="py-1.5 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
+                          <td className="py-1.5 pl-2 text-xs whitespace-nowrap">{d.poNo}</td>
+                          <td className="py-1.5 pl-4 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                          <td className="py-1.5 pl-4 text-xs truncate" title={d.description}>{d.description}</td>
+                          <td className="py-1.5 pl-4 text-xs truncate" title={d.supplier}>{d.supplier}</td>
+                          <td className="py-1.5 pl-4 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
                           {/* 업체가 회신해 온 일정. SAP 납기일은 그대로 두고 여기에만 적는다 */}
                           <td className="py-1.5 pr-2">
                             <div className="flex items-center gap-1">
@@ -15648,10 +15648,10 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                             <div className="overflow-x-auto">
                               <table className="w-full text-sm">
                                 <thead><tr className="text-left text-xs text-gray-500 border-b">
-                                  <th className="pl-4 py-1.5 whitespace-nowrap" style={{width:'90px'}}>PO</th>
-                                  <SortTh label="Material" sortKey="material" width="65px" />
-                                  <th className="py-1.5" style={{width:'30%'}}>Description</th>
-                                  <SortTh label="공급업체" sortKey="supplier" width="20%" />
+                                  <th className="pl-4 py-1.5 whitespace-nowrap" style={{width:'100px'}}>PO</th>
+                                  <SortTh label="Material" sortKey="material" width="85px" pad="pl-4" />
+                                  <th className="py-1.5 pl-4" style={{width:'28%'}}>Description</th>
+                                  <SortTh label="공급업체" sortKey="supplier" width="18%" pad="pl-4" />
                                   <th className="py-1.5 whitespace-nowrap" style={{width:'190px'}}
                                       title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
                                   <th className="py-1.5 whitespace-nowrap pl-5" style={{width:'110px'}}
@@ -15676,9 +15676,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                           className={`hover:underline ${poOn ? 'text-indigo-700 font-semibold' : 'text-gray-700 hover:text-indigo-600'}`}
                                           title="이 PO만 보기">{d.poNo}</button>
                                       </td>
-                                      <td className="py-1.5 font-mono text-xs whitespace-nowrap">{d.material}</td>
-                                      <td className="py-1.5 text-xs truncate" title={d.description}>{d.description}</td>
-                                      <td className="py-1.5 text-xs truncate" title={d.supplier}>
+                                      <td className="py-1.5 pl-4 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                                      <td className="py-1.5 pl-4 text-xs truncate" title={d.description}>{d.description}</td>
+                                      <td className="py-1.5 pl-4 text-xs truncate" title={d.supplier}>
                                         <button onClick={() => setDelFilterSupplier(supOn ? null : String(d.supplier || ''))}
                                           className={`hover:underline text-left truncate max-w-full ${supOn ? 'text-teal-700 font-semibold' : 'text-gray-700 hover:text-teal-600'}`}
                                           title={d.supplier || ''}>{vendorName(d.supplier) || '-'}</button>
@@ -19993,7 +19993,11 @@ ${lines}
                     {(b.po_numbers || []).length > 2 && ` 외 ${b.po_numbers.length - 2}`}
                   </div>
                 </div>
-                <div className="text-xs text-gray-600 min-w-[110px]">{money(b.delivery_total, b.currency)}</div>
+                <div className="text-xs text-gray-600 min-w-[110px]">
+                  {b.delivery_total !== null && b.delivery_total !== undefined
+                    ? money(b.delivery_total, b.currency)
+                    : <Amount g={b} />}
+                </div>
                 {/* 마감 주기를 아는 묶음은 언제쯤 보낼 때인지 같이 보여준다 */}
                 <div className="min-w-[150px]">
                   {rule ? (
