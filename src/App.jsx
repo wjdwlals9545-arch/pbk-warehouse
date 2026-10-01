@@ -19812,6 +19812,21 @@ ${lines}
                   <div className="text-xs text-gray-600 min-w-[120px]">
                     {sum === null && n > 1 ? '—' : money(n === 1 ? grp.items[0].delivery?.total_amount : sum, cur)}
                   </div>
+                  {/* 거래명세서 단가 vs 발주 단가 */}
+                  <div className="min-w-[96px]">
+                    {(() => {
+                      const pcs = grp.items.map(g => g.price_check).filter(Boolean);
+                      if (!pcs.length) return <span className="text-[10px] text-gray-300">단가 미대조</span>;
+                      const bad = pcs.filter(x => !x.passed).length;
+                      return (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${
+                          bad ? 'bg-red-50 border-red-200 text-red-700'
+                              : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                          {bad ? `단가 불일치 ${bad}건` : '단가 일치'}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <div className="text-[11px] text-gray-400 flex-1 truncate">
                     {who.length ? `${who[0].name || ''} ${who[0].email}` : '주소 없음'}
                   </div>
@@ -19843,6 +19858,41 @@ ${lines}
                     </button>
                   )}
                 </div>
+                {/* 단가가 어긋난 자재만 펼쳐 보여준다 */}
+                {grp.items.some(g => g.price_check && !g.price_check.passed) && (
+                  <div className="mt-2 ml-1 rounded-lg border border-red-200 bg-red-50/50 p-2">
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="text-left text-red-700">
+                          <th className="pr-3 pb-1">자재</th>
+                          <th className="pr-3 pb-1 text-right">명세서 단가</th>
+                          <th className="pr-3 pb-1 text-right">발주 단가</th>
+                          <th className="pr-3 pb-1 text-right">수량</th>
+                          <th className="pr-3 pb-1 text-right">차액</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grp.items.flatMap(g => (g.price_check?.detail || [])
+                          .filter(x => x.ok === false)
+                          .map(x => (
+                            <tr key={`${g.key}_${x.material}`} className="text-gray-700">
+                              <td className="pr-3 font-mono">{x.material}</td>
+                              <td className="pr-3 text-right tabular-nums">{money(x.inv_price, x.currency)}</td>
+                              <td className="pr-3 text-right tabular-nums">{money(x.po_price, x.currency)}</td>
+                              <td className="pr-3 text-right tabular-nums">{x.qty?.toLocaleString()}</td>
+                              <td className="pr-3 text-right tabular-nums font-semibold text-red-700">
+                                {money((x.inv_amount || 0) - (x.po_amount || 0), x.currency)}
+                              </td>
+                            </tr>
+                          )))}
+                      </tbody>
+                    </table>
+                    <p className="mt-1 text-[10px] text-red-600">
+                      발주 단가는 ME2N 의 Net Price &divide; Price Unit 입니다. 업체에 확인하시거나 PIR 을 보십시오.
+                    </p>
+                  </div>
+                )}
+
                 {/* 여러 건이면 무엇이 묶였는지 보이게 */}
                 {n > 1 && (
                   <div className="mt-2 ml-1 space-y-0.5">
