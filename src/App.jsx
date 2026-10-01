@@ -5691,7 +5691,8 @@ export default function PBKWarehouseSystem() {
                 safeStorage.setItem('pbk_open_po_updated', ts);
                 safeStorage.setItem('pbk_po_epoch', String(poInfo.epoch));
                 uploadDataToGitHub('public/data/openpo_data.json', { data: poResult.aggregated, updated: ts, count: poResult.aggregated.length }, 'OpenPO 데이터 (자동)');
-                showToast(`📊 GitHub Open PO Excel 자동 파싱 완료 (${poResult.aggregated.length}개)`, 'success');
+                // 자동 파싱은 알리지 않는다 — 갱신 시각이 상단 헤더에 있다
+                console.log(`[OpenPO] 자동 파싱 완료 (${poResult.aggregated.length}개)`);
                 addDataHistory('openPO', 'GitHub Excel 자동 로드', poResult.aggregated.length);
                 poLoaded = true;
               }
@@ -5718,7 +5719,7 @@ export default function PBKWarehouseSystem() {
                 safeStorage.setItem('pbk_delivery_updated', ts);
                 safeStorage.setItem('pbk_del_epoch', String(delInfo.epoch));
                 uploadDataToGitHub('public/data/delivery_data.json', { data: delItems, updated: ts, count: delItems.length }, 'Delivery 데이터 (자동)');
-                showToast(`📦 Delivery Data 자동 파싱 완료 (${delItems.length}개)`, 'success');
+                console.log(`[Delivery] 자동 파싱 완료 (${delItems.length}개)`);
                 addDataHistory('delivery', 'GitHub Excel 자동 로드', delItems.length);
               }
             }
@@ -15137,6 +15138,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             !WEEKLY_MAIL_SKIP.has(splitVendor(d.supplier).code));
           const weeklyVendors = new Set(weeklyItems.map(d => splitVendor(d.supplier).code || d.supplier));
           const mdOf = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+          // 원래 납품 예정일 배지용 — '기존: 10월 1일'
+          const mdKo = (s) => `${Number(s.slice(5, 7))}월 ${Number(s.slice(8, 10))}일`;
           // 해외 업체는 달러 발주가 있다 (현재 200건 중 3건)
           const won = (v, cur) => {
             if (v === null || v === undefined || !isFinite(v)) return '-';
@@ -15643,9 +15646,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                   <SortTh label="공급업체" sortKey="supplier" width="20%" />
                                   <th className="py-1.5 whitespace-nowrap" style={{width:'190px'}}
                                       title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
-                                  <SortTh label="미입고 수량" sortKey="remain" align="right" width="70px" />
+                                  <th className="py-1.5 whitespace-nowrap" style={{width:'95px'}}
+                                      title="업체 회신으로 날짜가 바뀐 건의 원래 납품 예정일(SAP)">기존 납품 일정</th>
                                   <SortTh label="단가" sortKey="price" align="right" width="70px" />
                                   <SortTh label="금액" sortKey="amount" align="right" width="85px" />
+                                  <SortTh label="미입고 수량" sortKey="remain" align="right" width="70px" />
                                   <SortTh label="현재 재고" sortKey="stock" align="right" width="65px" />
                                 </tr></thead>
                                 <tbody>{items.map((d, i) => {
@@ -15683,27 +15688,38 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                                             onChange={e => setPromised(pk, { note: e.target.value })}
                                             placeholder="메모"
                                             className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
-                                          {/* 회신으로 옮겨온 행 — 원래 납품 예정일 */}
-                                          {d.movedFrom && (
-                                            <span className="text-[10px] px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 whitespace-nowrap"
-                                              title={`원래 납품 예정일 ${d.movedFrom} → 업체 회신 ${d.effDate}`}>
-                                              {mdOf(d.movedFrom)}
-                                            </span>
-                                          )}
                                         </div>
                                       </td>
-                                      <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                                      {/* 회신으로 날짜가 바뀐 건만 원래 일정을 보여준다.
+                                          두 번 이상 밀렸으면 횟수도 같이 — 업체 평가 근거가 된다 */}
+                                      <td className="py-1.5 text-xs whitespace-nowrap">
+                                        {d.movedFrom ? (() => {
+                                          const hist = pd.history || [];
+                                          const chain = [d.movedFrom, ...hist.map(h => h.date)];
+                                          return (
+                                            <span title={`납기 변경 ${hist.length}회\n${chain.join('  →  ')}`}>
+                                              <span className="text-amber-700">{mdKo(d.movedFrom)}</span>
+                                              {hist.length > 1 && (
+                                                <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-red-50 border border-red-200 text-red-600">
+                                                  {hist.length}회
+                                                </span>
+                                              )}
+                                            </span>
+                                          );
+                                        })() : <span className="text-gray-300">-</span>}
+                                      </td>
                                       {/* 단가 = Net Price / Price Unit (SAP 가격단위 반영된 개당 값) */}
-                                      <td className="py-1.5 text-xs text-right text-gray-500 whitespace-nowrap tabular-nums">
-                                        {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300">-</span>}
+                                      <td className="py-1.5 text-xs font-bold text-right text-gray-600 whitespace-nowrap tabular-nums">
+                                        {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300 font-normal">-</span>}
                                       </td>
-                                      <td className="py-1.5 text-xs text-right text-gray-700 whitespace-nowrap tabular-nums">
-                                        {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300">-</span>}
+                                      <td className="py-1.5 text-xs font-bold text-right text-gray-800 whitespace-nowrap tabular-nums">
+                                        {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300 font-normal">-</span>}
                                       </td>
-                                      <td className="py-1.5 text-xs text-right pr-3 whitespace-nowrap">
+                                      <td className="py-1.5 text-xs font-bold text-right whitespace-nowrap">{d.qty} {d.unit}</td>
+                                      <td className="py-1.5 text-xs font-bold text-right pr-3 whitespace-nowrap">
                                         {stock > 0
                                           ? <span className="text-blue-600">{stock.toLocaleString()} {unitOf(d.material)}</span>
-                                          : <span className="text-gray-300">-</span>}
+                                          : <span className="text-gray-300 font-normal">-</span>}
                                       </td>
                                     </tr>
                                   );
@@ -19810,7 +19826,8 @@ ${lines}
                     </div>
                   </div>
                   <div className="text-xs text-gray-600 min-w-[120px]">
-                    {sum === null && n > 1 ? '—' : money(n === 1 ? grp.items[0].delivery?.total_amount : sum, cur)}
+                    {n === 1 ? <Amount g={grp.items[0]} />
+                             : (sum === null ? <span className="text-gray-300">—</span> : money(sum, cur))}
                   </div>
                   {/* 거래명세서 단가 vs 발주 단가 */}
                   <div className="min-w-[96px]">
@@ -19917,6 +19934,25 @@ ${lines}
             late:       { label: '마감 지남', cls: 'bg-red-50 text-red-700 border-red-200' },
           };
           const md = (s) => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : '';
+          // 명세서 금액이 없으면(입고완료는 분석 json 을 지운다) 발주 기준 금액으로 대체
+          const amountOf = (g) => {
+            const v = g.delivery?.total_amount ?? g.tax?.total_amount;
+            if (v !== null && v !== undefined) return { v, cur: g.currency, est: false };
+            if (g.po_amount !== null && g.po_amount !== undefined)
+              return { v: g.po_amount, cur: g.po_currency, est: true, partial: !!g.po_amount_partial };
+            return { v: null, cur: g.currency, est: false };
+          };
+          const Amount = ({ g }) => {
+            const a = amountOf(g);
+            if (a.v === null) return <span className="text-gray-300">—</span>;
+            return (
+              <span className={a.est ? 'text-gray-400' : ''}
+                title={a.est ? ('거래명세서 금액이 남아 있지 않아 발주 기준(단가 x 수량)으로 계산한 값입니다'
+                        + (a.partial ? '\n여러 PO 가 묶인 건이라 첫 PO 분만 집계됐습니다' : '')) : ''}>
+                {money(a.v, a.cur)}{a.est && <span className="ml-0.5 text-[10px]">{a.partial ? '(발주·일부)' : '(발주)'}</span>}
+              </span>
+            );
+          };
 
           // 묶음 한 줄
           const BatchRow = ({ b, mode }) => {
@@ -20167,7 +20203,7 @@ ${lines}
                               <div className="text-[10px] text-gray-400">MIRO {g.miro_number}</div>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-xs text-right">{money(g.delivery?.total_amount ?? g.tax?.total_amount, g.currency)}</td>
+                          <td className="px-3 py-2 text-xs text-right"><Amount g={g} /></td>
                           <td className="px-3 py-2 text-center">{g.delivery ? '✅' : <span className="text-gray-300">—</span>}</td>
                           <td className="px-3 py-2 text-center">{g.tax ? '✅' : <span className="text-gray-300">—</span>}</td>
                           <td className="px-3 py-2 text-[11px] text-gray-400">{when(Math.max(g.delivery?.mtime || 0, g.tax?.mtime || 0))}</td>
