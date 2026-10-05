@@ -3341,11 +3341,13 @@ export default function PBKWarehouseSystem() {
   //   Movement 101/102 → GR Cancel (건수)
   //   Movement 711/712 → 재고조정 차이금액
   // 월말 재고금액(MB5B)은 아직 수동이라, 재고금액이 있는 달만 비율을 다시 계산한다.
-  const applyKpiAuto = async () => {
+  // force=true 면 캐시를 버리고 새로 받는다. 주기 갱신에서 쓴다.
+  // (캐시만 쓰면 SAP_Drop 에 MB51 을 새로 넣어도 화면이 안 바뀐다)
+  const applyKpiAuto = async (force = false) => {
     try {
       // 받아온 문서는 캐시해 두고 병합은 매번 다시 한다 (멱등이라 여러 번 해도 안전).
       // 동기화 복원 뒤에도 다시 얹어야 하므로 버전 가드를 두지 않는다.
-      let doc = kpiAutoDocRef.current;
+      let doc = force ? null : kpiAutoDocRef.current;
       if (!doc) {
         const resp = await fetch(`https://raw.githubusercontent.com/wjdwlals9545-arch/pbk-warehouse/main/public/data/kpi_auto.json?t=${Date.now()}`);
         if (!resp.ok) return;
@@ -5907,6 +5909,10 @@ export default function PBKWarehouseSystem() {
       // 화면이 계속 옛 데이터를 들고 있었다 (납기 지연 32건 vs 실제 8건).
       // 다만 loadDashboardState 는 내 로컬 상태를 원격으로 덮을 수 있어 건너뛴다.
       if (isMaster) {
+        // KPI 자동 집계(MB51/MB5B)와 업체 매핑도 다시 읽는다. 둘 다 SAP·파일에서
+        // 나온 값이라 내 로컬 입력을 덮지 않는다. loadDashboardState 만 건너뛴다.
+        await applyKpiAuto(true);
+        await loadSupplierMap();
         if (fetchGitHubDataRef.current) await fetchGitHubDataRef.current();
         return;
       }
@@ -5914,7 +5920,7 @@ export default function PBKWarehouseSystem() {
       await loadDashboardState();
       // 동기화 복원이 KPI 를 덮어쓴 뒤에 자동 집계분을 다시 얹는다.
       // (먼저 하면 loadDashboardState 가 원격 값으로 되돌려 버린다)
-      await applyKpiAuto();
+      await applyKpiAuto(true);
       await loadSupplierMap();
       // Excel 파일도 재체크 (새 커밋 있으면 재파싱 — 폴더 감시 워크플로우 대응)
       if (fetchGitHubDataRef.current) await fetchGitHubDataRef.current();
