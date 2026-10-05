@@ -5110,11 +5110,6 @@ export default function PBKWarehouseSystem() {
   const [kpiAiText, setKpiAiText] = useState({});
   const [kpiAiLoading, setKpiAiLoading] = useState(null);
   const askKpiAi = async (label, byCat, unit, ins) => {
-    const apiKey = safeStorage.getItem('pbk_anthropic_key');
-    if (!apiKey) {
-      setKpiAiText(prev => ({ ...prev, [label]: 'API 키가 없어 AI 해설은 건너뜁니다. 위의 분석은 실제 데이터 계산 결과라 키 없이도 항상 표시됩니다.' }));
-      return;
-    }
     setKpiAiLoading(label);
     try {
       const mean = a => (a && a.length) ? a.reduce((x, y) => x + y, 0) / a.length : null;
@@ -5131,10 +5126,9 @@ export default function PBKWarehouseSystem() {
           if (arr && arr.length) payload.월별[m][c] = { 건수: arr.length, 평균: Number(mean(arr).toFixed(2)) };
         });
       });
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await fetch(`${MIGO_API}/api/ai/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
-                   'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-5', max_tokens: 600,
           system: `당신은 의료기기 제조사(Promega) 자재담당 1인 체제의 KPI를 해석하는 분석가입니다.
@@ -9188,11 +9182,10 @@ ${tableRows}</tbody>
   // 🤖 AI 챗봇: 에이전트 루프 (도구를 스스로 골라 조회 후 답변)
   const sendChatMessage = async (userMessage) => {
     if (!userMessage.trim()) return;
-    const apiKey = safeStorage.getItem('pbk_anthropic_key');
-    if (!apiKey) {
+    if (!migoServerOnline) {
       setChatMessages(prev => [...prev,
         { role: 'user', content: userMessage },
-        { role: 'assistant', content: '⚠️ API 키가 설정되지 않았습니다.\n\n브라우저 콘솔(F12)에서 다음을 실행해주세요:\n\nlocalStorage.setItem("pbk_anthropic_key", "your-api-key")' }
+        { role: 'assistant', content: '⚠️ 로컬 서버에 연결되지 않았습니다.\n\nAI 기능은 MIGO 서버를 거칩니다. 서버가 떠 있는지 확인해 주세요.' }
       ]);
       return;
     }
@@ -9214,14 +9207,9 @@ ${tableRows}</tbody>
       const messages = [...history, { role: 'user', content: userMessage }];
 
       for (let turn = 0; turn < 8; turn++) {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        const resp = await fetch(`${MIGO_API}/api/ai/complete`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: 'claude-sonnet-5',
             max_tokens: 1500,
@@ -9440,8 +9428,7 @@ ${tableRows}</tbody>
   };
 
   const generateKpiReport = async () => {
-    const apiKey = safeStorage.getItem('pbk_anthropic_key');
-    if (!apiKey) { showToast('⚠️ Anthropic API 키 미설정 (챗봇과 동일한 키 사용)', 'error'); return; }
+    // 키는 로컬 서버(환경변수)에 있다. 브라우저에는 두지 않는다.
     if (kpiReportLoading) return;
     setKpiReportLoading(true);
 
@@ -9505,9 +9492,9 @@ ${tableRows}</tbody>
       };
 
       // ── AI 해석 ──
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const resp = await fetch(`${MIGO_API}/api/ai/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-5',
           max_tokens: 1500,
@@ -9680,7 +9667,6 @@ ${tableRows}</tbody>
   // 📅 주간 운영 보고서 — 실무 공유용 (조치 필요 항목 중심)
   // 월간(공식 KPI)과 분리: 납품 지연=구매, 수입검사=QA 공유 항목 + 자재 이슈 기록
   const generateWeeklyReport = async () => {
-    const apiKey = safeStorage.getItem('pbk_anthropic_key');
     if (weeklyReportLoading) return;
     setWeeklyReportLoading(true);
 
@@ -9727,7 +9713,8 @@ ${tableRows}</tbody>
 
       // ── AI 요약 (키 없으면 건너뜀) ──
       let aiText = '';
-      if (apiKey) {
+      {
+        // AI 요약은 서버 중계를 쓴다. 서버가 없으면 조용히 건너뛴다.
         try {
           const payload = {
             기준주: `${weekStart} ~ ${weekEnd}`,
@@ -9739,9 +9726,9 @@ ${tableRows}</tbody>
             개선활동: improveRows_.map(i => ({ 제목: i.title, 내용: i.detail, 진행: i.action, 상태: i.status })),
             AI_시스템: aiRows_.map(i => ({ 제목: i.title, 내용: i.detail, 진행: i.action, 상태: i.status })),
           };
-          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          const resp = await fetch(`${MIGO_API}/api/ai/complete`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model: 'claude-sonnet-5', max_tokens: 900,
               system: `당신은 자재담당의 주간 운영 보고서 작성자입니다. 제공된 JSON만 근거로 작성하세요.
