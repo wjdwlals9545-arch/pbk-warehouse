@@ -117,6 +117,7 @@ const SYNC_KEYS = [
   'pbk_tax_requested_at',
   'pbk_close_dismissed',
   'pbk_promised_dates',   // 업체 회신 일정 — 납기 변경 이력이라 날아가면 안 된다
+  'pbk_adjust_notes',     // 재고조정 사유 메모 — 손으로 적은 거라 백업한다
   'pbk_work_issues',
 ];
 
@@ -2591,6 +2592,20 @@ export default function PBKWarehouseSystem() {
   const [overdueDismissed, setOverdueDismissed] = useState(() => {
     try { const s = safeStorage.getItem('pbk_overdue_dismissed'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
+
+  // 재고조정 사유에 덧붙이는 메모. MB51 Text 는 다시 올리면 덮이므로 따로 둔다.
+  const [adjustNotes, setAdjustNotes] = useState(() => {
+    try { const v = safeStorage.getItem('pbk_adjust_notes'); return v ? JSON.parse(v) : {}; } catch { return {}; }
+  });
+  const setAdjustNote = (key, text) => {
+    setAdjustNotes(prev => {
+      const next = { ...prev };
+      if ((text || '').trim()) next[key] = text;
+      else delete next[key];
+      safeStorage.setItem('pbk_adjust_notes', JSON.stringify(next));
+      return next;
+    });
+  };
 
   // 업체가 회신해 온 새 납품 예정일. SAP 납기일이 고쳐지기 전까지 여기서만 들고 있는다.
   //   { 'PO_자재': { date: 'YYYY-MM-DD', note: '메모', savedAt } }
@@ -18317,6 +18332,8 @@ ${lines}
                                         <th className="px-2 py-1.5 text-right font-medium">감소</th>
                                         <th className="px-2 py-1.5 text-center font-medium">건수</th>
                                         <th className="px-2 py-1.5 text-left font-medium">자재</th>
+                                        <th className="px-2 py-1.5 text-left font-medium" style={{width:'190px'}}
+                                            title="직접 적는 메모. MB51 을 다시 올려도 지워지지 않습니다">메모</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -18340,6 +18357,20 @@ ${lines}
                                           <td className="px-2 py-1.5 text-right text-red-700">{r.down ? fmt(r.down) : '-'}</td>
                                           <td className="px-2 py-1.5 text-center">{r.n}</td>
                                           <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{(r.mats || []).join(', ')}</td>
+                                          <td className="px-2 py-1.5">
+                                            {(() => {
+                                              // 텍스트가 조금 달라져도 메모가 안 떨어지게 금액·건수로 키를 만든다
+                                              const nk = `${m}|${r.reason || ''}|${r.amt || 0}|${r.n || 0}`;
+                                              return (
+                                                <input type="text" value={adjustNotes[nk] || ''}
+                                                  onChange={e => setAdjustNote(nk, e.target.value)}
+                                                  placeholder="메모 추가"
+                                                  className={`w-full border rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:border-teal-400 ${
+                                                    adjustNotes[nk] ? 'border-teal-300 bg-teal-50/60 text-gray-700'
+                                                                    : 'border-gray-200 text-gray-600'}`} />
+                                              );
+                                            })()}
+                                          </td>
                                         </tr>
                                         );
                                       }))}
