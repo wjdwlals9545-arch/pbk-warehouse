@@ -5636,6 +5636,7 @@ export default function PBKWarehouseSystem() {
     const fetchGitHubData = async () => {
       let stockLoaded = false;
       let poLoaded = false;
+      let delLoaded = false;
 
       // ── Excel 로드: GitHub 커밋 시간이 저장된 데이터보다 새로우면 파싱 ──
       {
@@ -5677,11 +5678,13 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('Stock Excel fetch skip:', e.message); }
 
         // 2. Excel 시도 (OpenPO) — epoch 기반 비교
+        let poInfoShared = null;
         if (!poLoaded) {
           // Open PO 와 Delivery 는 같은 ME2N 납기일정 파일 하나를 쓴다.
           // (예전엔 OpenPOData_latest.xlsx 를 따로 뒀는데, 같은 원본을 두 이름으로
           //  복사하다 보니 서로 덮어쓰는 사고가 났다)
           const poInfo = await getFileCommitInfo('public/data/DeliveryData_latest.xlsx');
+          poInfoShared = poInfo;
           const savedPoEpoch = parseInt(safeStorage.getItem('pbk_po_epoch') || '0');
           const poNewer = poInfo.epoch > savedPoEpoch;
           // 과거 버전이 저장해둔 대용량 원본 블롭 제거 (쿼터 확보)
@@ -5716,7 +5719,8 @@ export default function PBKWarehouseSystem() {
 
         // 3. Excel 시도 (Delivery Data) — epoch 기반 비교
         try {
-          const delInfo = await getFileCommitInfo('public/data/DeliveryData_latest.xlsx');
+          // OpenPO 와 같은 파일이다. 커밋 조회를 또 하면 API 한도만 축낸다.
+          const delInfo = poInfoShared || await getFileCommitInfo('public/data/DeliveryData_latest.xlsx');
           const savedDelEpoch = parseInt(safeStorage.getItem('pbk_del_epoch') || '0');
           const delNewer = delInfo.epoch > savedDelEpoch;
           if (delNewer || parseVersionChanged || !safeStorage.getItem('pbk_delivery_data')) {
@@ -5735,6 +5739,7 @@ export default function PBKWarehouseSystem() {
                 uploadDataToGitHub('public/data/delivery_data.json', { data: delItems, updated: ts, count: delItems.length }, 'Delivery 데이터 (자동)');
                 console.log(`[Delivery] 자동 파싱 완료 (${delItems.length}개)`);
                 addDataHistory('delivery', 'GitHub Excel 자동 로드', delItems.length);
+                delLoaded = true;
               }
             }
           }
@@ -5774,16 +5779,21 @@ export default function PBKWarehouseSystem() {
         }
       } catch (e) { console.log('Q-Stock JSON fetch skip:', e.message); }
 
-      if (!poLoaded && !safeStorage.getItem('pbk_open_po')) {
+      // Excel 경로가 못 읽었으면 JSON 으로 받는다. 로컬이 비었을 때뿐 아니라
+      // 원격 JSON 이 더 새로울 때도 받아야 한다 (커밋 API 가 막혀도 갱신되도록).
+      if (!poLoaded) {
         try {
           const poResp = await fetch(`${BASE}/openpo_data.json?t=${Date.now()}`);
           if (poResp.ok) {
             const poJson = await poResp.json();
-            if (poJson && poJson.data && poJson.data.length > 0) {
+            const poStale = !safeStorage.getItem('pbk_open_po')
+              || (poJson?.updated && poJson.updated !== safeStorage.getItem('pbk_open_po_json'));
+            if (poStale && poJson && poJson.data && poJson.data.length > 0) {
               setOpenPOData(poJson.data);
               if (poJson.updated) setOpenPOLastUpdated(poJson.updated);
               safeStorage.setItem('pbk_open_po', JSON.stringify(poJson.data));
               if (poJson.updated) safeStorage.setItem('pbk_open_po_updated', poJson.updated);
+              safeStorage.setItem('pbk_open_po_json', poJson.updated || '');
               console.log(`[OpenPO] GitHub JSON 자동 로드 완료 (${poJson.data.length}개)`);
               addDataHistory('openPO', 'GitHub JSON 자동 로드', poJson.data.length);
               poLoaded = true;
@@ -5792,17 +5802,20 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('OpenPO JSON fetch skip:', e.message); }
       }
 
-      // Delivery JSON fallback (로컬에 없을 때만 — state 클로저는 mount 시점 값이라 storage로 판단)
-      if (!safeParse(safeStorage.getItem('pbk_delivery_data'), []).length) {
+      // Delivery JSON (state 클로저는 mount 시점 값이라 storage 로 판단)
+      if (!delLoaded) {
         try {
           const delResp = await fetch(`${BASE}/delivery_data.json?t=${Date.now()}`);
           if (delResp.ok) {
             const delJson = await delResp.json();
-            if (delJson && delJson.data && delJson.data.length > 0) {
+            const delStale = !safeParse(safeStorage.getItem('pbk_delivery_data'), []).length
+              || (delJson?.updated && delJson.updated !== safeStorage.getItem('pbk_delivery_json'));
+            if (delStale && delJson && delJson.data && delJson.data.length > 0) {
               setDeliveryData(delJson.data);
               if (delJson.updated) setDeliveryLastUpdated(delJson.updated);
               safeStorage.setItem('pbk_delivery_data', JSON.stringify(delJson.data));
               if (delJson.updated) safeStorage.setItem('pbk_delivery_updated', delJson.updated);
+              safeStorage.setItem('pbk_delivery_json', delJson.updated || '');
               console.log(`[Delivery] GitHub JSON 자동 로드 완료 (${delJson.data.length}개)`);
               addDataHistory('delivery', 'GitHub JSON 자동 로드', delJson.data.length);
             }
