@@ -9349,11 +9349,17 @@ ${tableRows}</tbody>
   }`;
 
   // 12개월 추이 차트 + 월별 데이터 표 (hover 시 값 표시)
-  const kpiChartSvg = ({ title, labels, series, target, targetLabel, rows }) => {
-    const W = 900, H = 330, padL = 58, padR = 18, padT = 26, padB = 30;
+  const kpiChartSvg = ({ title, labels, series, target, targetLabel, rows,
+                        targetAxis, leftUnit, rightUnit, valueLabels }) => {
+    // 오른쪽 축: 막대(금액·수량)와 선(비율·건수)은 자릿수가 달라 한 축에 못 올린다.
+    const isRight = (s) => s && s.axis === 'right';
+    const hasRight = series.some(isRight) || targetAxis === 'right';
+    const W = 900, H = 330, padL = 58, padR = hasRight ? 58 : 18, padT = 34, padB = 30;
     const plotW = W - padL - padR, plotH = H - padT - padB;
-    const all = series.flatMap(s => s.data).filter(v => v != null).concat(target != null ? [target] : []);
     const fmtNum = (v) => v == null ? '-' : (Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : (Number.isInteger(v) ? String(v) : String(+v.toFixed(v < 1 ? 3 : 1))));
+    // 축 눈금은 축 전체 크기에 맞춰 자릿수를 고정한다 (912.4 같은 어정쩡한 표기 방지)
+    const axisFmt = (v, max) => max >= 100 ? Math.round(v).toLocaleString()
+      : max >= 1 ? v.toFixed(1) : v.toFixed(3);
 
     // 월별 표 (차트 아래)
     const tableHtml = !rows ? '' : `<table class="ctab"><thead><tr><th></th>${
@@ -9362,43 +9368,66 @@ ${tableRows}</tbody>
         r.values.map(v => `<td>${r.fmt ? r.fmt(v) : fmtNum(v)}</td>`).join('')}</tr>`).join('')
       }</tbody></table>`;
 
-    if (!all.length) {
+    const sideVals = (right) => series.filter(s => isRight(s) === right).flatMap(s => s.data).filter(v => v != null);
+    const tgtOn = (right) => target != null && ((targetAxis === 'right') === right) ? target : null;
+    const lv = sideVals(false), rv = sideVals(true);
+    if (!lv.length && !rv.length) {
       return `<div class="chart"><div class="ctitle">${title}</div><div class="nochart">데이터 없음</div>${tableHtml}</div>`;
     }
 
-    const maxV = (Math.max(...all) || 1) * 1.2;
+    // 목표값을 최대치에 그대로 섞으면 실제 값이 바닥에 눌린다.
+    // 값은 값대로 키우고, 목표선은 그 위에 얹히도록 따로 반영한다.
+    const axisMax = (vals, tgt, grow) => {
+      const v = (Math.max(...vals, 0) || 0) * grow;
+      const t = tgt != null ? tgt * 1.15 : 0;
+      return Math.max(v, t) || 1;
+    };
+    const maxL = axisMax(lv, tgtOn(false), hasRight ? 1.5 : 1.2);
+    const maxR = axisMax(rv, tgtOn(true), 2.2);  // 선이 막대와 겹치지 않게 넉넉히
     const slotW = plotW / labels.length;
     const bw = Math.max(8, slotW * 0.5);
     const cx = (i) => padL + (i + 0.5) * slotW;
-    const y = (v) => padT + plotH - (v / maxV) * plotH;
+    const yL = (v) => padT + plotH - (v / maxL) * plotH;
+    const yR = (v) => padT + plotH - (v / maxR) * plotH;
+    const yOf = (s) => isRight(s) ? yR : yL;
     let el = '';
 
     for (let g = 0; g <= 4; g++) {
       const gy = padT + plotH * g / 4;
-      const gv = maxV * (4 - g) / 4;
       el += `<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" stroke="#e5e7eb"/>`;
-      el += `<text x="${padL - 8}" y="${gy + 4}" font-size="11" fill="#9ca3af" text-anchor="end">${fmtNum(gv)}</text>`;
+      el += `<text x="${padL - 8}" y="${gy + 4}" font-size="11" fill="#9ca3af" text-anchor="end">${axisFmt(maxL * (4 - g) / 4, maxL)}</text>`;
+      if (hasRight) el += `<text x="${W - padR + 8}" y="${gy + 4}" font-size="11" fill="#9ca3af">${axisFmt(maxR * (4 - g) / 4, maxR)}</text>`;
     }
+    if (leftUnit) el += `<text x="${padL - 8}" y="${padT - 12}" font-size="10" fill="#9ca3af" text-anchor="end">${leftUnit}</text>`;
+    if (rightUnit) el += `<text x="${W - padR + 8}" y="${padT - 12}" font-size="10" fill="#9ca3af">${rightUnit}</text>`;
 
-    series.forEach(s => {
+    // 값 글씨가 막대 위에 겹쳐도 읽히도록 흰 테두리를 깐다
+    const halo = 'paint-order="stroke" stroke="#fff" stroke-width="3" stroke-linejoin="round"';
+    // 막대를 먼저 그려야 선이 가리지 않는다
+    [...series].sort((a, b) => (a.type === 'bar' ? 0 : 1) - (b.type === 'bar' ? 0 : 1)).forEach(s => {
+      const yy = yOf(s);
+      const lab = (v) => s.fmt ? s.fmt(v) : fmtNum(v);
       if (s.type === 'bar') {
         s.data.forEach((v, i) => {
           if (v == null) return;
-          el += `<rect x="${cx(i) - bw / 2}" y="${y(v)}" width="${bw}" height="${Math.max(1, padT + plotH - y(v))}" rx="2" fill="${s.color}" opacity="0.85"/>`;
+          el += `<rect x="${cx(i) - bw / 2}" y="${yy(v)}" width="${bw}" height="${Math.max(1, padT + plotH - yy(v))}" rx="2" fill="${s.color}" opacity="0.85"/>`;
+          if (valueLabels) el += `<text x="${cx(i)}" y="${yy(v) - 5}" font-size="9.5" fill="#64748b" text-anchor="middle" ${halo}>${lab(v)}</text>`;
         });
       } else {
-        const pts = s.data.map((v, i) => v == null ? null : `${cx(i)},${y(v)}`).filter(Boolean);
+        const pts = s.data.map((v, i) => v == null ? null : `${cx(i)},${yy(v)}`).filter(Boolean);
         if (pts.length > 1) el += `<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5"/>`;
         s.data.forEach((v, i) => {
           if (v == null) return;
-          el += `<circle cx="${cx(i)}" cy="${y(v)}" r="4" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`;
+          el += `<circle cx="${cx(i)}" cy="${yy(v)}" r="4" fill="#fff" stroke="${s.color}" stroke-width="2.5"/>`;
+          if (valueLabels) el += `<text x="${cx(i)}" y="${yy(v) - 11}" font-size="9.5" font-weight="600" fill="${s.color}" text-anchor="middle" ${halo}>${lab(v)}</text>`;
         });
       }
     });
 
     if (target != null) {
-      el += `<line x1="${padL}" y1="${y(target)}" x2="${W - padR}" y2="${y(target)}" stroke="#ef4444" stroke-dasharray="6,4" stroke-width="1.5"/>`;
-      el += `<text x="${W - padR}" y="${y(target) - 5}" font-size="11" fill="#ef4444" text-anchor="end">${targetLabel || `목표 ${target}`}</text>`;
+      const ty = (targetAxis === 'right' ? yR : yL)(target);
+      el += `<line x1="${padL}" y1="${ty}" x2="${W - padR}" y2="${ty}" stroke="#ef4444" stroke-dasharray="6,4" stroke-width="1.5"/>`;
+      el += `<text x="${W - padR}" y="${ty - 5}" font-size="11" fill="#ef4444" text-anchor="end">${targetLabel || `목표 ${target}`}</text>`;
     }
 
     labels.forEach((l, i) => {
@@ -9407,9 +9436,9 @@ ${tableRows}</tbody>
 
     // hover 영역 + 값 툴팁 (마우스를 올린 월의 모든 시리즈 값 표시)
     labels.forEach((l, i) => {
-      const vals = series.map(s => ({ name: s.name, color: s.color, v: s.data[i] })).filter(x => x.v != null);
+      const vals = series.map(s => ({ name: s.name, color: s.color, v: s.data[i], fmt: s.fmt })).filter(x => x.v != null);
       if (!vals.length) return;
-      const boxW = 132, lineH = 17, boxH = 20 + vals.length * lineH;
+      const boxW = 158, lineH = 17, boxH = 20 + vals.length * lineH;
       let bx = cx(i) + 12;
       if (bx + boxW > W - padR) bx = cx(i) - boxW - 12;
       const by = padT + 8;
@@ -9417,12 +9446,12 @@ ${tableRows}</tbody>
       tip += `<text x="${bx + 10}" y="${by + 16}" font-size="11" font-weight="700" fill="#FDB813">${l}</text>`;
       vals.forEach((x, k) => {
         tip += `<circle cx="${bx + 14}" cy="${by + 28 + k * lineH}" r="3.5" fill="${x.color}"/>`;
-        tip += `<text x="${bx + 23}" y="${by + 32 + k * lineH}" font-size="11" fill="#fff">${x.name} ${fmtNum(x.v)}</text>`;
+        tip += `<text x="${bx + 23}" y="${by + 32 + k * lineH}" font-size="11" fill="#fff">${x.name} ${x.fmt ? x.fmt(x.v) : fmtNum(x.v)}</text>`;
       });
       el += `<g class="hov"><rect x="${padL + i * slotW}" y="${padT}" width="${slotW}" height="${plotH}" fill="transparent"/><g class="tipbox">${tip}</g></g>`;
     });
 
-    const legend = series.map(s => `<span style="color:${s.color};">● ${s.name}</span>`).join('&nbsp;&nbsp;');
+    const legend = series.map(s => `<span style="color:${s.color};">${s.type === 'bar' ? '■' : '●'} ${s.name}</span>`).join('&nbsp;&nbsp;');
     return `<div class="chart"><div class="ctitle">${title}<span class="clegend">${legend}</span></div>`
       + `<svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg>${tableHtml}</div>`;
   };
@@ -9558,6 +9587,11 @@ ${tableRows}</tbody>
           return q > 0 ? +(c / q * 100).toFixed(3) : null;
         });
       })();
+      // 대시보드와 같은 단위(백만원)로 막대를 그린다
+      const stockMil = last12.map(mm => {
+        const st = kpiData.invAdjustDetail?.[mm];
+        return st && st.stock ? +(st.stock / 1e6).toFixed(0) : null;
+      });
       const cumAdjRate = (() => {
         let v = 0, s = 0, any = false;
         return sInvAdj.map((r, i) => {
@@ -9571,8 +9605,11 @@ ${tableRows}</tbody>
       const charts =
         kpiChartSvg({
           title: 'GR 처리량 & 취소 건수', labels: last12,
-          series: [{ type: 'bar', name: 'GR 수량', data: sGrQty, color: '#455DA0' }, { type: 'line', name: '취소 건수', data: sGrCancel, color: '#ef4444' }],
-          target: null,
+          series: [
+            { type: 'bar', name: 'GR 수량', data: sGrQty, color: '#455DA0' },
+            { type: 'line', name: '취소 건수', data: sGrCancel, color: '#ef4444', axis: 'right' },
+          ],
+          target: null, leftUnit: '건', rightUnit: '건', valueLabels: true,
           rows: [
             { label: 'GR Qty.', values: sGrQty },
             { label: 'GR Pass', values: sGrQty.map((q, i) => q == null ? null : q - (sGrCancel[i] || 0)) },
@@ -9581,9 +9618,14 @@ ${tableRows}</tbody>
           ]
         }) +
         kpiChartSvg({
-          title: '재고 조정률 (%)', labels: last12,
-          series: [{ type: 'bar', name: '조정률', data: sInvAdj, color: '#713A61' }],
-          target: 0.064, targetLabel: '목표 0.064%',
+          title: '재고조정 추이 (Inventory Adjust Cost)', labels: last12,
+          series: [
+            { type: 'bar', name: 'Total stock value', data: stockMil, color: '#455DA0',
+              fmt: (v) => v == null ? '-' : Math.round(v).toLocaleString() },
+            { type: 'line', name: 'Adjust cost (Cum.)', data: cumAdjRate, color: '#FDB813', axis: 'right', fmt: pct },
+          ],
+          target: 0.064, targetAxis: 'right', targetLabel: '목표 0.064% (80점)',
+          leftUnit: '백만원', rightUnit: '%', valueLabels: true,
           rows: [
             { label: 'Total value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.stock ?? null) },
             { label: 'Fail value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.variance ?? null) },
