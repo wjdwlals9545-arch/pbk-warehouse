@@ -5202,6 +5202,9 @@ export default function PBKWarehouseSystem() {
     ],
   };
 
+  // 재고조정률 목표 = 점수표의 80점 기준. 차트·표·보고서가 같은 값을 보게 한다.
+  const INV_ADJ_TARGET = KPI_SCORE_TABLE.inventoryAdjust.find(r => r.score === 80).max;
+
   const calculateKpiScore = (type, value) => {
     if (value === null || value === undefined) return null;
     const table = KPI_SCORE_TABLE[type];
@@ -9507,7 +9510,7 @@ ${tableRows}</tbody>
         기준월: ym,
         데이터기준: { Stock: lastUpdated || null, OpenPO: openPOLastUpdated || null },
         GR취소: { 당월_취소건수: kpiData.grCancel?.[ym] ?? null, 당월_GR수량: kpiData.grCancelQty?.[ym] ?? null, 전월_취소건수: kpiData.grCancel?.[prevYm] ?? null, 목표: '월 2건 이하' },
-        재고조정률_pct: { 당월: kpiData.inventoryAdjust?.[ym] ?? null, 전월: kpiData.inventoryAdjust?.[prevYm] ?? null, 목표: '0.064% 이하' },
+        재고조정률_pct: { 당월: kpiData.inventoryAdjust?.[ym] ?? null, 전월: kpiData.inventoryAdjust?.[prevYm] ?? null, 목표: `${INV_ADJ_TARGET}% 이하` },
         키팅: {
           당월: { 건수: kit.count, 상태별: kit.byStatus, 평균리드타임_일: kit.avgLeadTimeDays, 목표: '3일 이내' },
           전월: { 건수: kitPrev.count, 평균리드타임_일: kitPrev.avgLeadTimeDays }
@@ -9572,7 +9575,7 @@ ${tableRows}</tbody>
       const m = metrics;
       const cards = [
         { label: 'GR 취소', val: v(m.GR취소.당월_취소건수, '건'), sub: `GR ${v(m.GR취소.당월_GR수량, '건')} · ${diffArrow(m.GR취소.당월_취소건수, m.GR취소.전월_취소건수)}`, goal: '목표 2건 이하' },
-        { label: '재고 조정률', val: v(m.재고조정률_pct.당월, '%'), sub: diffArrow(m.재고조정률_pct.당월, m.재고조정률_pct.전월), goal: '목표 0.064% 이하' },
+        { label: '재고 조정률', val: v(m.재고조정률_pct.당월, '%'), sub: diffArrow(m.재고조정률_pct.당월, m.재고조정률_pct.전월), goal: `목표 ${INV_ADJ_TARGET}% 이하` },
         { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'), sub: `${m.키팅.당월.건수}건 · ${diffArrow(m.키팅.당월.평균리드타임_일, m.키팅.전월.평균리드타임_일)}`, goal: '목표 3일 이내' },
         { label: '키팅 사이클타임', val: v(m.키팅_평균사이클타임_분, '분'), sub: `${m.키팅.당월.상태별.completed}건 완료`, goal: '' },
       ].map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval">${c.val}</div><div class="ksub">${c.sub || ''}</div><div class="kgoal">${c.goal}</div></div>`).join('');
@@ -9624,7 +9627,7 @@ ${tableRows}</tbody>
               fmt: (v) => v == null ? '-' : Math.round(v).toLocaleString() },
             { type: 'line', name: 'Adjust cost (Cum.)', data: cumAdjRate, color: '#FDB813', axis: 'right', fmt: pct },
           ],
-          target: 0.064, targetAxis: 'right', targetLabel: '목표 0.064% (80점)',
+          target: INV_ADJ_TARGET, targetAxis: 'right', targetLabel: `목표 ${INV_ADJ_TARGET}% (80점)`,
           leftUnit: '백만원', rightUnit: '%', valueLabels: true,
           rows: [
             { label: 'Total value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.stock ?? null) },
@@ -17865,7 +17868,7 @@ ${lines}
                         {invAdjustAvg !== null ? invAdjustAvg.toFixed(3) : '-'}
                         <span className="text-lg font-normal ml-1">%</span>
                       </p>
-                      <p className="text-xs mt-2 opacity-70">목표: 0.064% 이하 (80점)</p>
+                      <p className="text-xs mt-2 opacity-70">목표: {INV_ADJ_TARGET}% 이하 (80점)</p>
                       <p className="text-xs opacity-50">{selectedYear}년 {invAdjustValues.length}개월 평균</p>
                     </div>
 
@@ -18190,7 +18193,7 @@ ${lines}
                                 <div key={d.year} className="bg-gray-50 rounded-lg p-3 text-center">
                                   <p className="text-xs text-gray-500 mb-1">{d.year}</p>
                                   <p className={`text-lg font-bold ${
-                                    d.ratio <= 0.064 ? 'text-emerald-600' :
+                                    d.ratio <= INV_ADJ_TARGET ? 'text-emerald-600' :
                                     d.ratio <= 0.15 ? 'text-amber-600' : 'text-red-600'
                                   }`}>{d.ratio.toFixed(4)}%</p>
                                 </div>
@@ -18217,14 +18220,15 @@ ${lines}
                       });
                       const hasData = invChartData.some(d => d.stockM !== null);
                       const stockMax = Math.max(...invChartData.map(d => d.stockM || 0), 1000);
-                      const cumMax = Math.max(...invChartData.map(d => d.ratioCum || 0), 0.05);
+                      // 목표선도 축 안에 들어오게 최대치에 포함한다
+                      const cumMax = Math.max(...invChartData.map(d => d.ratioCum || 0), 0.05, INV_ADJ_TARGET);
                       // 왼쪽: stock 막대를 하단 60%로 — max * 1.5
                       const leftMax = Math.ceil(stockMax * 1.5 / 500) * 500;
                       // 오른쪽: cum ratio — 충분한 여유
                       const rightMax = parseFloat((cumMax * 2.5).toFixed(3)) || 0.15;
                       const lastCum = [...invChartData].reverse().find(d => d.ratioCum !== null);
                       const latestCumVal = lastCum ? lastCum.ratioCum : null;
-                      const TARGET = 0.095;
+                      const TARGET = INV_ADJ_TARGET;
 
                       if (kpiHidden.has('inv')) return null;
                       return (
@@ -18456,7 +18460,7 @@ ${lines}
                                       const v = d ? d.ratioQ : null;
                                       return (
                                         <td key={m} className={`border border-gray-200 px-2 py-1.5 text-right ${
-                                          v !== null && v !== undefined ? (v <= 0.095 ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
+                                          v !== null && v !== undefined ? (v <= INV_ADJ_TARGET ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
                                         }`}>
                                           {v !== null && v !== undefined ? `${v.toFixed(3)}%` : '-'}
                                         </td>
@@ -18470,7 +18474,7 @@ ${lines}
                                       const v = d ? d.ratioCum : null;
                                       return (
                                         <td key={m} className={`border border-gray-200 px-2 py-1.5 text-right font-semibold ${
-                                          v !== null && v !== undefined ? (v <= 0.095 ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
+                                          v !== null && v !== undefined ? (v <= INV_ADJ_TARGET ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
                                         }`}>
                                           {v !== null && v !== undefined ? `${v.toFixed(3)}%` : '-'}
                                         </td>
@@ -19033,7 +19037,7 @@ ${lines}
                                 <td className="px-3 py-2 text-center">
                                   {invVal !== undefined ? (
                                     <span className={`px-2 py-0.5 rounded ${
-                                      invVal <= 0.064 ? 'bg-emerald-100 text-emerald-700' :
+                                      invVal <= INV_ADJ_TARGET ? 'bg-emerald-100 text-emerald-700' :
                                       invVal <= 0.12 ? 'bg-amber-100 text-amber-700' :
                                       'bg-red-100 text-red-700'
                                     }`}>
@@ -19116,7 +19120,7 @@ ${lines}
                                 </td>
                                 {/* Inventory Adjust Cost - 평균 */}
                                 <td className="px-3 py-2 text-center">
-                                  {avgInv !== null ? <span className={avgInv <= 0.064 ? 'text-emerald-700' : 'text-amber-600'}>{avgInv.toFixed(3)}%</span> : '-'}
+                                  {avgInv !== null ? <span className={avgInv <= INV_ADJ_TARGET ? 'text-emerald-700' : 'text-amber-600'}>{avgInv.toFixed(3)}%</span> : '-'}
                                 </td>
                                 {/* Kitting L/T - 전체 평균 */}
                                 <td className="px-3 py-2 text-center">
@@ -19219,7 +19223,7 @@ ${lines}
                 <div>
                   <label className="block text-sm font-medium mb-1">
                     Inventory Adjust Cost (%)
-                    <span className="text-xs text-gray-500 ml-2">목표: 0.064% 이하</span>
+                    <span className="text-xs text-gray-500 ml-2">목표: {INV_ADJ_TARGET}% 이하</span>
                   </label>
                   <input
                     type="number"
