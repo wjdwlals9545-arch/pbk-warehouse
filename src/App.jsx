@@ -2412,6 +2412,21 @@ function getLeadTimeDays(startDate, endDate) {
   return Math.round(getWorkingMinutes(startDate, endDate) / WORK_MINUTES_PER_DAY * 10) / 10;
 }
 
+// SAP 추출본의 날짜 표기를 YYYY-MM-DD 로 맞춘다.
+// 같은 구현이 파서 두 곳에 복제돼 있어 한쪽만 고치면 어긋났다. 한 벌로 둔다.
+const normalizeSapDate = (d) => {
+  if (!d) return '';
+  d = String(d).trim().split(' ')[0];
+  if (/^\d{2}-\d{2}-\d{2}$/.test(d)) return '20' + d;            // 26-03-04
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(d)) {                        // 04.03.2026
+    const q = d.split('.'); return `${q[2]}-${q[1]}-${q[0]}`;
+  }
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) {                        // 03/04/2026
+    const q = d.split('/'); return `${q[2]}-${q[0]}-${q[1]}`;
+  }
+  return d;
+};
+
 export default function PBKWarehouseSystem() {
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -4786,10 +4801,12 @@ export default function PBKWarehouseSystem() {
   };
 
   const fetchParseLogs = useCallback(async () => {
+    // 서버가 꺼져 있으면 목록이 그냥 비어 보인다. 최소한 콘솔에는 남긴다.
     try {
       const r = await fetch(`${MIGO_API}/api/parse-logs`);
       if (r.ok) setParseLogs(await r.json());
-    } catch {}
+      else console.warn('[ParseLog] 목록 조회 실패: HTTP', r.status);
+    } catch (e) { console.warn('[ParseLog] 목록 조회 실패:', e.message); }
   }, [MIGO_API]);
 
   const scanFolderForTest = useCallback(async () => {
@@ -4837,15 +4854,20 @@ export default function PBKWarehouseSystem() {
   }, [parseScanFiles, testParseFile]);
 
   const updateParseLogNote = useCallback(async (id, note) => {
+    // 저장이 실패해도 화면만 바뀌면 적은 줄 알고 넘어간다. 실패는 알려야 한다.
     try {
-      await fetch(`${MIGO_API}/api/parse-logs/${encodeURIComponent(id)}/note`, {
+      const r = await fetch(`${MIGO_API}/api/parse-logs/${encodeURIComponent(id)}/note`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ note }),
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setParseLogs(prev => prev.map(l => l.id === id ? { ...l, note } : l));
       if (parseSelectedLog?.id === id) setParseSelectedLog(prev => ({ ...prev, note }));
-    } catch {}
+    } catch (e) {
+      console.warn('[ParseLog] 메모 저장 실패:', e.message);
+      showToast(`⚠️ 메모 저장 실패 (${e.message}) — 로컬 서버를 확인하세요`, 'error');
+    }
   }, [parseSelectedLog, MIGO_API]);
 
   const clearParseLogs = useCallback(async () => {
@@ -5048,7 +5070,7 @@ export default function PBKWarehouseSystem() {
   };
 
   // ── 탭 순서 관리 (Admin drag-and-drop) ──
-  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','inventory','kitting','pick','kpi','analysis','locate','layout','view3d','temphumidity','testlog','todo', 'taxinvoice'];
+  const DEFAULT_TAB_ORDER = ['migo','home','dashboard','delivery','receive','inventory','kitting','pick','kpi','analysis','locate','layout','view3d','weight','temphumidity','testlog','todo', 'taxinvoice'];
   const [tabOrder, setTabOrder] = useState(() => {
     // 예전에 저장된 순서에 새 탭이 빠져 있으면 화면에서 아예 사라진다.
     // (Inventory 가 설정에는 보이는데 탭 바에 없던 원인)
@@ -8063,18 +8085,7 @@ ${tableRows}</tbody>
           return 'Spare Parts';
         };
 
-        // 날짜 형식 통일 (YY-MM-DD → YYYY-MM-DD)
-        const normalizeDate = (d) => {
-          if (!d) return '';
-          d = d.trim().split(' ')[0];
-          // YY-MM-DD (예: 26-03-04)
-          if (/^\d{2}-\d{2}-\d{2}$/.test(d)) return '20' + d;
-          // DD.MM.YYYY (예: 04.03.2026)
-          if (/^\d{2}\.\d{2}\.\d{4}$/.test(d)) { var p=d.split('.'); return p[2]+'-'+p[1]+'-'+p[0]; }
-          // MM/DD/YYYY (예: 03/04/2026)
-          if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) { var p=d.split('/'); return p[2]+'-'+p[0]+'-'+p[1]; }
-          return d;
-        };
+        const normalizeDate = normalizeSapDate;
 
         // 데이터 파싱
         const newPickOrders = [];
@@ -8731,15 +8742,7 @@ ${tableRows}</tbody>
           return 'Spare Parts';
         };
 
-        // 날짜 형식 통일
-        const normalizeDate2 = (d) => {
-          if (!d) return '';
-          d = d.trim().split(' ')[0];
-          if (/^\d{2}-\d{2}-\d{2}$/.test(d)) return '20' + d;
-          if (/^\d{2}\.\d{2}\.\d{4}$/.test(d)) { var p=d.split('.'); return p[2]+'-'+p[1]+'-'+p[0]; }
-          if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) { var p=d.split('/'); return p[2]+'-'+p[0]+'-'+p[1]; }
-          return d;
-        };
+        const normalizeDate2 = normalizeSapDate;
 
         const newItems = [];
         for (let i = 1; i < lines.length; i++) {
@@ -11219,6 +11222,7 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 locate: { label: 'Locator', icon: Search },
                 layout: { label: 'Layout', icon: Warehouse },
                 view3d: { label: '3D View', icon: Box },
+                weight: { label: 'Weight', icon: Scale },
                 temphumidity: { label: 'Climate', icon: Thermometer },
                 testlog: { label: '분석 이력', icon: FileText },
                 todo: { label: 'TO DO', icon: Check },
@@ -11446,8 +11450,13 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
           // 온습도 (오늘)
           const todayTH = tempHumidityData ? tempHumidityData[todayStr] : null;
-          const lastTemp = todayTH?.temp;
-          const lastHum = todayTH?.humidity;
+          // 온습도는 담당이 아니다. 오늘 없으면 마지막 기록을 그대로 보여준다.
+          const lastTHDate = tempHumidityData
+            ? Object.keys(tempHumidityData).filter(k => tempHumidityData[k]?.temp != null).sort().pop()
+            : null;
+          const shownTH = todayTH || (lastTHDate ? tempHumidityData[lastTHDate] : null);
+          const lastTemp = shownTH?.temp;
+          const lastHum = shownTH?.humidity;
 
           // 이번주 요일별 일정
           const weekDays = [];
@@ -11522,19 +11531,20 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
 
               {/* 온습도 */}
               <button onClick={() => setActiveTab('temphumidity')}
-                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 ${!todayTH ? 'border-red-500' : 'border-cyan-500'} text-left transition hover:shadow-md`}>
+                className={`${darkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white hover:bg-gray-50'} rounded-xl shadow-sm p-4 border-l-4 border-cyan-500 text-left transition hover:shadow-md`}>
                 <div className="flex items-center justify-between mb-2">
-                  <Thermometer className={`w-5 h-5 ${!todayTH ? 'text-red-500' : 'text-cyan-500'}`} />
-                  {!todayTH && <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full font-bold">미입력</span>}
+                  <Thermometer className="w-5 h-5 text-cyan-500" />
                 </div>
                 <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>온습도</p>
-                {todayTH ? (
+                {lastTemp != null ? (
                   <>
                     <p className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{lastTemp}°C</p>
-                    <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>습도: {lastHum}%</p>
+                    <p className={`text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>
+                      습도: {lastHum}%{!todayTH && lastTHDate ? ` · ${lastTHDate.slice(5).replace('-', '/')} 기록` : ''}
+                    </p>
                   </>
                 ) : (
-                  <p className={`text-sm font-medium text-red-500 mt-1`}>오늘 미입력</p>
+                  <p className={`text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'} mt-1`}>기록 없음</p>
                 )}
               </button>
             </div>
