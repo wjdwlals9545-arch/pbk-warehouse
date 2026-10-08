@@ -19747,7 +19747,12 @@ ${lines}
         {/* ─────────── 세금계산서 처리 ─────────── */}
         {activeTab === 'taxinvoice' && (() => {
           const { pending = [], mismatch = [], done = [],
-                  pending_batches: pendBatch = [], mismatch_batches: misBatch = [] } = taxFlow;
+                  pending_batches: pendBatch = [], mismatch_batches: misBatch = [],
+                  done_batches: doneBatch = [] } = taxFlow;
+
+          // 처리 완료 = 개별 건 + 일괄 마감 묶음. 묶음이 빠져 이번 달 목록이 모자랐다.
+          const doneTs = (g) => Math.max(g.delivery?.mtime || 0, g.tax?.mtime || 0);
+          const doneAll = [...done, ...doneBatch].sort((a, b) => doneTs(b) - doneTs(a));
           const koNowTax = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
           const todayTax = `${koNowTax.getFullYear()}-${String(koNowTax.getMonth() + 1).padStart(2, '0')}-${String(koNowTax.getDate()).padStart(2, '0')}`;
           // 해외 업체 인보이스는 달러다(McMaster $42.78). 통화를 모르면 원으로 본다.
@@ -20202,8 +20207,8 @@ ${lines}
                   desc={waitBatch.length ? `개별 ${waitTax.length} · 묶음 ${waitBatch.length}` : '거래명세서만 들어옴'} />
                 <Card n={requesting.length + reqBatch.length} label="세금계산서 요청 중" tone="bg-indigo-50 border-indigo-200 text-indigo-700"
                   desc="메일 보냄 · 발행 대기" />
-                <Card n={done.length} label="세금계산서 처리 완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
-                  desc="최근 40건" />
+                <Card n={doneAll.length} label="세금계산서 처리 완료" tone="bg-emerald-50 border-emerald-200 text-emerald-700"
+                  desc={doneBatch.length ? `개별 ${done.length} · 묶음 ${doneBatch.length}` : '이번 달'} />
               </div>
 
               {/* 마감 알림 — 규칙상 마감인데 이번 달 폴더가 안 보이는 것 */}
@@ -20324,7 +20329,9 @@ ${lines}
                 <div className="p-4 border-b">
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
                     ✅ 세금계산서 처리 완료
-                    <span className="text-sm font-normal text-gray-500">최근 {done.length}건</span>
+                    <span className="text-sm font-normal text-gray-500">
+                      {koNowTax.getMonth() + 1}월 {doneAll.length}건
+                    </span>
                   </h3>
                 </div>
                 <div className="overflow-x-auto max-h-96 overflow-y-auto">
@@ -20340,11 +20347,22 @@ ${lines}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {done.map(g => (
+                      {doneAll.map(g => (
                         <tr key={g.key} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 font-medium text-gray-800">{g.vendor || '—'}</td>
+                          <td className="px-4 py-2 font-medium text-gray-800">
+                            {g.vendor || '—'}
+                            {g.batch && (
+                              <span className="ml-1.5 px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-semibold">
+                                {g.batch}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-xs font-mono text-gray-500">
                             {g.po_number}
+                            {/* 묶음은 PO 가 여럿이다 */}
+                            {g.po_numbers?.length > 1 && (
+                              <div className="text-[10px] text-gray-400">외 {g.po_numbers.length - 1}건</div>
+                            )}
                             {/* 5105... 은 F&A 가 MIRO 후 붙이는 송장번호. PO 가 아니다 */}
                             {g.miro_number && (
                               <div className="text-[10px] text-gray-400">MIRO {g.miro_number}</div>
@@ -20356,7 +20374,7 @@ ${lines}
                           <td className="px-3 py-2 text-[11px] text-gray-400">{when(Math.max(g.delivery?.mtime || 0, g.tax?.mtime || 0))}</td>
                         </tr>
                       ))}
-                      {done.length === 0 && (
+                      {doneAll.length === 0 && (
                         <tr><td colSpan="6" className="px-4 py-8 text-center text-sm text-gray-400">아직 없습니다.</td></tr>
                       )}
                     </tbody>
