@@ -19941,9 +19941,11 @@ ${lines}
                       const pcs = grp.items.map(g => g.price_check).filter(Boolean);
                       if (!pcs.length) return <span className="text-[10px] text-gray-300">단가 미대조</span>;
                       const bad = pcs.filter(x => !x.passed).length;
-                      // 대조 자체를 못 한 자재가 섞여 있으면 '일치'라고 말하면 안 된다
+                      // 대조 자체를 못 했거나 근거가 추정인 자재가 섞여 있으면 '일치'라고 말하면 안 된다.
+                      // 명세서에 PO 가 적혀 있어 그대로 대조한 건(item_po)은 확실하므로 뺀다.
+                      const WARN_SRC = new Set(['other_po', 'ambiguous', 'none']);
                       const warn = pcs.flatMap(x => x.detail || [])
-                        .filter(d => d.source && d.source !== 'po' && d.ok !== false).length;
+                        .filter(d => WARN_SRC.has(d.source) && d.ok !== false).length;
                       const tone = bad ? 'bg-red-50 border-red-200 text-red-700'
                         : warn ? 'bg-amber-50 border-amber-200 text-amber-700'
                                : 'bg-emerald-50 border-emerald-200 text-emerald-700';
@@ -19989,25 +19991,32 @@ ${lines}
                 {/* 단가 대조: 불일치뿐 아니라 '대조 못 한 것'도 보여준다.
                     여러 PO 가 한 명세서에 묶이면 둘째 PO 품목이 조용히 넘어갔다. */}
                 {(() => {
+                  // 전 품목을 보여준다. 문제 있는 줄만 추리면 명세서 품목 수와 안 맞아 혼란스럽다.
+                  const WARN = new Set(['other_po', 'ambiguous', 'none']);
                   const rows = grp.items.flatMap(g => (g.price_check?.detail || [])
-                    .filter(x => x.ok === false || (x.source && x.source !== 'po'))
                     .map(x => ({ ...x, _k: `${g.key}_${x.material}` })));
                   if (!rows.length) return null;
                   const nBad = rows.filter(x => x.ok === false).length;
-                  const nWarn = rows.length - nBad;
+                  const nWarn = rows.filter(x => x.ok !== false && WARN.has(x.source)).length;
                   // 불일치가 있으면 빨강, 확인만 필요하면 호박색
                   const tone = nBad
                     ? { b: 'border-red-200', bg: 'bg-red-50/50', t: 'text-red-700' }
-                    : { b: 'border-amber-200', bg: 'bg-amber-50/50', t: 'text-amber-700' };
+                    : nWarn
+                    ? { b: 'border-amber-200', bg: 'bg-amber-50/50', t: 'text-amber-700' }
+                    : { b: 'border-emerald-200', bg: 'bg-emerald-50/40', t: 'text-emerald-700' };
                   const MARK = {
-                    other_po:  { label: '다른 발주',   cls: 'bg-sky-100 text-sky-700' },
+                    item_po:   { label: '명세서 기재', cls: 'bg-emerald-100 text-emerald-700' },
+                    other_po:  { label: '추정',       cls: 'bg-sky-100 text-sky-700' },
                     ambiguous: { label: '판단 보류',   cls: 'bg-amber-100 text-amber-700' },
                     none:      { label: '발주에 없음', cls: 'bg-rose-100 text-rose-700' },
                   };
                   return (
                   <div className={`mt-2 ml-1 rounded-lg border ${tone.b} ${tone.bg} p-2`}>
                     <div className={`mb-1 text-[11px] font-semibold ${tone.t}`}>
-                      단가 대조 {nBad > 0 && <>· 불일치 {nBad}건</>}{nWarn > 0 && <> · 확인 필요 {nWarn}건</>}
+                      단가 대조 {rows.length}품목
+                      {nBad > 0 && <> · 불일치 {nBad}건</>}
+                      {nWarn > 0 && <> · 확인 필요 {nWarn}건</>}
+                      {!nBad && !nWarn && <> · 전부 일치</>}
                     </div>
                     <table className="w-full text-[11px]">
                       <thead>
@@ -20023,8 +20032,9 @@ ${lines}
                       <tbody>
                         {rows.map(x => {
                           const mk = x.ok === false ? null : MARK[x.source];
+                          const plain = x.ok === true && !WARN.has(x.source);
                           return (
-                            <tr key={x._k} className="text-gray-700 align-top">
+                            <tr key={x._k} className={`align-top ${plain ? 'text-gray-500' : 'text-gray-700'}`}>
                               <td className="pr-3 font-mono">{x.material}</td>
                               <td className="pr-3">
                                 {x.matched_po
@@ -20050,7 +20060,8 @@ ${lines}
                     </table>
                     <p className="mt-1 text-[10px] text-gray-500 leading-relaxed">
                       발주 단가는 ME2N 의 Net Price &divide; Price Unit 입니다.
-                      <b className="text-sky-700"> 다른 발주</b> = 파일명의 PO 에는 없고 다른 발주에서 찾아 대조함 ·
+                      <b className="text-emerald-700"> 명세서 기재</b> = 명세서에 적힌 품목별 PO 로 대조 ·
+                      <b className="text-sky-700"> 추정</b> = 어디에도 PO 표기가 없어 자재번호로 찾아낸 발주 ·
                       <b className="text-amber-700"> 판단 보류</b> = 여러 발주에 서로 다른 단가로 있어 어느 건인지 단정 못 함 ·
                       <b className="text-rose-700"> 발주에 없음</b> = 어느 발주에도 없는 자재
                     </p>
