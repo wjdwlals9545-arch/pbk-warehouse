@@ -5682,11 +5682,11 @@ export default function PBKWarehouseSystem() {
               safeStorage.setItem('pbk_inventory', JSON.stringify(inventory));
               safeStorage.setItem('pbk_last_updated', ts);
               safeStorage.setItem('pbk_stock_epoch', String(stockInfo.epoch));
-              uploadDataToGitHub('public/data/stock_data.json', { data: inventory, updated: ts, count: inventory.length }, 'Stock 데이터 (자동)');
+              // 올리지 않는다 — 이 xlsx 를 올린 감시기가 stock_data.json 도 이미 만들었다.
+              // 같은 파일을 양쪽에서 밀면 git 이 충돌한다.
               if (qStockItems && qStockItems.length > 0) {
                 setQStockData(qStockItems);
                 safeStorage.setItem('pbk_qstock', JSON.stringify(qStockItems));
-                uploadDataToGitHub('public/data/qstock_data.json', { data: qStockItems, updated: ts, count: qStockItems.length }, 'Q-Stock 데이터 (자동)');
               } else {
                 setQStockData([]);
                 safeStorage.removeItem('pbk_qstock');
@@ -5729,7 +5729,6 @@ export default function PBKWarehouseSystem() {
                 safeStorage.setItem('pbk_open_po', JSON.stringify(poResult.aggregated));
                 safeStorage.setItem('pbk_open_po_updated', ts);
                 safeStorage.setItem('pbk_po_epoch', String(poInfo.epoch));
-                uploadDataToGitHub('public/data/openpo_data.json', { data: poResult.aggregated, updated: ts, count: poResult.aggregated.length }, 'OpenPO 데이터 (자동)');
                 // 자동 파싱은 알리지 않는다 — 갱신 시각이 상단 헤더에 있다
                 console.log(`[OpenPO] 자동 파싱 완료 (${poResult.aggregated.length}개)`);
                 addDataHistory('openPO', 'GitHub Excel 자동 로드', poResult.aggregated.length);
@@ -5758,7 +5757,6 @@ export default function PBKWarehouseSystem() {
                 safeStorage.setItem('pbk_delivery_data', JSON.stringify(delItems));
                 safeStorage.setItem('pbk_delivery_updated', ts);
                 safeStorage.setItem('pbk_del_epoch', String(delInfo.epoch));
-                uploadDataToGitHub('public/data/delivery_data.json', { data: delItems, updated: ts, count: delItems.length }, 'Delivery 데이터 (자동)');
                 console.log(`[Delivery] 자동 파싱 완료 (${delItems.length}개)`);
                 addDataHistory('delivery', 'GitHub Excel 자동 로드', delItems.length);
                 delLoaded = true;
