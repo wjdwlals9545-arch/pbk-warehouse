@@ -20165,9 +20165,10 @@ ${lines}
             if (a.v === null) return <span className="text-gray-300">—</span>;
             return (
               <span className={a.est ? 'text-gray-400' : ''}
-                title={a.est ? ('거래명세서 금액이 남아 있지 않아 발주 기준(단가 x 수량)으로 계산한 값입니다'
+                title={a.est ? ('실제 거래액이 아닙니다 — 발주 전체(단가 x 수량) 기준으로 계산한 값입니다.\n'
+                        + '분할 납품이면 실제 거래액보다 큽니다.'
                         + (a.partial ? '\n여러 PO 가 묶인 건이라 첫 PO 분만 집계됐습니다' : '')) : ''}>
-                {money(a.v, a.cur)}{a.est && <span className="ml-0.5 text-[10px]">{a.partial ? '(발주·일부)' : '(발주)'}</span>}
+                {money(a.v, a.cur)}{a.est && <span className="ml-0.5 text-[10px]">{a.partial ? '(발주 전체·일부PO)' : '(발주 전체)'}</span>}
               </span>
             );
           };
