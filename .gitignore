@@ -28,3 +28,6 @@ dist-ssr
 
 # 예전 GitHub 웹 업로드로 들어온 빌드 산출물. 루트에 있으면 린트까지 오염된다.
 assets/
+
+# 점검 보고서 (임시)
+node_modules/.cache/
