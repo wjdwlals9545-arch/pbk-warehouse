@@ -19764,12 +19764,22 @@ ${lines}
           };
           const when = (t) => t ? new Date(t * 1000).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
           const requested = (po) => taxRequestedPOs.has(po);
+          // 같은 PO 로 거래명세서가 다시 들어오는 일이 잦다 (추가 납품·수정본).
+          // 그때 지난번 요청 기록이 따라붙어 방금 올린 건이 '요청 중 · N일 경과' 로
+          // 보였다. 요청 시각이 지금 문서보다 앞서면 지난 건의 기록이다.
+          const reqIsCurrent = (key, g) => {
+            const at = taxRequestedAt[key];
+            if (!at) return false;
+            const docMs = (g?.delivery?.mtime || 0) * 1000;
+            return !docMs || new Date(at).getTime() >= docMs;
+          };
+          const askedFor = (g) => requested(g.po_number) && reqIsCurrent(g.po_number, g);
 
           // 거래명세서만 온 것 = 세금계산서 요청 대상.
           // 메일을 띄우면 '요청 중' 으로 옮겨가고, 세금계산서가 들어오면 목록에서 빠진다.
           const allWait   = pending.filter(g => g.delivery && !g.tax);
-          const waitTax   = allWait.filter(g => !requested(g.po_number));
-          const requesting = allWait.filter(g =>  requested(g.po_number));
+          const waitTax   = allWait.filter(g => !askedFor(g));
+          const requesting = allWait.filter(g =>  askedFor(g));
           // 요청한 지 며칠 됐나
           const daysSince = (po) => {
             const at = taxRequestedAt[po];
@@ -19799,8 +19809,9 @@ ${lines}
           // 마감 창에 들어온 것만 '보낼 때' 로 센다. 모으는 중인 건 오늘 할 일이 아니다.
           const batchDue = (b) => ['due', 'late'].includes(batchState(b).stage);
 
-          const openBatch  = pendBatch.filter(b => !requested(batchKey(b)));
-          const reqBatch   = pendBatch.filter(b =>  requested(batchKey(b)));
+          const batchAsked = (b) => requested(batchKey(b)) && reqIsCurrent(batchKey(b), b);
+          const openBatch  = pendBatch.filter(b => !batchAsked(b));
+          const reqBatch   = pendBatch.filter(b =>  batchAsked(b));
           const waitBatch  = openBatch.filter(batchDue);        // 지금 보낼 묶음
           const collecting = openBatch.filter(b => !batchDue(b)); // 아직 모으는 중
 
