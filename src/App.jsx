@@ -19952,7 +19952,7 @@ ${lines}
                       const bad = pcs.filter(x => !x.passed).length;
                       // 대조 자체를 못 했거나 근거가 추정인 자재가 섞여 있으면 '일치'라고 말하면 안 된다.
                       // 명세서에 PO 가 적혀 있어 그대로 대조한 건(item_po)은 확실하므로 뺀다.
-                      const WARN_SRC = new Set(['other_po', 'ambiguous', 'none']);
+                      const WARN_SRC = new Set(['other_po', 'ambiguous', 'none', 'by_price']);
                       const warn = pcs.flatMap(x => x.detail || [])
                         .filter(d => WARN_SRC.has(d.source) && d.ok !== false).length;
                       const tone = bad ? 'bg-red-50 border-red-200 text-red-700'
@@ -20001,7 +20001,7 @@ ${lines}
                     여러 PO 가 한 명세서에 묶이면 둘째 PO 품목이 조용히 넘어갔다. */}
                 {(() => {
                   // 전 품목을 보여준다. 문제 있는 줄만 추리면 명세서 품목 수와 안 맞아 혼란스럽다.
-                  const WARN = new Set(['other_po', 'ambiguous', 'none']);
+                  const WARN = new Set(['other_po', 'ambiguous', 'none', 'by_price']);
                   // 거래명세서 한 장이 표 하나. 여러 장이 섞이면 어느 명세서 품목인지 알 수 없다.
                   const docs = grp.items
                     .map(g => ({ g, det: g.price_check?.detail || [] }))
@@ -20025,6 +20025,7 @@ ${lines}
                     : { b: 'border-emerald-200', bg: 'bg-emerald-50/40', t: 'text-emerald-700' };
                   const MARK = {
                     item_po:   { label: '명세서 기재', cls: 'bg-emerald-100 text-emerald-700' },
+                    by_price:  { label: '단가로 특정', cls: 'bg-violet-100 text-violet-700' },
                     other_po:  { label: '추정',       cls: 'bg-sky-100 text-sky-700' },
                     ambiguous: { label: '판단 보류',   cls: 'bg-amber-100 text-amber-700' },
                     none:      { label: '발주에 없음', cls: 'bg-rose-100 text-rose-700' },
@@ -20086,7 +20087,10 @@ ${lines}
                                     <td className="pr-3 text-right tabular-nums">{x.qty?.toLocaleString()}</td>
                                     <td className="pr-4 text-right tabular-nums font-semibold text-gray-700">{money(x.inv_amount, x.currency)}</td>
                                     <td className={`pr-3 text-right tabular-nums font-semibold ${x.ok === false ? 'text-red-700' : 'text-gray-400'}`}>
-                                      {x.po_amount != null ? money((x.inv_amount || 0) - (x.po_amount || 0), x.currency) : '-'}
+                                      {/* 대조를 못 한 줄에 0원을 찍으면 검증된 것처럼 읽힌다 */}
+                                      {x.ok != null && x.po_amount != null
+                                        ? money((x.inv_amount || 0) - (x.po_amount || 0), x.currency)
+                                        : '-'}
                                     </td>
                                   </tr>
                                 );
@@ -20120,6 +20124,7 @@ ${lines}
                       발주 단가는 ME2N 의 Net Price &divide; Price Unit 입니다.
                       거래명세서 총액은 VAT 포함이라 공급가액의 1.1 배면 맞는 것으로 봅니다.
                       <b className="text-emerald-700"> 명세서 기재</b> = 명세서에 적힌 품목별 PO 로 대조 ·
+                      <b className="text-violet-700"> 단가로 특정</b> = 명세서에 자재번호가 없어 그 발주 안에서 단가로 찾은 품목 (단가 검증은 못 한 셈) ·
                       <b className="text-sky-700"> 추정</b> = 어디에도 PO 표기가 없어 자재번호로 찾아낸 발주 ·
                       <b className="text-amber-700"> 판단 보류</b> = 여러 발주에 서로 다른 단가로 있어 어느 건인지 단정 못 함 ·
                       <b className="text-rose-700"> 발주에 없음</b> = 어느 발주에도 없는 자재
