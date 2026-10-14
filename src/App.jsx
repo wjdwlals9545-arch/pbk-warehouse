@@ -20002,11 +20002,21 @@ ${lines}
                 {(() => {
                   // 전 품목을 보여준다. 문제 있는 줄만 추리면 명세서 품목 수와 안 맞아 혼란스럽다.
                   const WARN = new Set(['other_po', 'ambiguous', 'none']);
-                  const rows = grp.items.flatMap(g => (g.price_check?.detail || [])
-                    .map(x => ({ ...x, _k: `${g.key}_${x.material}` })));
-                  if (!rows.length) return null;
+                  // 거래명세서 한 장이 표 하나. 여러 장이 섞이면 어느 명세서 품목인지 알 수 없다.
+                  const docs = grp.items
+                    .map(g => ({ g, det: g.price_check?.detail || [] }))
+                    .filter(d => d.det.length);
+                  if (!docs.length) return null;
+                  const rows = docs.flatMap(d => d.det);
                   const nBad = rows.filter(x => x.ok === false).length;
                   const nWarn = rows.filter(x => x.ok !== false && WARN.has(x.source)).length;
+                  // 명세서 총액은 VAT 포함, 품목 합계는 공급가액. 1.1 배 차이는 정상이다.
+                  const amtMatch = (supply, total) => {
+                    if (supply == null || total == null) return null;
+                    if (Math.abs(supply - total) <= 1) return 'same';
+                    if (Math.abs(supply * 1.1 - total) <= Math.max(10, total * 0.001)) return 'vat';
+                    return 'diff';
+                  };
                   // 불일치가 있으면 빨강, 확인만 필요하면 호박색
                   const tone = nBad
                     ? { b: 'border-red-200', bg: 'bg-red-50/50', t: 'text-red-700' }
@@ -20023,52 +20033,92 @@ ${lines}
                   <div className={`mt-2 ml-1 rounded-lg border ${tone.b} ${tone.bg} p-2`}>
                     <div className={`mb-1 text-[11px] font-semibold ${tone.t}`}>
                       단가 대조 {rows.length}품목
+                      {docs.length > 1 && <> · 거래명세서 {docs.length}장</>}
                       {nBad > 0 && <> · 불일치 {nBad}건</>}
                       {nWarn > 0 && <> · 확인 필요 {nWarn}건</>}
                       {!nBad && !nWarn && <> · 전부 일치</>}
                     </div>
-                    <table className="w-full text-[11px]">
-                      <thead>
-                        <tr className={`text-left ${tone.t}`}>
-                          <th className="pr-3 pb-1">자재</th>
-                          <th className="pr-3 pb-1">발주 PO</th>
-                          <th className="pr-3 pb-1 text-right">명세서 단가</th>
-                          <th className="pr-3 pb-1 text-right">발주 단가</th>
-                          <th className="pr-3 pb-1 text-right">수량</th>
-                          <th className="pr-3 pb-1 text-right">차액</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map(x => {
-                          const mk = x.ok === false ? null : MARK[x.source];
-                          const plain = x.ok === true && !WARN.has(x.source);
-                          return (
-                            <tr key={x._k} className={`align-top ${plain ? 'text-gray-500' : 'text-gray-700'}`}>
-                              <td className="pr-3 font-mono">{x.material}</td>
-                              <td className="pr-3">
-                                {x.matched_po
-                                  ? <span className="font-mono text-gray-600">{x.matched_po}</span>
-                                  : <span className="text-gray-400">-</span>}
-                                {mk && <span className={`ml-1 px-1 py-0.5 rounded text-[10px] ${mk.cls}`}>{mk.label}</span>}
-                                {x.source === 'ambiguous' && (x.candidates || []).length > 0 && (
-                                  <div className="text-[10px] text-gray-500 font-mono">{x.candidates.join(', ')}</div>
-                                )}
-                              </td>
-                              <td className="pr-3 text-right tabular-nums">{money(x.inv_price, x.currency)}</td>
-                              <td className="pr-3 text-right tabular-nums">
-                                {x.po_price != null ? money(x.po_price, x.currency) : <span className="text-gray-400">-</span>}
-                              </td>
-                              <td className="pr-3 text-right tabular-nums">{x.qty?.toLocaleString()}</td>
-                              <td className={`pr-3 text-right tabular-nums font-semibold ${x.ok === false ? 'text-red-700' : 'text-gray-400'}`}>
-                                {x.po_amount != null ? money((x.inv_amount || 0) - (x.po_amount || 0), x.currency) : '-'}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    <p className="mt-1 text-[10px] text-gray-500 leading-relaxed">
+
+                    {docs.map(({ g, det }, di) => {
+                      const cur = det[0]?.currency || g.currency || 'KRW';
+                      const supply = det.reduce((a, x) => a + (x.inv_amount || 0), 0);
+                      const docTotal = g.delivery?.total_amount ?? null;
+                      const m = amtMatch(supply, docTotal);
+                      return (
+                        <div key={g.key} className={di ? 'mt-3 pt-2 border-t border-gray-200' : ''}>
+                          {/* 어느 명세서의 품목인지 */}
+                          <div className="flex items-baseline gap-2 flex-wrap text-[11px] mb-0.5">
+                            <span className="font-mono font-semibold text-gray-700">{g.po_number}</span>
+                            <span className="text-gray-400 truncate max-w-[280px]">{g.delivery?.name || ''}</span>
+                          </div>
+                          <table className="w-full text-[11px]">
+                            <thead>
+                              <tr className={`text-left ${tone.t}`}>
+                                <th className="pr-3 pb-1">자재</th>
+                                <th className="pr-3 pb-1">발주 PO</th>
+                                <th className="pr-3 pb-1 text-right">명세서 단가</th>
+                                <th className="pr-3 pb-1 text-right">발주 단가</th>
+                                <th className="pr-3 pb-1 text-right">수량</th>
+                                <th className="pr-4 pb-1 text-right">금액</th>
+                                <th className="pr-3 pb-1 text-right">차액</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {det.map(x => {
+                                const mk = x.ok === false ? null : MARK[x.source];
+                                const plain = x.ok === true && !WARN.has(x.source);
+                                return (
+                                  <tr key={`${g.key}_${x.material}`} className={`align-top ${plain ? 'text-gray-500' : 'text-gray-700'}`}>
+                                    <td className="pr-3 font-mono">{x.material}</td>
+                                    <td className="pr-3">
+                                      {x.matched_po
+                                        ? <span className="font-mono text-gray-600">{x.matched_po}</span>
+                                        : <span className="text-gray-400">-</span>}
+                                      {mk && <span className={`ml-1 px-1 py-0.5 rounded text-[10px] ${mk.cls}`}>{mk.label}</span>}
+                                      {x.source === 'ambiguous' && (x.candidates || []).length > 0 && (
+                                        <div className="text-[10px] text-gray-500 font-mono">{x.candidates.join(', ')}</div>
+                                      )}
+                                    </td>
+                                    <td className="pr-3 text-right tabular-nums">{money(x.inv_price, x.currency)}</td>
+                                    <td className="pr-3 text-right tabular-nums">
+                                      {x.po_price != null ? money(x.po_price, x.currency) : <span className="text-gray-400">-</span>}
+                                    </td>
+                                    <td className="pr-3 text-right tabular-nums">{x.qty?.toLocaleString()}</td>
+                                    <td className="pr-4 text-right tabular-nums font-semibold text-gray-700">{money(x.inv_amount, x.currency)}</td>
+                                    <td className={`pr-3 text-right tabular-nums font-semibold ${x.ok === false ? 'text-red-700' : 'text-gray-400'}`}>
+                                      {x.po_amount != null ? money((x.inv_amount || 0) - (x.po_amount || 0), x.currency) : '-'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              {/* 이 명세서 한 장의 합계 */}
+                              <tr className="border-t border-gray-200 text-gray-700">
+                                <td className="pr-3 pt-1 text-[10px] text-gray-500" colSpan={5}>공급가액 합계</td>
+                                <td className="pr-4 pt-1 text-right tabular-nums font-bold">{money(supply, cur)}</td>
+                                <td />
+                              </tr>
+                              {docTotal != null && (
+                                <tr className="text-gray-700">
+                                  <td className="pr-3 text-[10px] text-gray-500" colSpan={5}>
+                                    거래명세서 총액{m === 'vat' ? ' (VAT 포함)' : ''}
+                                  </td>
+                                  <td className="pr-4 text-right tabular-nums font-bold">{money(docTotal, cur)}</td>
+                                  <td className="pr-3 text-right">
+                                    {m === 'diff'
+                                      ? <span className="text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 font-semibold">불일치</span>
+                                      : <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">맞음</span>}
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })}
+
+                    <p className="mt-1.5 text-[10px] text-gray-500 leading-relaxed">
                       발주 단가는 ME2N 의 Net Price &divide; Price Unit 입니다.
+                      거래명세서 총액은 VAT 포함이라 공급가액의 1.1 배면 맞는 것으로 봅니다.
                       <b className="text-emerald-700"> 명세서 기재</b> = 명세서에 적힌 품목별 PO 로 대조 ·
                       <b className="text-sky-700"> 추정</b> = 어디에도 PO 표기가 없어 자재번호로 찾아낸 발주 ·
                       <b className="text-amber-700"> 판단 보류</b> = 여러 발주에 서로 다른 단가로 있어 어느 건인지 단정 못 함 ·
