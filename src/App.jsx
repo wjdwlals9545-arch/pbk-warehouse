@@ -25980,18 +25980,45 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
           'Maxwell 16': ['RSC16', 'CSC16', 'FSC16'],
           'HSM': ['HSM', 'HSM3'],
         };
+        // 랙마다 담당 시리즈가 있다. 공용 품목은 그 랙의 시리즈로 봐야 한다.
+        // (예전엔 항상 48 부터 뒤져서 16 랙의 공용품이 48 로 분류됐다)
+        const normSeries = (x) => (x === 'HSM 3.0' ? 'HSM' : x);
+        const groupsFor = (rackSeries) => {
+          const all = Object.keys(MODEL_GROUPS);
+          const mine = normSeries(rackSeries);
+          return all.includes(mine) ? [mine, ...all.filter(g => g !== mine)] : all;
+        };
+        const inBom = (model, mc) => {
+          const bom = activeBom[model];
+          if (!bom) return false;
+          return Array.isArray(bom)
+            ? bom.some(b => String(b.material) === mc)
+            : Object.keys(bom).includes(mc);
+        };
+        // Sub-com 이 어느 시리즈 것인지. SUBCOM_INFO 는 16시리즈 7종이 빠져 있어
+        // 손으로 적은 표 대신 BOM 에서 직접 가린다 (표는 보조로만 쓴다).
+        const subComGroup = (kb, order) => {
+          for (const group of order) {
+            for (const model of MODEL_GROUPS[group]) {
+              if (inBom(model, kb)) return group;
+            }
+          }
+          const si = SUBCOM_INFO[kb];
+          if (si) {
+            if (si.includes('16')) return 'Maxwell 16';
+            if (si.includes('48')) return 'Maxwell 48';
+          }
+          return null;
+        };
+
         // getModelGroup: {group, subComParts} 반환
-        const getModelGroup = (matCode) => {
+        const getModelGroup = (matCode, rackSeries) => {
           const mc = String(matCode);
-          // 1. 메인 BOM에서 직접 찾기
-          for (const [group, models] of Object.entries(MODEL_GROUPS)) {
-            for (const model of models) {
-              const bom = activeBom[model];
-              if (!bom) continue;
-              const found = Array.isArray(bom)
-                ? bom.some(b => String(b.material) === mc)
-                : Object.keys(bom).includes(mc);
-              if (found) return { group, subComParts: null };
+          const order = groupsFor(rackSeries);
+          // 1. 메인 BOM에서 직접 찾기 (랙 시리즈 우선)
+          for (const group of order) {
+            for (const model of MODEL_GROUPS[group]) {
+              if (inBom(model, mc)) return { group, subComParts: null };
             }
           }
           // 2. Sub-component BOM에서 찾기 → 어떤 KB에 들어가는지 전부 수집
@@ -26006,23 +26033,15 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             }
           }
           if (foundKBs.length > 0) {
-            // SUBCOM_INFO로 시리즈 판별 (첫 KB 기준)
-            let group = 'Others';
-            for (const kb of foundKBs) {
-              const si = SUBCOM_INFO[kb];
-              if (si) {
-                if (si.includes('48')) { group = 'Maxwell 48'; break; }
-                if (si.includes('16')) { group = 'Maxwell 16'; break; }
-              }
-            }
-            return { group, subComParts: foundKBs };
+            // 같은 부품이 여러 어셈블리에 쓰인다. 이 랙의 시리즈에 속한 쪽을 고른다.
+            const mine = normSeries(rackSeries);
+            const cand = foundKBs.map(kb => [kb, subComGroup(kb, order)]);
+            const hit = cand.find(([, g]) => g && g === mine) || cand.find(([, g]) => g);
+            return { group: hit ? hit[1] : 'Others', subComParts: foundKBs };
           }
-          // 3. SUBCOM_INFO에서 KB 자재 자체 확인
-          if (SUBCOM_INFO[mc]) {
-            const si = SUBCOM_INFO[mc];
-            if (si.includes('48')) return { group: 'Maxwell 48', subComParts: null };
-            if (si.includes('16')) return { group: 'Maxwell 16', subComParts: null };
-          }
+          // 3. KB 자재 자체 (조립품이 통째로 재고에 있는 경우)
+          const own = subComGroup(mc, order);
+          if (own) return { group: own, subComParts: null };
           return { group: null, subComParts: null };
         };
 
@@ -26059,7 +26078,7 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
           if (!rackAnalysis[rackId]) rackAnalysis[rackId] = [];
           const matStr = String(item.material);
           const isFixed = FIXED_MATERIALS.has(matStr);
-          const { group, subComParts } = getModelGroup(matStr);
+          const { group, subComParts } = getModelGroup(matStr, RACK_MODEL_SERIES[rackId]);
           const wd = weightData[matStr] || DEFAULT_WEIGHT_DATA?.[matStr];
           const weightPerEA = wd ? wd.w : 0;
           // 박스당 수량 → 점유 Bin 수 계산
@@ -26078,6 +26097,8 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             totalWeight: weightPerEA * stock,
             isFixed,
             binsOccupied,
+            boxes: Math.max(1, qtyPerBox ? stock / qtyPerBox : 1),  // 자재마다 최소 1박스
+            boxType: MATERIAL_BOX_MAP[matStr] || 'PLASTIC-S',
           });
         });
 
@@ -26104,9 +26125,19 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             grouped[item.group].push(item);
           });
 
-          // 각 그룹 내에서 중량 정렬 (가벼운→작은번호=상단, 무거운→큰번호=하단)
+          // 같은 모델 안에서도 '내가 뽑는 것' 이 앞이어야 한다.
+          // Pick list 에는 모델 BOM 직속 품목만 나온다 (Sub-com 하위 부품은 이미
+          // 조립돼 S1 에서 나가므로 창고에서 뽑지 않는다).
+          const pickTier = (it) => (!it.subComParts || !it.subComParts.length) ? 0 : 1;
           Object.values(grouped).forEach(grp => {
-            grp.sort((a, b) => a.weightPerEA - b.weightPerEA);
+            grp.sort((a, b) =>
+              // ① 뽑는 품목 먼저
+              pickTier(a) - pickTier(b)
+              // ② 안 뽑는 것은 같은 어셈블리끼리 붙여 둔다 (조립하는 사람도 편하게)
+              || String((a.subComParts || [])[0] || '').localeCompare(String((b.subComParts || [])[0] || ''))
+              // ③ 가벼운 것이 위(작은 번호), 무거운 것이 아래
+              || a.weightPerEA - b.weightPerEA
+            );
           });
 
           // 최적 순서: 그룹별로 연결, 각 그룹 내 중량순
@@ -26122,21 +26153,48 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
           // 현재 movable 아이템들의 Bin 목록 (정렬)
           const currentBins = movableItems.map(i => i.bin).sort();
 
-          // 최적 배치에 Bin 할당 (binsOccupied 고려)
+          // Bin 하나에 여러 품목이 같이 들어간다. 박스가 찰 때까지 담고 다음으로 넘긴다.
+          // (예전엔 품목 하나가 Bin 하나를 차지한다고 봐서, C1 처럼 50품목에 Bin 14개인
+          //  랙은 15번째부터 자리가 없어 전부 제자리에 남았다 — 제안이 13건뿐이었다)
+          const binCapacity = (bin, boxType) => {
+            const bi = BIN_RACK_INFO[bin] || { rackType: '경량랙', rackCount: 1 };
+            if (bi.maxBoxes) return bi.maxBoxes;
+            if (bi.mixed) {
+              return bi.mixed.reduce((sum, m) => {
+                const sh = BOXES_PER_SHELF[m.type] || BOXES_PER_SHELF['경량랙'];
+                return sum + (sh[boxType] || sh['PLASTIC-S'] || 2) * m.count;
+              }, 0);
+            }
+            const sh = BOXES_PER_SHELF[bi.rackType] || BOXES_PER_SHELF['경량랙'];
+            return (sh[boxType] || sh['PLASTIC-S'] || 2) * bi.rackCount * (bi.shelves || 1);
+          };
+
           const suggestions = [];
+          const plan = [];             // 전체 배치 (이동 없는 것도 포함)
           let binIdx = 0;
+          let used = 0;                // 지금 Bin 에 담은 박스 수
+          let overflowed = false;
+          const capNow = (bt) => binCapacity(availableBins[binIdx], bt) || 1;
           optimalOrder.forEach((item) => {
-            const startBinIdx = binIdx;
-            const endBinIdx = Math.min(binIdx + item.binsOccupied - 1, availableBins.length - 1);
-            const suggestedBin = startBinIdx < availableBins.length ? availableBins[startBinIdx] : item.bin;
-            const suggestedBinEnd = item.binsOccupied > 1 && endBinIdx < availableBins.length ? availableBins[endBinIdx] : null;
-            binIdx += item.binsOccupied;
+            const bt = item.boxType || 'PLASTIC-S';
+            // 이번 걸 넣으면 넘치면 다음 Bin 으로
+            if (used > 0 && used + item.boxes > capNow(bt) && binIdx < availableBins.length - 1) {
+              binIdx++; used = 0;
+            }
+            const suggestedBin = availableBins[binIdx] || item.bin;
+            used += item.boxes;
+            // 한 품목이 Bin 하나보다 크면 그만큼 다음 Bin 까지 쓴다
+            while (used > capNow(bt) && binIdx < availableBins.length - 1) {
+              used -= capNow(bt); binIdx++;
+            }
+            if (used > capNow(bt)) overflowed = true;   // 마지막 Bin 도 넘침
+            plan.push({ ...item, suggestedBin });
             if (suggestedBin !== item.bin) {
               suggestions.push({
                 ...item,
                 currentBin: item.bin,
                 suggestedBin,
-                suggestedBinEnd,
+                suggestedBinEnd: null,
               });
               totalMoved++;
             }
@@ -26149,6 +26207,8 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
               fixed: fixedItems.length,
               movable: movableItems.length,
               suggestions,
+              plan,
+              overflowed,
               grouped,
               optimalOrder,
               isMultiLevel: info.isMultiLevel,
