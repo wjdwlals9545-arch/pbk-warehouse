@@ -26129,14 +26129,28 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
           // Pick list 에는 모델 BOM 직속 품목만 나온다 (Sub-com 하위 부품은 이미
           // 조립돼 S1 에서 나가므로 창고에서 뽑지 않는다).
           const pickTier = (it) => (!it.subComParts || !it.subComParts.length) ? 0 : 1;
+          // 자재번호는 711104 / 021-1006 / KB0800 / 9000-375 가 섞여 있다.
+          // 그냥 문자열로 세우면 0 으로 시작하는 게 앞에 몰린다. 숫자 먼저, 그다음 글자.
+          const HEAVY_KG = 0.5;
+          const matRank = (m) => {
+            const t = String(m), h = t.match(/^(\d+)/);
+            return h ? [0, parseInt(h[1], 10), t] : [1, 0, t];
+          };
+          const byMaterial = (a, b) => {
+            const x = matRank(a.material), y = matRank(b.material);
+            return x[0] - y[0] || x[1] - y[1] || x[2].localeCompare(y[2]);
+          };
           Object.values(grouped).forEach(grp => {
             grp.sort((a, b) =>
               // ① 뽑는 품목 먼저
               pickTier(a) - pickTier(b)
-              // ② 안 뽑는 것은 같은 어셈블리끼리 붙여 둔다 (조립하는 사람도 편하게)
+              // ② 무거운 것만 구역 맨 아래로. 가벼운 품목뿐인 랙에서는 무게 정렬이
+              //    의미가 없어 번호순을 앞세운다 (C1 은 중앙값 6.5g).
+              || ((a.weightPerEA >= HEAVY_KG ? 1 : 0) - (b.weightPerEA >= HEAVY_KG ? 1 : 0))
+              // ③ 같은 어셈블리끼리 붙여 둔다
               || String((a.subComParts || [])[0] || '').localeCompare(String((b.subComParts || [])[0] || ''))
-              // ③ 가벼운 것이 위(작은 번호), 무거운 것이 아래
-              || a.weightPerEA - b.weightPerEA
+              // ④ 자재번호 순 — KB0800 옆에 KB0801 이 오도록
+              || byMaterial(a, b)
             );
           });
 
@@ -26169,37 +26183,68 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             return (sh[boxType] || sh['PLASTIC-S'] || 2) * bi.rackCount * (bi.shelves || 1);
           };
 
+          // 구역은 랙 단위로 끊는다. 한 Area 가 물리적으로 랙 여러 개다
+          // (C1 = C1-01~07 / C1-08~14). 각 랙의 첫 Bin 이 꼭대기다.
+          const segs = [];
+          (RACK_SPEC[rackId] || []).forEach(r => {
+            if (!segs.some(x => x.from === r.binStart && x.to === r.binEnd)) {
+              segs.push({ from: r.binStart, to: r.binEnd });
+            }
+          });
+          segs.sort((a, b) => a.from.localeCompare(b.from));
+          const segBins = segs
+            .map(sg => availableBins.filter(b => b >= sg.from && b <= sg.to))
+            .filter(a => a.length);
+          const zones = segBins.length ? segBins : [availableBins];
+
+          // 0 = 장비에 들어가는 자재, 1 = 반제품 하위 부품, 2 = BOM 에 없는 것
+          const zoneOf = (it) => (it.group === 'Others') ? 2
+            : ((!it.subComParts || !it.subComParts.length) ? 0 : 1);
+
+          // 완제품이 들어갈 만큼 랙을 통째로 준다. 나머지 랙이 반제품 자리.
+          const frontNeed = optimalOrder.filter(i => zoneOf(i) === 0)
+            .reduce((sum, i) => sum + i.boxes, 0);
+          let segTaken = 0, roomSoFar = 0;
+          for (const sg of zones) {
+            if (roomSoFar >= frontNeed - 1e-9) break;
+            roomSoFar += sg.reduce((sum, b) => sum + binCapacity(b, 'PLASTIC-S'), 0);
+            segTaken++;
+          }
+          if (segTaken >= zones.length) segTaken = Math.max(1, zones.length - 1);
+          const frontBins = zones.slice(0, segTaken).flat();
+          const backBins = zones.slice(segTaken).flat();
+          const binsForZone = (z) => (z === 0 ? frontBins : (backBins.length ? backBins : frontBins));
+
+          // 이동을 최소화한다. 목적은 '완제품 앞 칸 / 반제품 뒤 칸' 이고, 번호순은
+          // 찾기 쉬우라고 더한 것이다. 그것 때문에 제자리에 있는 물건을 옮기지 않는다.
+          const load = {};
+          availableBins.forEach(b => { load[b] = 0; });
+          const stay = [], movers = [];
+          optimalOrder.forEach(it => {
+            if (binsForZone(zoneOf(it)).includes(it.bin)) {
+              stay.push(it);
+              load[it.bin] = (load[it.bin] || 0) + it.boxes;
+            } else {
+              movers.push(it);
+            }
+          });
+
           const suggestions = [];
-          const plan = [];             // 전체 배치 (이동 없는 것도 포함)
-          let binIdx = 0;
-          let used = 0;                // 지금 Bin 에 담은 박스 수
+          const plan = stay.map(it => ({ ...it, suggestedBin: it.bin }));
           let overflowed = false;
-          const capNow = (bt) => binCapacity(availableBins[binIdx], bt) || 1;
-          optimalOrder.forEach((item) => {
-            const bt = item.boxType || 'PLASTIC-S';
-            // 이번 걸 넣으면 넘치면 다음 Bin 으로
-            if (used > 0 && used + item.boxes > capNow(bt) && binIdx < availableBins.length - 1) {
-              binIdx++; used = 0;
-            }
-            const suggestedBin = availableBins[binIdx] || item.bin;
-            used += item.boxes;
-            // 한 품목이 Bin 하나보다 크면 그만큼 다음 Bin 까지 쓴다
-            while (used > capNow(bt) && binIdx < availableBins.length - 1) {
-              used -= capNow(bt); binIdx++;
-            }
-            if (used > capNow(bt)) overflowed = true;   // 마지막 Bin 도 넘침
-            plan.push({ ...item, suggestedBin });
-            if (suggestedBin !== item.bin) {
-              suggestions.push({
-                ...item,
-                currentBin: item.bin,
-                suggestedBin,
-                suggestedBinEnd: null,
-              });
+          movers.forEach(it => {
+            const zb = binsForZone(zoneOf(it));
+            const bt = it.boxType || 'PLASTIC-S';
+            let tgt = zb.find(b => (load[b] || 0) + it.boxes <= binCapacity(b, bt) + 1e-9);
+            if (!tgt) { tgt = zb[zb.length - 1] || it.bin; overflowed = true; }
+            load[tgt] = (load[tgt] || 0) + it.boxes;
+            plan.push({ ...it, suggestedBin: tgt });
+            if (tgt !== it.bin) {
+              suggestions.push({ ...it, currentBin: it.bin, suggestedBin: tgt, suggestedBinEnd: null });
               totalMoved++;
             }
-            totalOptimizable++;
           });
+          totalOptimizable += optimalOrder.length;
 
           if (suggestions.length > 0) {
             rackResults[rackId] = {
@@ -26328,6 +26373,13 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                           {data.total} Items | Suggestions: {data.suggestions.length}
                           {data.fixed > 0 && ` | Fixed: ${data.fixed}`}
                         </span>
+                        {/* 자리가 모자라면 알린다. 그대로 옮기면 마지막 Bin 에 안 들어간다. */}
+                        {data.overflowed && (
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold"
+                                title="이 랙은 박스 용량을 넘었습니다. 마지막 Bin 에 다 들어가지 않으니 일부를 다른 랙으로 빼거나 재고를 줄이십시오.">
+                            자리 부족 — 마지막 Bin 초과
+                          </span>
+                        )}
                       </div>
                       {/* 모델 분포 미니 도넛 */}
                       {(() => {
