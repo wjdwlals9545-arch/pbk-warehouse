@@ -2587,6 +2587,13 @@ export default function PBKWarehouseSystem() {
   // 협력업체 담당자 편집기
   // 세금계산서 발행 요청 메일 (업체 앞) — 초안만 만들고 발송은 사람이
   const [taxFlow, setTaxFlow] = useState({ pending: [], mismatch: [], done: [] });
+  // 월마감 묶음에서 펼쳐 둔 것. 묶음은 명세서가 여러 장이라 한 줄로는 안이 안 보인다.
+  const [openBatches, setOpenBatches] = useState(() => new Set());
+  const toggleBatch = (k) => setOpenBatches(prev => {
+    const n = new Set(prev);
+    n.has(k) ? n.delete(k) : n.add(k);
+    return n;
+  });
   const [taxMailInv, setTaxMailInv] = useState(null);   // 대상 거래명세서
   const [taxMailCode, setTaxMailCode] = useState('');   // 고른 업체코드
   const [taxMailTo, setTaxMailTo] = useState([]);       // 고른 주소
@@ -20178,6 +20185,86 @@ ${lines}
             );
           };
 
+          // 자재번호 -> 품명. 발주 데이터에는 품명이 없어 재고에서 가져온다.
+          const descBy = {};
+          (inventoryData || []).forEach(i => {
+            if (!descBy[i.material]) descBy[i.material] = i.description || '';
+          });
+
+          // 묶음 안을 펼쳐 본다 — PO 별 금액과 품목.
+          // 파일 단위로 나누지 않는 이유: 한 PO 를 나눠 납품하면 명세서가 여러 장인데
+          // (미스미 4500245073 은 3장) 장마다 발주 금액을 붙이면 세 배로 세게 된다.
+          const BatchDetail = ({ b }) => {
+            const rows = b.po_breakdown || [];
+            if (!rows.length) return (
+              <div className="px-6 pb-3 text-[11px] text-gray-400">세부 내역이 없습니다.</div>
+            );
+            const sum = rows.reduce((a, r) => a + (r.amount || 0), 0);
+            return (
+              <div className="px-5 pb-4 pt-1 bg-gray-50/70 border-t border-gray-100">
+                <p className="text-[10px] text-gray-400 mb-2">
+                  묶음 마감 건은 거래명세서를 분석하지 않아, 아래는 <b>발주(ME2N) 기준</b> 금액입니다.
+                  실제 청구액은 분할 납품 여부에 따라 다를 수 있습니다.
+                </p>
+                <div className="space-y-2">
+                  {rows.map(r => (
+                    <div key={r.po} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex-wrap">
+                        <span className="font-mono text-xs font-semibold text-gray-700">{r.po}</span>
+                        <span className="text-xs text-gray-800 font-semibold">{money(r.amount, r.currency)}</span>
+                        <span className="text-[10px] text-gray-400">품목 {r.items.length}개</span>
+                        {r.files.length > 1 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
+                            title={r.files.join(', ')}>
+                            명세서 {r.files.length}장 (분할 납품)
+                          </span>
+                        )}
+                        <span className="text-[10px] text-gray-300 truncate flex-1" title={r.files.join(', ')}>
+                          {r.files.join(', ')}
+                        </span>
+                      </div>
+                      {r.items.length > 0 && (
+                        <table className="w-full text-[11px]">
+                          <thead>
+                            <tr className="text-gray-400 border-b border-gray-100">
+                              <th className="text-left font-medium px-3 py-1">자재</th>
+                              <th className="text-left font-medium py-1">품명</th>
+                              <th className="text-right font-medium py-1">수량</th>
+                              <th className="text-right font-medium py-1">단가</th>
+                              <th className="text-right font-medium px-3 py-1">금액</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {r.items.map(it => (
+                              <tr key={it.material_no} className="border-b border-gray-50 last:border-0">
+                                <td className="px-3 py-1 font-mono text-gray-600">{it.material_no}</td>
+                                <td className="py-1 text-gray-500 truncate max-w-[280px]"
+                                  title={descBy[it.material_no] || ''}>
+                                  {descBy[it.material_no] || <span className="text-gray-300">—</span>}
+                                </td>
+                                <td className="py-1 text-right text-gray-600">
+                                  {it.qty !== null && it.qty !== undefined ? Number(it.qty).toLocaleString() : '—'}
+                                </td>
+                                <td className="py-1 text-right text-gray-500">{money(it.unit_price, it.currency)}</td>
+                                <td className="px-3 py-1 text-right font-semibold text-gray-700">
+                                  {money(it.amount, it.currency)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end gap-2 mt-2 pr-1 text-xs">
+                  <span className="text-gray-400">발주 {rows.length}건 합계</span>
+                  <span className="font-bold text-gray-800">{money(sum, b.currency)}</span>
+                </div>
+              </div>
+            );
+          };
+
           // 묶음 한 줄
           const BatchRow = ({ b, mode }) => {
             const code = vendorCodeOf(b.vendor) || vendorCodeOf(b.batch);
@@ -20186,7 +20273,10 @@ ${lines}
             const { stage, rule, win } = batchState(b);
             const st = STAGE[stage];
             const soft = stage === 'collecting' || stage === 'soon';
+            const bk = batchKey(b);
+            const open = openBatches.has(bk);
             return (
+              <div>
               <div className="px-4 py-3 flex items-center gap-3 flex-wrap hover:bg-gray-50">
                 <div className="min-w-[180px]">
                   <div className="flex items-center gap-1.5">
@@ -20200,13 +20290,17 @@ ${lines}
                   </div>
                 </div>
                 <div className="min-w-[150px]">
-                  <div className="text-xs text-gray-600">
+                  <button onClick={() => toggleBatch(bk)}
+                    title={open ? '접기' : '발주별 금액과 품목 보기'}
+                    className="text-xs text-gray-600 hover:text-violet-600 flex items-center gap-1 group">
+                    <span className={`text-[9px] text-gray-400 group-hover:text-violet-500 transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
                     거래명세서 <b>{(b.deliveries || []).length}건</b>
-                    {(b.taxes || []).length > 0 && <span className="text-emerald-600 ml-1.5">· 세금계산서 도착</span>}
-                  </div>
-                  <div className="text-[10px] text-gray-400 font-mono truncate" title={(b.po_numbers || []).join(', ')}>
+                    <span className="text-[10px] text-gray-400 group-hover:text-violet-500">{open ? '접기' : '펼치기'}</span>
+                  </button>
+                  <div className="text-[10px] text-gray-400 font-mono truncate pl-3" title={(b.po_numbers || []).join(', ')}>
                     {(b.po_numbers || []).slice(0, 2).join(', ')}
                     {(b.po_numbers || []).length > 2 && ` 외 ${b.po_numbers.length - 2}`}
+                    {(b.taxes || []).length > 0 && <span className="text-emerald-600 ml-1.5">· 세금계산서 도착</span>}
                   </div>
                 </div>
                 <div className="text-xs text-gray-600 min-w-[110px]">
@@ -20252,6 +20346,8 @@ ${lines}
                     className="px-2 py-1.5 rounded-lg text-[11px] border border-gray-300 text-gray-500 hover:bg-gray-100"
                     title="요청 표시를 지우고 '요청 대기' 로 되돌립니다">대기로</button>
                 )}
+              </div>
+              {open && <BatchDetail b={b} />}
               </div>
             );
           };
