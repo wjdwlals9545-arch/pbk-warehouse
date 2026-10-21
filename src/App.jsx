@@ -20191,71 +20191,125 @@ ${lines}
             if (!descBy[i.material]) descBy[i.material] = i.description || '';
           });
 
-          // 묶음 안을 펼쳐 본다 — PO 별 금액과 품목.
-          // 파일 단위로 나누지 않는 이유: 한 PO 를 나눠 납품하면 명세서가 여러 장인데
+          // 묶음 안을 펼쳐 본다.
+          // 바깥은 PO 로 묶는다 — 한 발주를 나눠 납품하면 명세서가 여러 장인데
           // (미스미 4500245073 은 3장) 장마다 발주 금액을 붙이면 세 배로 세게 된다.
-          const BatchDetail = ({ b }) => {
+          // 명세서 장별 금액·품목은 '명세서 N장' 을 눌러 한 단계 더 펼친다.
+          const ItemTable = ({ items, showPo }) => (
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100">
+                  <th className="text-left font-medium px-3 py-1">자재</th>
+                  <th className="text-left font-medium py-1">품명</th>
+                  {showPo && <th className="text-left font-medium py-1">PO</th>}
+                  <th className="text-right font-medium py-1">수량</th>
+                  <th className="text-right font-medium py-1">단가</th>
+                  <th className="text-right font-medium px-3 py-1">금액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={it.material_no + '-' + i} className="border-b border-gray-50 last:border-0">
+                    <td className="px-3 py-1 font-mono text-gray-600">{it.material_no || '—'}</td>
+                    <td className="py-1 text-gray-500 truncate max-w-[240px]"
+                      title={descBy[it.material_no] || it.name || ''}>
+                      {descBy[it.material_no] || it.name || <span className="text-gray-300">—</span>}
+                    </td>
+                    {showPo && <td className="py-1 font-mono text-[10px] text-gray-400">{it.po_number || '—'}</td>}
+                    <td className="py-1 text-right text-gray-600">
+                      {it.qty !== null && it.qty !== undefined ? Number(it.qty).toLocaleString() : '—'}
+                    </td>
+                    <td className="py-1 text-right text-gray-500">{money(it.unit_price, it.currency)}</td>
+                    <td className="px-3 py-1 text-right font-semibold text-gray-700">{money(it.amount, it.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          );
+
+          const BatchDetail = ({ b, bk }) => {
             const rows = b.po_breakdown || [];
             if (!rows.length) return (
               <div className="px-6 pb-3 text-[11px] text-gray-400">세부 내역이 없습니다.</div>
             );
+            const byName = {};
+            (b.deliveries || []).forEach(d => { byName[d.name] = d; });
             const sum = rows.reduce((a, r) => a + (r.amount || 0), 0);
             return (
               <div className="px-5 pb-4 pt-1 bg-gray-50/70 border-t border-gray-100">
                 <p className="text-[10px] text-gray-400 mb-2">
-                  묶음 마감 건은 거래명세서를 분석하지 않아, 아래는 <b>발주(ME2N) 기준</b> 금액입니다.
-                  실제 청구액은 분할 납품 여부에 따라 다를 수 있습니다.
+                  바깥 금액은 <b>발주(ME2N) 기준</b>입니다. <b>명세서 N장</b> 을 누르면 거래명세서 장별
+                  금액과 품목을 봅니다. 명세서 금액은 <b>공급가액</b>이라 발주와 바로 견줄 수 있습니다.
                 </p>
                 <div className="space-y-2">
-                  {rows.map(r => (
-                    <div key={r.po} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-                      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex-wrap">
-                        <span className="font-mono text-xs font-semibold text-gray-700">{r.po}</span>
-                        <span className="text-xs text-gray-800 font-semibold">{money(r.amount, r.currency)}</span>
-                        <span className="text-[10px] text-gray-400">품목 {r.items.length}개</span>
-                        {r.files.length > 1 && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
-                            title={r.files.join(', ')}>
-                            명세서 {r.files.length}장 (분할 납품)
-                          </span>
-                        )}
-                        <span className="text-[10px] text-gray-300 truncate flex-1" title={r.files.join(', ')}>
-                          {r.files.join(', ')}
-                        </span>
-                      </div>
-                      {r.items.length > 0 && (
-                        <table className="w-full text-[11px]">
-                          <thead>
-                            <tr className="text-gray-400 border-b border-gray-100">
-                              <th className="text-left font-medium px-3 py-1">자재</th>
-                              <th className="text-left font-medium py-1">품명</th>
-                              <th className="text-right font-medium py-1">수량</th>
-                              <th className="text-right font-medium py-1">단가</th>
-                              <th className="text-right font-medium px-3 py-1">금액</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {r.items.map(it => (
-                              <tr key={it.material_no} className="border-b border-gray-50 last:border-0">
-                                <td className="px-3 py-1 font-mono text-gray-600">{it.material_no}</td>
-                                <td className="py-1 text-gray-500 truncate max-w-[280px]"
-                                  title={descBy[it.material_no] || ''}>
-                                  {descBy[it.material_no] || <span className="text-gray-300">—</span>}
-                                </td>
-                                <td className="py-1 text-right text-gray-600">
-                                  {it.qty !== null && it.qty !== undefined ? Number(it.qty).toLocaleString() : '—'}
-                                </td>
-                                <td className="py-1 text-right text-gray-500">{money(it.unit_price, it.currency)}</td>
-                                <td className="px-3 py-1 text-right font-semibold text-gray-700">
-                                  {money(it.amount, it.currency)}
-                                </td>
-                              </tr>
+                  {rows.map(r => {
+                    const docs = r.files.map(f => byName[f]).filter(Boolean);
+                    const parsed = docs.filter(d => d.total_supply !== null && d.total_supply !== undefined);
+                    // 명세서 공급가 합이 발주와 맞으면 그 발주는 다 들어온 것이다
+                    const got = parsed.length ? parsed.reduce((a, d) => a + d.total_supply, 0) : null;
+                    const full = got !== null && r.amount !== null && Math.abs(got - r.amount) < 1;
+                    const dk = bk + '|' + r.po;
+                    const dopen = openBatches.has(dk);
+                    return (
+                      <div key={r.po} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex-wrap">
+                          <span className="font-mono text-xs font-semibold text-gray-700">{r.po}</span>
+                          <span className="text-xs text-gray-800 font-semibold">{money(r.amount, r.currency)}</span>
+                          <span className="text-[10px] text-gray-400">발주 {r.items.length}품목</span>
+                          <button onClick={() => toggleBatch(dk)}
+                            title={dopen ? '접기' : '거래명세서 장별 금액·품목 보기'}
+                            className={'text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition ' + (
+                              r.files.length > 1
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-100')}>
+                            <span className={'text-[8px] transition-transform ' + (dopen ? 'rotate-90' : '')}>▶</span>
+                            명세서 {r.files.length}장{r.files.length > 1 && ' (분할 납품)'}
+                          </button>
+                          {got !== null && (
+                            <span className={'text-[10px] px-1.5 py-0.5 rounded border ' + (
+                              full ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                   : 'bg-slate-50 text-slate-500 border-slate-200')}
+                              title={full ? '명세서 공급가 합이 발주 금액과 일치합니다'
+                                          : '아직 발주 수량이 다 들어오지 않았습니다'}>
+                              명세서 {money(got, r.currency)}{full ? ' · 발주와 일치' : ' · 일부'}
+                            </span>
+                          )}
+                        </div>
+
+                        {!dopen && r.items.length > 0 && <ItemTable items={r.items} />}
+
+                        {dopen && (
+                          <div className="p-2 space-y-2 bg-gray-50/60">
+                            {docs.length === 0 && (
+                              <p className="text-[11px] text-gray-400 px-1">명세서 정보가 없습니다.</p>
+                            )}
+                            {docs.map(dc => (
+                              <div key={dc.name} className="rounded border border-gray-200 bg-white overflow-hidden">
+                                <div className="flex items-center gap-2 px-3 py-1 bg-white border-b border-gray-100 flex-wrap">
+                                  <span className="text-[11px] text-gray-600 truncate flex-1" title={dc.name}>
+                                    📄 {dc.name}
+                                  </span>
+                                  {dc.total_supply !== null && dc.total_supply !== undefined ? (
+                                    <>
+                                      <span className="text-xs font-semibold text-gray-800">
+                                        {money(dc.total_supply, dc.currency)}
+                                      </span>
+                                      <span className="text-[10px] text-gray-400" title="부가세 포함 금액">
+                                        VAT포함 {money(dc.total_amount, dc.currency)}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="text-[10px] text-gray-400">분석 대기 중</span>
+                                  )}
+                                </div>
+                                {(dc.items || []).length > 0 && <ItemTable items={dc.items} showPo />}
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </div>
-                  ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
                 <div className="flex justify-end gap-2 mt-2 pr-1 text-xs">
                   <span className="text-gray-400">발주 {rows.length}건 합계</span>
@@ -20347,7 +20401,7 @@ ${lines}
                     title="요청 표시를 지우고 '요청 대기' 로 되돌립니다">대기로</button>
                 )}
               </div>
-              {open && <BatchDetail b={b} />}
+              {open && <BatchDetail b={b} bk={bk} />}
               </div>
             );
           };
