@@ -20006,13 +20006,62 @@ ${lines}
                 </div>
                 {/* 단가 대조: 불일치뿐 아니라 '대조 못 한 것'도 보여준다.
                     여러 PO 가 한 명세서에 묶이면 둘째 PO 품목이 조용히 넘어갔다. */}
-                {(() => {
+                <PriceCheckBlock docs={grp.items
+                  .map(g => ({ g, det: g.price_check?.detail || [] }))
+                  .filter(d => d.det.length)} />
+
+                {/* 여러 건이면 무엇이 묶였는지 보이게 */}
+                {n > 1 && (
+                  <div className="mt-2 ml-1 space-y-0.5">
+                    {grp.items.map(g => (
+                      <div key={g.key} className="flex items-center gap-2 text-[11px] text-gray-500">
+                        <span className="text-gray-300">└</span>
+                        <span className="font-mono">{g.po_number}</span>
+                        <span className="text-gray-400">{money(g.delivery?.total_amount, g.currency)}</span>
+                        <span className="text-gray-300 truncate">{g.delivery?.filename}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          };
+
+          const STAGE = {
+            collecting: { label: '수집 중',   cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+            soon:       { label: '마감 임박', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+            due:        { label: '마감 주간', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+            late:       { label: '마감 지남', cls: 'bg-red-50 text-red-700 border-red-200' },
+          };
+          const md = (s) => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : '';
+          // 명세서 금액이 없으면(입고완료는 분석 json 을 지운다) 발주 기준 금액으로 대체
+          const amountOf = (g) => {
+            const v = g.delivery?.total_amount ?? g.tax?.total_amount;
+            if (v !== null && v !== undefined) return { v, cur: g.currency, est: false };
+            if (g.po_amount !== null && g.po_amount !== undefined)
+              return { v: g.po_amount, cur: g.po_currency, est: true, partial: !!g.po_amount_partial };
+            return { v: null, cur: g.currency, est: false };
+          };
+          const Amount = ({ g }) => {
+            const a = amountOf(g);
+            if (a.v === null) return <span className="text-gray-300">—</span>;
+            return (
+              <span className={a.est ? 'text-gray-400' : ''}
+                title={a.est ? ('실제 거래액이 아닙니다 — 발주 전체(단가 x 수량) 기준으로 계산한 값입니다.\n'
+                        + '분할 납품이면 실제 거래액보다 큽니다.'
+                        + (a.partial ? '\n여러 PO 가 묶인 건이라 첫 PO 분만 집계됐습니다' : '')) : ''}>
+                {money(a.v, a.cur)}{a.est && <span className="ml-0.5 text-[10px]">{a.partial ? '(발주 전체·일부PO)' : '(발주 전체)'}</span>}
+              </span>
+            );
+          };
+
+          // 단가 대조 표 — 개별 건과 묶음이 같은 표를 쓴다.
+          // docs = [{ g, det }] · g 는 명세서가 달린 그룹, det 는 price_check.detail
+          const PriceCheckBlock = ({ docs }) => {
+            if (!docs || !docs.length) return null;
                   // 전 품목을 보여준다. 문제 있는 줄만 추리면 명세서 품목 수와 안 맞아 혼란스럽다.
                   const WARN = new Set(['other_po', 'ambiguous', 'none', 'by_price']);
                   // 거래명세서 한 장이 표 하나. 여러 장이 섞이면 어느 명세서 품목인지 알 수 없다.
-                  const docs = grp.items
-                    .map(g => ({ g, det: g.price_check?.detail || [] }))
-                    .filter(d => d.det.length);
                   if (!docs.length) return null;
                   const rows = docs.flatMap(d => d.det);
                   // 업체 예외(DigiKey 등)는 차이를 보여주되 불일치로 세지 않는다
@@ -20153,51 +20202,6 @@ ${lines}
                     </p>
                   </div>
                   );
-                })()}
-
-                {/* 여러 건이면 무엇이 묶였는지 보이게 */}
-                {n > 1 && (
-                  <div className="mt-2 ml-1 space-y-0.5">
-                    {grp.items.map(g => (
-                      <div key={g.key} className="flex items-center gap-2 text-[11px] text-gray-500">
-                        <span className="text-gray-300">└</span>
-                        <span className="font-mono">{g.po_number}</span>
-                        <span className="text-gray-400">{money(g.delivery?.total_amount, g.currency)}</span>
-                        <span className="text-gray-300 truncate">{g.delivery?.filename}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          };
-
-          const STAGE = {
-            collecting: { label: '수집 중',   cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-            soon:       { label: '마감 임박', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-            due:        { label: '마감 주간', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
-            late:       { label: '마감 지남', cls: 'bg-red-50 text-red-700 border-red-200' },
-          };
-          const md = (s) => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : '';
-          // 명세서 금액이 없으면(입고완료는 분석 json 을 지운다) 발주 기준 금액으로 대체
-          const amountOf = (g) => {
-            const v = g.delivery?.total_amount ?? g.tax?.total_amount;
-            if (v !== null && v !== undefined) return { v, cur: g.currency, est: false };
-            if (g.po_amount !== null && g.po_amount !== undefined)
-              return { v: g.po_amount, cur: g.po_currency, est: true, partial: !!g.po_amount_partial };
-            return { v: null, cur: g.currency, est: false };
-          };
-          const Amount = ({ g }) => {
-            const a = amountOf(g);
-            if (a.v === null) return <span className="text-gray-300">—</span>;
-            return (
-              <span className={a.est ? 'text-gray-400' : ''}
-                title={a.est ? ('실제 거래액이 아닙니다 — 발주 전체(단가 x 수량) 기준으로 계산한 값입니다.\n'
-                        + '분할 납품이면 실제 거래액보다 큽니다.'
-                        + (a.partial ? '\n여러 PO 가 묶인 건이라 첫 PO 분만 집계됐습니다' : '')) : ''}>
-                {money(a.v, a.cur)}{a.est && <span className="ml-0.5 text-[10px]">{a.partial ? '(발주 전체·일부PO)' : '(발주 전체)'}</span>}
-              </span>
-            );
           };
 
           // 자재번호 -> 품명. 발주 데이터에는 품명이 없어 재고에서 가져온다.
@@ -20210,21 +20214,27 @@ ${lines}
           // 바깥은 PO 로 묶는다 — 한 발주를 나눠 납품하면 명세서가 여러 장인데
           // (미스미 4500245073 은 3장) 장마다 발주 금액을 붙이면 세 배로 세게 된다.
           // 명세서 장별 금액·품목은 '명세서 N장' 을 눌러 한 단계 더 펼친다.
-          const ItemTable = ({ items, showPo }) => (
+          // delivered 를 주면 '명세서' 열이 붙는다 — 발주 품목 중 무엇이 들어왔는지.
+          const ItemTable = ({ items, showPo, delivered }) => (
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="text-gray-400 border-b border-gray-100">
                   <th className="text-left font-medium px-3 py-1">자재</th>
                   <th className="text-left font-medium py-1">품명</th>
                   {showPo && <th className="text-left font-medium py-1">PO</th>}
-                  <th className="text-right font-medium py-1">수량</th>
+                  <th className="text-right font-medium py-1">{delivered ? '발주 수량' : '수량'}</th>
+                  {delivered && <th className="text-right font-medium py-1">명세서</th>}
                   <th className="text-right font-medium py-1">단가</th>
                   <th className="text-right font-medium px-3 py-1">금액</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it, i) => (
-                  <tr key={it.material_no + '-' + i} className="border-b border-gray-50 last:border-0">
+                {items.map((it, i) => {
+                  const got = delivered ? delivered[it.material_no] : undefined;
+                  const none = delivered && (got === undefined);
+                  return (
+                  <tr key={it.material_no + '-' + i}
+                    className={'border-b border-gray-50 last:border-0 ' + (none ? 'bg-amber-50/40' : '')}>
                     <td className="px-3 py-1 font-mono text-gray-600">{it.material_no || '—'}</td>
                     <td className="py-1 text-gray-500 truncate max-w-[240px]"
                       title={descBy[it.material_no] || it.name || ''}>
@@ -20234,27 +20244,45 @@ ${lines}
                     <td className="py-1 text-right text-gray-600">
                       {it.qty !== null && it.qty !== undefined ? Number(it.qty).toLocaleString() : '—'}
                     </td>
+                    {delivered && (
+                      <td className="py-1 text-right">
+                        {none ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold"
+                            title="이 거래명세서에는 없는 품목입니다 (아직 안 들어옴)">미납</span>
+                        ) : got < (it.qty || 0) ? (
+                          <span className="text-amber-700 font-semibold" title="발주 수량보다 적게 들어왔습니다">
+                            {Number(got).toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-emerald-700 font-semibold">{Number(got).toLocaleString()}</span>
+                        )}
+                      </td>
+                    )}
                     <td className="py-1 text-right text-gray-500">{money(it.unit_price, it.currency)}</td>
-                    <td className="px-3 py-1 text-right font-semibold text-gray-700">{money(it.amount, it.currency)}</td>
+                    <td className={'px-3 py-1 text-right font-semibold ' + (none ? 'text-gray-400' : 'text-gray-700')}>
+                      {money(it.amount, it.currency)}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           );
 
           const BatchDetail = ({ b, bk }) => {
             const rows = b.po_breakdown || [];
-            if (!rows.length) return (
+            const docsAll = (b.deliveries || []);
+            if (!rows.length && !docsAll.length) return (
               <div className="px-6 pb-3 text-[11px] text-gray-400">세부 내역이 없습니다.</div>
             );
             const byName = {};
-            (b.deliveries || []).forEach(d => { byName[d.name] = d; });
-            const sum = rows.reduce((a, r) => a + (r.amount || 0), 0);
+            docsAll.forEach(d => { byName[d.name] = d; });
             return (
               <div className="px-5 pb-4 pt-1 bg-gray-50/70 border-t border-gray-100">
                 <p className="text-[10px] text-gray-400 mb-2">
-                  바깥 금액은 <b>발주(ME2N) 기준</b>입니다. <b>명세서 N장</b> 을 누르면 거래명세서 장별
-                  금액과 품목을 봅니다. 명세서 금액은 <b>공급가액</b>이라 발주와 바로 견줄 수 있습니다.
+                  발주 한 건이 블록 하나입니다. <b>명세서 N장</b> 을 누르면 그 발주의 거래명세서별
+                  품목과 단가 대조를 봅니다. 머리줄의 <b>발주</b> 금액과 <b>명세서</b> 금액을 견주면
+                  얼마나 들어왔는지 알 수 있습니다.
                 </p>
                 <div className="space-y-2">
                   {rows.map(r => {
@@ -20265,14 +20293,24 @@ ${lines}
                     const full = got !== null && r.amount !== null && Math.abs(got - r.amount) < 1;
                     const dk = bk + '|' + r.po;
                     const dopen = openBatches.has(dk);
+                    // 개별 건과 같은 표를 쓰려고 모양을 맞춘다
+                    const pcDocs = docs
+                      .map(d => ({
+                        g: { key: b.key + '|' + d.name, po_number: d.po_number || r.po,
+                             currency: d.currency || r.currency, price_tolerant: b.price_tolerant,
+                             delivery: { name: d.name, filename: d.filename,
+                                         total_amount: d.total_amount } },
+                        det: d.price_check?.detail || [],
+                      }))
+                      .filter(d => d.det.length);
                     return (
                       <div key={r.po} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
                         <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 border-b border-gray-100 flex-wrap">
                           <span className="font-mono text-xs font-semibold text-gray-700">{r.po}</span>
-                          <span className="text-xs text-gray-800 font-semibold">{money(r.amount, r.currency)}</span>
-                          <span className="text-[10px] text-gray-400">발주 {r.items.length}품목</span>
+                          <span className="text-[10px] text-gray-400">발주</span>
+                          <span className="text-xs text-gray-700 font-semibold">{money(r.amount, r.currency)}</span>
                           <button onClick={() => toggleBatch(dk)}
-                            title={dopen ? '접기' : '거래명세서 장별 금액·품목 보기'}
+                            title={dopen ? '접기' : '거래명세서 품목과 단가 대조 보기'}
                             className={'text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition ' + (
                               r.files.length > 1
                                 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
@@ -20283,52 +20321,58 @@ ${lines}
                           {got !== null && (
                             <span className={'text-[10px] px-1.5 py-0.5 rounded border ' + (
                               full ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                   : 'bg-slate-50 text-slate-500 border-slate-200')}
-                              title={full ? '명세서 공급가 합이 발주 금액과 일치합니다'
+                                   : 'bg-amber-50 text-amber-700 border-amber-200')}
+                              title={full ? '명세서 공급가 합이 발주 금액과 일치합니다 — 다 들어왔습니다'
                                           : '아직 발주 수량이 다 들어오지 않았습니다'}>
-                              명세서 {money(got, r.currency)}{full ? ' · 발주와 일치' : ' · 일부'}
+                              명세서 {money(got, r.currency)}
+                              {full ? ' · 다 들어옴' : ' · 미납 ' + money(r.amount - got, r.currency)}
                             </span>
                           )}
                         </div>
-
-                        {!dopen && r.items.length > 0 && <ItemTable items={r.items} />}
 
                         {dopen && (
                           <div className="p-2 space-y-2 bg-gray-50/60">
                             {docs.length === 0 && (
                               <p className="text-[11px] text-gray-400 px-1">명세서 정보가 없습니다.</p>
                             )}
-                            {docs.map(dc => (
-                              <div key={dc.name} className="rounded border border-gray-200 bg-white overflow-hidden">
-                                <div className="flex items-center gap-2 px-3 py-1 bg-white border-b border-gray-100 flex-wrap">
-                                  <span className="text-[11px] text-gray-600 truncate flex-1" title={dc.name}>
-                                    📄 {dc.name}
-                                  </span>
-                                  {dc.total_supply !== null && dc.total_supply !== undefined ? (
-                                    <>
-                                      <span className="text-xs font-semibold text-gray-800">
-                                        {money(dc.total_supply, dc.currency)}
-                                      </span>
-                                      <span className="text-[10px] text-gray-400" title="부가세 포함 금액">
-                                        VAT포함 {money(dc.total_amount, dc.currency)}
-                                      </span>
-                                    </>
+                            {docs.map(dc => {
+                              const one = pcDocs.filter(x => x.g.delivery.name === dc.name);
+                              return (
+                                <div key={dc.name} className="rounded border border-gray-200 bg-white overflow-hidden">
+                                  <div className="flex items-center gap-2 px-3 py-1 bg-white border-b border-gray-100 flex-wrap">
+                                    <span className="text-[11px] text-gray-600 truncate flex-1" title={dc.name}>
+                                      📄 {dc.name}
+                                    </span>
+                                    {dc.total_supply !== null && dc.total_supply !== undefined ? (
+                                      <>
+                                        <span className="text-xs font-semibold text-gray-800">
+                                          {money(dc.total_supply, dc.currency)}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400" title="부가세 포함 금액">
+                                          VAT포함 {money(dc.total_amount, dc.currency)}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400">분석 대기 중</span>
+                                    )}
+                                  </div>
+                                  {one.length ? (
+                                    <div className="px-1 pb-1">
+                                      <PriceCheckBlock docs={one} />
+                                    </div>
                                   ) : (
-                                    <span className="text-[10px] text-gray-400">분석 대기 중</span>
+                                    <p className="text-[11px] text-gray-400 px-3 py-2">
+                                      단가 대조 결과가 없습니다 (분석 대기 중이거나 품목을 못 읽었습니다).
+                                    </p>
                                   )}
                                 </div>
-                                {(dc.items || []).length > 0 && <ItemTable items={dc.items} showPo />}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
                     );
                   })}
-                </div>
-                <div className="flex justify-end gap-2 mt-2 pr-1 text-xs">
-                  <span className="text-gray-400">발주 {rows.length}건 합계</span>
-                  <span className="font-bold text-gray-800">{money(sum, b.currency)}</span>
                 </div>
               </div>
             );
