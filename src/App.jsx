@@ -20015,7 +20015,9 @@ ${lines}
                     .filter(d => d.det.length);
                   if (!docs.length) return null;
                   const rows = docs.flatMap(d => d.det);
-                  const nBad = rows.filter(x => x.ok === false).length;
+                  // 업체 예외(DigiKey 등)는 차이를 보여주되 불일치로 세지 않는다
+                  const nBad = rows.filter(x => x.ok === false && !x.tolerated).length;
+                  const nTol = rows.filter(x => x.tolerated).length;
                   const nWarn = rows.filter(x => x.ok !== false && WARN.has(x.source)).length;
                   // 명세서 총액은 VAT 포함, 품목 합계는 공급가액. 1.1 배 차이는 정상이다.
                   const amtMatch = (supply, total) => {
@@ -20029,6 +20031,8 @@ ${lines}
                     ? { b: 'border-red-200', bg: 'bg-red-50/50', t: 'text-red-700' }
                     : nWarn
                     ? { b: 'border-amber-200', bg: 'bg-amber-50/50', t: 'text-amber-700' }
+                    : nTol
+                    ? { b: 'border-slate-200', bg: 'bg-slate-50/60', t: 'text-slate-600' }
                     : { b: 'border-emerald-200', bg: 'bg-emerald-50/40', t: 'text-emerald-700' };
                   const MARK = {
                     item_po:   { label: '명세서 기재', cls: 'bg-emerald-100 text-emerald-700' },
@@ -20036,6 +20040,7 @@ ${lines}
                     other_po:  { label: '추정',       cls: 'bg-sky-100 text-sky-700' },
                     ambiguous: { label: '판단 보류',   cls: 'bg-amber-100 text-amber-700' },
                     none:      { label: '발주에 없음', cls: 'bg-rose-100 text-rose-700' },
+                    tolerated: { label: '업체 예외',   cls: 'bg-slate-200 text-slate-700' },
                   };
                   return (
                   <div className={`mt-2 ml-1 rounded-lg border ${tone.b} ${tone.bg} p-2`}>
@@ -20044,7 +20049,8 @@ ${lines}
                       {docs.length > 1 && <> · 거래명세서 {docs.length}장</>}
                       {nBad > 0 && <> · 불일치 {nBad}건</>}
                       {nWarn > 0 && <> · 확인 필요 {nWarn}건</>}
-                      {!nBad && !nWarn && <> · 전부 일치</>}
+                      {nTol > 0 && <> · 업체 예외 {nTol}건</>}
+                      {!nBad && !nWarn && !nTol && <> · 전부 일치</>}
                     </div>
 
                     {docs.map(({ g, det }, di) => {
@@ -20073,7 +20079,8 @@ ${lines}
                             </thead>
                             <tbody>
                               {det.map(x => {
-                                const mk = x.ok === false ? null : MARK[x.source];
+                                const mk = x.tolerated ? MARK.tolerated
+                                         : x.ok === false ? null : MARK[x.source];
                                 const plain = x.ok === true && !WARN.has(x.source);
                                 return (
                                   <tr key={`${g.key}_${x.material}`} className={`align-top ${plain ? 'text-gray-500' : 'text-gray-700'}`}>
@@ -20093,7 +20100,9 @@ ${lines}
                                     </td>
                                     <td className="pr-3 text-right tabular-nums">{x.qty?.toLocaleString()}</td>
                                     <td className="pr-4 text-right tabular-nums font-semibold text-gray-700">{money(x.inv_amount, x.currency)}</td>
-                                    <td className={`pr-3 text-right tabular-nums font-semibold ${x.ok === false ? 'text-red-700' : 'text-gray-400'}`}>
+                                    <td className={`pr-3 text-right tabular-nums font-semibold ${
+                                      x.tolerated ? 'text-slate-500' : x.ok === false ? 'text-red-700' : 'text-gray-400'}`}
+                                      title={x.tolerated ? 'SAP 발주 단가의 소수점 한계로 늘 생기는 차이입니다. 구매담당자가 Invoice 금액을 고치고 서명합니다.' : ''}>
                                       {/* 대조를 못 한 줄에 0원을 찍으면 검증된 것처럼 읽힌다 */}
                                       {x.ok != null && x.po_amount != null
                                         ? money((x.inv_amount || 0) - (x.po_amount || 0), x.currency)
@@ -20116,7 +20125,10 @@ ${lines}
                                   <td className="pr-4 text-right tabular-nums font-bold">{money(docTotal, cur)}</td>
                                   <td className="pr-3 text-right">
                                     {m === 'diff'
-                                      ? <span className="text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 font-semibold">불일치</span>
+                                      ? (g.price_tolerant
+                                          ? <span className="text-[10px] px-1 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold"
+                                              title={'구매담당자가 Invoice 의 단가·금액을 고쳐 적고 서명하는 업체입니다. 인쇄된 합계는 고치기 전 값이라 공급가액 합계와 어긋나는 것이 정상입니다.'}>업체 예외</span>
+                                          : <span className="text-[10px] px-1 py-0.5 rounded bg-red-100 text-red-700 font-semibold">불일치</span>)
                                       : <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">맞음</span>}
                                   </td>
                                 </tr>
@@ -20134,7 +20146,10 @@ ${lines}
                       <b className="text-violet-700"> 단가로 특정</b> = 명세서에 자재번호가 없어 그 발주 안에서 단가로 찾은 품목 (단가 검증은 못 한 셈) ·
                       <b className="text-sky-700"> 추정</b> = 어디에도 PO 표기가 없어 자재번호로 찾아낸 발주 ·
                       <b className="text-amber-700"> 판단 보류</b> = 여러 발주에 서로 다른 단가로 있어 어느 건인지 단정 못 함 ·
-                      <b className="text-rose-700"> 발주에 없음</b> = 어느 발주에도 없는 자재
+                      <b className="text-rose-700"> 발주에 없음</b> = 어느 발주에도 없는 자재 ·
+                      <b className="text-slate-600"> 업체 예외</b> = 단가 차이를 허용하기로 한 업체
+                      (DigiKey — SAP 발주 단가가 소수점 첫째 자리까지만 들어가 늘 어긋난다.
+                      구매담당자가 Invoice 금액을 고치고 서명한다)
                     </p>
                   </div>
                   );
