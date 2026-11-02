@@ -2764,6 +2764,8 @@ export default function PBKWarehouseSystem() {
 
   // 🤖 AI 챗봇 상태
   const [chatOpen, setChatOpen] = useState(false);
+  // 말풍선이 표를 가릴 때 ✕ 로 끈다. 저장하지 않으므로 다시 접속하면 나온다.
+  const [chatHidden, setChatHidden] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
@@ -10940,8 +10942,18 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
       </div>
 
       {/* 🤖 AI 챗봇 플로팅 UI */}
-      {!chatOpen && (
-        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[80] flex flex-col items-end gap-2">
+      {!chatOpen && !chatHidden && (
+        <div className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-[80] flex flex-col items-end gap-2 group">
+          {/* 가릴 때 끄는 단추. 폰에서는 말풍선이 안 떠서 항상 보이게 둔다 */}
+          <button onClick={() => setChatHidden(true)}
+            title="챗봇을 숨깁니다 — 페이지를 다시 열면 나타납니다"
+            aria-label="챗봇 숨기기"
+            className={`w-5 h-5 rounded-full border shadow-sm text-[11px] leading-none flex items-center justify-center transition
+              md:opacity-0 md:group-hover:opacity-100 ${
+              darkMode ? 'bg-gray-800 border-gray-600 text-gray-300 hover:text-white'
+                       : 'bg-white border-gray-300 text-gray-500 hover:text-gray-800'}`}>
+            ✕
+          </button>
           <div className={`hidden md:block ${darkMode ? 'bg-gray-800 text-gray-200 border-gray-700' : 'bg-white text-gray-700 border-gray-200'} px-3 py-2 rounded-xl shadow-lg text-xs font-medium border`}
             style={{animation: 'chatFloat 3s ease-in-out infinite'}}>
             💡 궁금한 게 있으면 물어보세요!
