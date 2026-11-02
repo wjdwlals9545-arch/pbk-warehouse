@@ -18448,10 +18448,31 @@ ${lines}
                                         );
                                       }))}
                                     </tbody>
+                                    {/* 합계 — 증가/감소 각각과 둘을 합친 금액.
+                                        합계는 상쇄가 아니라 절대값 합이다 (Adjust Cost 에 들어가는 값). */}
+                                    <tfoot>
+                                      <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold text-gray-800">
+                                        <td className="px-2 py-2" colSpan={3}>{selectedYear}년 합계</td>
+                                        <td className="px-2 py-2 text-right text-blue-700">{fmt(totalUp)}</td>
+                                        <td className="px-2 py-2 text-right text-red-700">{fmt(totalDown)}</td>
+                                        <td className="px-2 py-2 text-center">{allCnt}</td>
+                                        <td className="px-2 py-2" colSpan={2} />
+                                      </tr>
+                                      <tr className="bg-violet-50 font-bold text-violet-800">
+                                        <td className="px-2 py-2" colSpan={3}
+                                          title="증가와 감소를 절대값으로 더한 금액입니다. 상쇄하지 않습니다.">
+                                          증가 + 감소 (차이금액 합계)
+                                        </td>
+                                        <td className="px-2 py-2 text-right" colSpan={2}>{fmt(totalUp + totalDown)}원</td>
+                                        <td className="px-2 py-2" colSpan={3} />
+                                      </tr>
+                                    </tfoot>
                                   </table>
                                 </div>
                                 <div className="mt-1.5 text-[10px] text-gray-400">
                                   711 = 재고 감소, 712 = 재고 증가. 금액은 절대값 합계이며 Adjust Cost 계산에 쓰이는 값과 같습니다.
+                                  <b className="text-gray-500"> 증가와 감소는 상쇄하지 않고 더합니다</b> — 장부와 실물이
+                                  얼마나 어긋났는지를 보는 값이라, 100원 늘고 100원 줄었으면 틀린 건 200원어치입니다.
                                 </div>
                               </div>
                             );
