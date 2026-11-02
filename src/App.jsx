@@ -20292,9 +20292,9 @@ ${lines}
             return (
               <div className="px-5 pb-4 pt-1 bg-gray-50/70 border-t border-gray-100">
                 <p className="text-[10px] text-gray-400 mb-2">
-                  발주 한 건이 블록 하나입니다. <b>명세서 N장</b> 을 누르면 그 발주의 거래명세서별
-                  품목과 단가 대조를 봅니다. 머리줄의 <b>발주</b> 금액과 <b>명세서</b> 금액을 견주면
-                  얼마나 들어왔는지 알 수 있습니다.
+                  발주 한 건이 블록 하나입니다. 머리줄의 <b>발주</b> 금액과 <b>명세서</b> 금액을
+                  견주면 얼마나 들어왔는지 알 수 있고, 아래에 거래명세서별 품목과 단가 대조가 있습니다.
+                  길면 <b>명세서 N장</b> 을 눌러 접으십시오.
                 </p>
                 <div className="space-y-2">
                   {rows.map(r => {
@@ -20303,8 +20303,10 @@ ${lines}
                     // 명세서 공급가 합이 발주와 맞으면 그 발주는 다 들어온 것이다
                     const got = parsed.length ? parsed.reduce((a, d) => a + d.total_supply, 0) : null;
                     const full = got !== null && r.amount !== null && Math.abs(got - r.amount) < 1;
-                    const dk = bk + '|' + r.po;
-                    const dopen = openBatches.has(dk);
+                    // 안쪽은 '펼침' 이 기본이다. 묶음을 열자마자 단가 대조가 보여야지,
+                    // 두 번 눌러야 나오면 번거롭다. 그래서 Set 에 있으면 '접은 것' 으로 센다.
+                    const dk = 'fold:' + bk + '|' + r.po;
+                    const dopen = !openBatches.has(dk);
                     // 개별 건과 같은 표를 쓰려고 모양을 맞춘다
                     const pcDocs = docs
                       .map(d => ({
@@ -20322,7 +20324,7 @@ ${lines}
                           <span className="text-[10px] text-gray-400">발주</span>
                           <span className="text-xs text-gray-700 font-semibold">{money(r.amount, r.currency)}</span>
                           <button onClick={() => toggleBatch(dk)}
-                            title={dopen ? '접기' : '거래명세서 품목과 단가 대조 보기'}
+                            title={dopen ? '이 발주의 명세서 내역을 접습니다' : '거래명세서 품목과 단가 대조 보기'}
                             className={'text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition ' + (
                               r.files.length > 1
                                 ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
