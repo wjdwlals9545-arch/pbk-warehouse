@@ -2626,6 +2626,18 @@ export default function PBKWarehouseSystem() {
     n.has(k) ? n.delete(k) : n.add(k);
     return n;
   });
+  // 지난 기록 — 입고완료 보관함(연/월 폴더)을 읽어 온다.
+  // 이번 달만 보던 화면이라 '지난달에 누가 뭘 얼마에 넣었나' 를 볼 데가 없었다.
+  const [histOpen, setHistOpen]   = useState(false);
+  const [histYM, setHistYM]       = useState(null);    // { year, month }
+  const [histMonths, setHistMonths] = useState([]);    // [{year, months:[{month,files}]}]
+  const [histData, setHistData]   = useState(null);    // { rows, unparsed_total, ... }
+  const [histLoading, setHistLoading] = useState(false);
+  const [histErr, setHistErr]     = useState('');
+  const [histQuery, setHistQuery] = useState('');
+  const [histOpenRows, setHistOpenRows] = useState(() => new Set());
+  const [histBusy, setHistBusy]   = useState(() => new Set());   // 분석 중인 파일
+
   const [taxMailInv, setTaxMailInv] = useState(null);   // 대상 거래명세서
   const [taxMailCode, setTaxMailCode] = useState('');   // 고른 업체코드
   const [taxMailTo, setTaxMailTo] = useState([]);       // 고른 주소
@@ -4767,6 +4779,88 @@ export default function PBKWarehouseSystem() {
   const [migoServerOnline, setMigoServerOnline] = useState(false);
   const [migoSelectedStage, setMigoSelectedStage] = useState('waiting_gr');
   const [migoIssueFilter, setMigoIssueFilter]     = useState('all'); // 'all' | 'price_error' | 'failed'
+  // 보관함에 실제로 있는 연/월. 없는 달을 고를 수 없게 먼저 받는다.
+  const loadHistMonths = async () => {
+    try {
+      const r = await fetch(`${MIGO_API}/api/history/months`, { signal: AbortSignal.timeout(20000) });
+      const j = await r.json();
+      const years = j.years || [];
+      setHistMonths(years);
+      // 처음 열면 지난달부터 보여준다 — 보통 그게 궁금해서 연다
+      if (!histYM && years.length) {
+        const now = new Date();
+        let y = now.getFullYear(), m = now.getMonth();   // 0-based = 지난달
+        if (m === 0) { y -= 1; m = 12; }
+        const has = years.find(v => v.year === y)?.months.some(x => x.month === m);
+        setHistYM(has ? { year: y, month: m }
+                      : { year: years[0].year, month: years[0].months[0].month });
+      }
+    } catch (e) {
+      setHistErr('보관함 목록을 읽지 못했습니다 — MIGO 서버가 꺼져 있을 수 있습니다');
+    }
+  };
+
+  // 한 달치 기록. 품목은 이미 알고 있는 것만 들어 있다(아직 안 읽은 건 펼칠 때 읽는다).
+  const loadHistMonth = async (year, month) => {
+    setHistLoading(true); setHistErr('');
+    try {
+      const r = await fetch(`${MIGO_API}/api/history/month?year=${year}&month=${month}`,
+                            { signal: AbortSignal.timeout(60000) });
+      const j = await r.json();
+      if (j.status === 'error') throw new Error(j.message || '조회 실패');
+      setHistData(j);
+    } catch (e) {
+      setHistData(null);
+      setHistErr(`${year}년 ${month}월을 읽지 못했습니다 — ${e.message || e}`);
+    } finally {
+      setHistLoading(false);
+    }
+  };
+
+  // 거래명세서를 읽어 품목을 꺼낸다. 한 번 읽은 건 서버가 기억하므로 두 번 안 읽는다.
+  const loadHistItems = async (files) => {
+    if (!histYM || !files?.length) return;
+    setHistBusy(prev => new Set([...prev, ...files]));
+    try {
+      const r = await fetch(`${MIGO_API}/api/history/items`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: histYM.year, month: histYM.month, files }),
+        signal: AbortSignal.timeout(300000),      // 장수가 많으면 오래 걸린다
+      });
+      const j = await r.json();
+      if (j.status === 'error') throw new Error(j.message);
+      (j.failed || []).forEach(f => showToast(`분석 실패: ${f.file} — ${f.error}`, 'error'));
+      if ((j.results || []).length) await loadHistMonth(histYM.year, histYM.month);
+    } catch (e) {
+      showToast(`품목을 읽지 못했습니다 — ${e.message || e}`, 'error');
+    } finally {
+      setHistBusy(prev => {
+        const n = new Set(prev);
+        files.forEach(f => n.delete(f));
+        return n;
+      });
+    }
+  };
+
+  // 한 달치를 한 번에. 서버가 한 번에 20장까지만 받아 나눠 보낸다.
+  const loadHistItemsBulk = async (files) => {
+    for (let i = 0; i < files.length; i += 20) {
+      await loadHistItems(files.slice(i, i + 20));
+    }
+  };
+
+  // 지난 기록은 열었을 때만 읽는다. 보관함 스캔이 가벼운 일이 아니다.
+  useEffect(() => {
+    if (!histOpen) return;
+    if (!histMonths.length) loadHistMonths();
+  }, [histOpen]);                                        // eslint-disable-line
+
+  useEffect(() => {
+    if (!histOpen || !histYM) return;
+    loadHistMonth(histYM.year, histYM.month);
+    setHistOpenRows(new Set());
+  }, [histOpen, histYM?.year, histYM?.month]);           // eslint-disable-line
+
   const [taxRequestedPOs, setTaxRequestedPOs] = useState(() => {
     try { return new Set(JSON.parse(safeStorage.getItem('pbk_tax_requested') || '[]')); }
     catch { return new Set(); }
@@ -20776,6 +20870,316 @@ ${lines}
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* ─── 지난 기록 (입고완료 보관함) ───────────────────
+                  이번 달만 보이던 화면이라 '지난달에 어느 업체가 무슨 품목을 몇 개
+                  얼마에 넣었나' 를 볼 데가 없었다. 2021년부터 연/월로 뒤진다.
+
+                  품목은 입고완료로 넘길 때 지워진 지 오래라 남아 있지 않다. 명세서만
+                  3,700 장이어서 미리 다 읽을 수는 없고, 펼쳐 보는 건만 그때 읽는다. */}
+              <div className="bg-white rounded-xl border shadow-sm">
+                <button onClick={() => setHistOpen(o => !o)}
+                  className="w-full p-4 flex items-center justify-between hover:bg-gray-50 rounded-xl transition">
+                  <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                    📚 지난 기록
+                    <span className="text-sm font-normal text-gray-500">
+                      업체 · 품목 · 수량 · 단가 · PO 를 지난 달에서 찾아봅니다
+                    </span>
+                  </h3>
+                  <span className="text-gray-400 text-sm">{histOpen ? '▲ 접기' : '▼ 펼치기'}</span>
+                </button>
+
+                {histOpen && (() => {
+                  const rows = histData?.rows || [];
+                  const q = histQuery.trim().toLowerCase();
+                  // 업체·PO·MIRO·자재번호·품명 아무거나 걸리면 보여준다
+                  const shown = !q ? rows : rows.filter(r =>
+                    (r.vendor || '').toLowerCase().includes(q)
+                    || (r.po_numbers || []).some(p => p.includes(q))
+                    || (r.miro_number || '').includes(q)
+                    || (r.items || []).some(it =>
+                         (it.material_no || '').toLowerCase().includes(q)
+                         || (it.name || '').toLowerCase().includes(q)));
+
+                  // 사본은 세지 않는다. 하위 폴더에 윗단과 같은 PO 가 그대로 복사돼
+                  // 있는 경우가 있어(2026-10 '새 폴더' 50장), 그냥 더하면 두 배가 된다.
+                  const real = shown.filter(r => !r.duplicate);
+                  const nDup = shown.length - real.length;
+
+                  // 금액은 원화 건만 더한다. 달러 인보이스를 섞어 더하면 거짓말이 된다.
+                  const sumKrw = real.reduce((a, r) =>
+                    a + ((r.amount != null && (r.currency || 'KRW') === 'KRW') ? r.amount : 0), 0);
+                  const noAmt = real.filter(r => r.amount == null).length;
+
+                  // 업체별로 묶어 '지난달에 어디에 얼마나 썼나' 를 한눈에.
+                  // Digikey / digikey 처럼 대소문자만 다른 이름은 한 곳으로 본다.
+                  const byVendor = {};
+                  real.forEach(r => {
+                    const name = r.vendor || '미상';
+                    const k = name.toLowerCase();
+                    const b = byVendor[k] || (byVendor[k] = { vendor: name, n: 0, amount: 0, hasAmt: false });
+                    b.n += 1;
+                    if (r.amount != null && (r.currency || 'KRW') === 'KRW') { b.amount += r.amount; b.hasAmt = true; }
+                  });
+                  const vendorRows = Object.values(byVendor).sort((a, b) => b.amount - a.amount || b.n - a.n);
+
+                  // 아직 안 읽은 명세서. 사본은 빼고 센다 — 읽어봐야 두 번 세는 값이다.
+                  const todo = real.flatMap(r => r.unparsed || []);
+                  const reading = todo.some(f => histBusy.has(f));
+
+                  const yearOpt = histMonths.find(y => y.year === histYM?.year);
+                  const toggleRow = (k) => setHistOpenRows(prev => {
+                    const n = new Set(prev);
+                    n.has(k) ? n.delete(k) : n.add(k);
+                    return n;
+                  });
+
+                  const csv = () => {
+                    const head = '완료일,업체,묶음,PO,MIRO,자재번호,품명,수량,단가,금액,통화,비고';
+                    const lines = [head];
+                    real.forEach(r => {
+                      const base = [when(r.mtime), r.vendor || '', r.batch || '',
+                                    (r.po_numbers || []).join(' '), r.miro_number || ''];
+                      if (r.items?.length) {
+                        r.items.forEach(it => lines.push(
+                          [...base, it.material_no, (it.name || '').replace(/,/g, ' '),
+                           it.qty ?? '', it.unit_price ?? '', it.amount ?? '', r.currency || 'KRW', '']
+                            .map(x => `"${x}"`).join(',')));
+                      } else {
+                        lines.push([...base, '', '', '', '', r.amount ?? '', r.currency || 'KRW', '품목 미확인']
+                          .map(x => `"${x}"`).join(','));
+                      }
+                    });
+                    const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `입고기록_${histYM.year}년${histYM.month}월.csv`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  };
+
+                  return (
+                    <div className="border-t">
+                      {/* 연 / 월 고르기 */}
+                      <div className="p-4 flex flex-wrap items-center gap-2 bg-gray-50 border-b">
+                        <select value={histYM?.year || ''}
+                          onChange={e => {
+                            const y = Number(e.target.value);
+                            const ms = histMonths.find(v => v.year === y)?.months || [];
+                            setHistYM({ year: y, month: ms[0]?.month || 1 });
+                          }}
+                          className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+                          {histMonths.map(y => <option key={y.year} value={y.year}>{y.year}년</option>)}
+                        </select>
+                        <div className="flex flex-wrap gap-1">
+                          {(yearOpt?.months || []).map(m => (
+                            <button key={m.month}
+                              onClick={() => setHistYM({ year: histYM.year, month: m.month })}
+                              title={`${m.files}개 파일`}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                                histYM?.month === m.month
+                                  ? 'bg-slate-800 text-white border-slate-800'
+                                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>
+                              {m.month}월
+                            </button>
+                          ))}
+                        </div>
+                        <input value={histQuery} onChange={e => setHistQuery(e.target.value)}
+                          placeholder="업체 · PO · 자재번호 · 품명"
+                          className="border rounded-lg px-2.5 py-1.5 text-sm flex-1 min-w-[160px]" />
+                        <button onClick={csv} disabled={!shown.length}
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium border bg-white hover:bg-gray-100 disabled:opacity-40">
+                          ⬇ CSV
+                        </button>
+                      </div>
+
+                      {histErr && <div className="p-4 text-sm text-red-600">{histErr}</div>}
+                      {histLoading && <div className="p-8 text-center text-sm text-gray-400">읽는 중…</div>}
+
+                      {!histLoading && histData && (
+                        <>
+                          {/* 요약 */}
+                          <div className="px-4 py-3 flex flex-wrap gap-x-5 gap-y-1 text-sm border-b bg-white">
+                            <span className="text-gray-500">{histYM.year}년 {histYM.month}월
+                              <b className="text-gray-800 ml-1">{real.length}건</b></span>
+                            <span className="text-gray-500">합계
+                              <b className="text-gray-800 ml-1">{money(sumKrw, 'KRW')}</b>
+                              {noAmt > 0 && (
+                                <span className="text-[11px] text-amber-600 ml-1"
+                                  title="금액은 거래명세서를 읽어야 나옵니다. 행을 펼치면 채워집니다">
+                                  · {noAmt}건 금액 미확인
+                                </span>
+                              )}
+                            </span>
+                            {todo.length > 0 && (
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(
+                                    `거래명세서 ${todo.length}장을 읽어 품목·수량·단가를 꺼냅니다.\n`
+                                    + `한 번 읽은 건은 저장되므로 다음부터는 바로 보입니다.\n\n`
+                                    + `장수에 따라 몇 분 걸릴 수 있습니다. 진행할까요?`)) {
+                                    loadHistItemsBulk(todo);
+                                  }
+                                }}
+                                disabled={reading}
+                                className="text-[11px] px-2 py-0.5 rounded-lg border bg-white hover:bg-gray-100 text-gray-600 disabled:opacity-50">
+                                {reading ? `읽는 중… (${todo.length}장)` : `품목 미확인 ${todo.length}장 — 전부 읽기`}
+                              </button>
+                            )}
+                            {nDup > 0 && (
+                              <span className="text-[11px] text-rose-600"
+                                title="하위 폴더에 윗단과 같은 PO 문서가 그대로 들어 있습니다. 합계에서는 뺐습니다">
+                                ⚠ 사본 {nDup}건 — 합계 제외
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 업체별 */}
+                          {vendorRows.length > 1 && (
+                            <div className="px-4 py-3 border-b bg-slate-50">
+                              <div className="text-[11px] font-semibold text-gray-500 mb-1.5">업체별</div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {vendorRows.map(v => (
+                                  <button key={v.vendor} onClick={() => setHistQuery(v.vendor)}
+                                    className="px-2 py-1 rounded-lg bg-white border text-xs hover:border-gray-400 transition">
+                                    <span className="font-medium text-gray-700">{v.vendor}</span>
+                                    <span className="text-gray-400 ml-1">{v.n}건</span>
+                                    {v.hasAmt && <span className="text-gray-600 ml-1.5">{money(v.amount, 'KRW')}</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 건별 */}
+                          <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-50 sticky top-0 z-10">
+                                <tr className="text-left text-[11px] text-gray-500 border-b">
+                                  <th className="px-4 py-2">업체</th>
+                                  <th className="px-3 py-2">PO</th>
+                                  <th className="px-3 py-2 text-right">금액</th>
+                                  <th className="px-3 py-2 text-center">품목</th>
+                                  <th className="px-3 py-2 text-center">명세/세계</th>
+                                  <th className="px-3 py-2">완료</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {shown.map(r => {
+                                  const open = histOpenRows.has(r.key);
+                                  const busy = (r.unparsed || []).some(f => histBusy.has(f));
+                                  return (
+                                    <React.Fragment key={r.key}>
+                                      <tr onClick={() => {
+                                            toggleRow(r.key);
+                                            // 펼치는 순간 아직 안 읽은 명세서를 읽는다.
+                                            // 접을 때는 읽지 않는다 — 두 번 눌러 두 번 읽히면 돈만 나간다.
+                                            if (!open && r.unparsed?.length && !busy) loadHistItems(r.unparsed);
+                                          }}
+                                          className="hover:bg-gray-50 cursor-pointer">
+                                        <td className="px-4 py-2 font-medium text-gray-800">
+                                          <span className="text-gray-400 mr-1 text-xs">{open ? '▾' : '▸'}</span>
+                                          <span className={r.duplicate ? 'text-gray-400 line-through' : ''}>
+                                            {r.vendor || '—'}
+                                          </span>
+                                          {/* 묶음 이름이 업체명과 같으면 두 번 쓸 일이 없다 */}
+                                          {r.batch && r.batch !== r.vendor && (
+                                            <span className="ml-1.5 px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 text-[10px] font-semibold">
+                                              {r.batch}
+                                            </span>
+                                          )}
+                                          {r.duplicate && (
+                                            <span className="ml-1.5 px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[10px] font-semibold"
+                                              title="윗단에 같은 PO 문서가 있습니다 — 폴더에 복사본이 남아 있는 것으로 보입니다">
+                                              사본
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs font-mono text-gray-500">
+                                          {r.po_number || '—'}
+                                          {r.po_numbers?.length > 1 && (
+                                            <div className="text-[10px] text-gray-400">외 {r.po_numbers.length - 1}건</div>
+                                          )}
+                                          {r.miro_number && <div className="text-[10px] text-gray-400">MIRO {r.miro_number}</div>}
+                                        </td>
+                                        <td className="px-3 py-2 text-xs text-right">
+                                          {r.amount != null
+                                            ? <b className="text-gray-800">{money(r.amount, r.currency)}</b>
+                                            : <span className="text-gray-300">—</span>}
+                                        </td>
+                                        <td className="px-3 py-2 text-center text-xs">
+                                          {busy ? <span className="text-blue-500">읽는 중…</span>
+                                            : r.items?.length ? <span className="text-gray-600">{r.items.length}</span>
+                                            : <span className="text-gray-300">—</span>}
+                                        </td>
+                                        <td className="px-3 py-2 text-center text-xs">
+                                          {r.has_delivery ? '✅' : <span className="text-gray-300">—</span>}
+                                          {' / '}
+                                          {r.has_tax ? '✅' : <span className="text-gray-300">—</span>}
+                                        </td>
+                                        <td className="px-3 py-2 text-[11px] text-gray-400">{when(r.mtime)}</td>
+                                      </tr>
+
+                                      {open && (
+                                        <tr>
+                                          <td colSpan="6" className="bg-slate-50 px-4 py-3">
+                                            {r.items?.length > 0 ? (
+                                              <table className="w-full text-xs">
+                                                <thead>
+                                                  <tr className="text-left text-[10px] text-gray-400 border-b">
+                                                    <th className="py-1">자재번호</th>
+                                                    <th className="py-1">품명</th>
+                                                    <th className="py-1 text-right">수량</th>
+                                                    <th className="py-1 text-right">단가</th>
+                                                    <th className="py-1 text-right">금액</th>
+                                                  </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-200">
+                                                  {r.items.map((it, i) => (
+                                                    <tr key={i}>
+                                                      <td className="py-1 font-mono text-gray-600">{it.material_no || '—'}</td>
+                                                      <td className="py-1 text-gray-700">{it.name || '—'}</td>
+                                                      <td className="py-1 text-right text-gray-600">{it.qty ?? '—'}</td>
+                                                      <td className="py-1 text-right text-gray-600">{money(it.unit_price, r.currency)}</td>
+                                                      <td className="py-1 text-right font-medium text-gray-800">{money(it.amount, r.currency)}</td>
+                                                    </tr>
+                                                  ))}
+                                                </tbody>
+                                              </table>
+                                            ) : busy ? (
+                                              <div className="text-xs text-blue-600 py-1">거래명세서를 읽는 중입니다…</div>
+                                            ) : (
+                                              <div className="text-xs text-gray-400 py-1">
+                                                품목을 읽지 못했습니다.
+                                                {r.unparsed?.length > 0 && (
+                                                  <button onClick={(e) => { e.stopPropagation(); loadHistItems(r.unparsed); }}
+                                                    className="ml-2 underline hover:text-gray-700">다시 읽기</button>
+                                                )}
+                                              </div>
+                                            )}
+                                            <div className="mt-2 text-[10px] text-gray-400">
+                                              {(r.docs || []).map(d => d.name).join(' · ')}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </React.Fragment>
+                                  );
+                                })}
+                                {shown.length === 0 && (
+                                  <tr><td colSpan="6" className="px-4 py-8 text-center text-sm text-gray-400">
+                                    {histQuery ? '검색 결과가 없습니다.' : '이 달에는 기록이 없습니다.'}
+                                  </td></tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <p className="text-[11px] text-gray-400">
