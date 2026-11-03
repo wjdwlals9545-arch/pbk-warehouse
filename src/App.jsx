@@ -2089,13 +2089,15 @@ function closeWindow(rule, year, month, soonDays = 3) {
     // 주차 창은 월~금 닷새라 그 안에 공휴일이 끼어도 그대로 둔다.
     // 당기면 창이 길어져 오히려 '마감 주간' 이 늘어진다 (2027-02 가 그랬다).
   } else {
-    // 기준일(보통 25일)을 영업일로 맞추고, 앞당길 일수가 있으면 당긴 뒤 다시 맞춘다
-    from = prevBusinessDay(new Date(year, month - 1, rule.day));
+    // 기준일(보통 25일)을 영업일로 맞추고, 앞당길 일수가 있으면 당긴 뒤 다시 맞춘다.
+    // 창의 끝은 그 기준일이다 — 25일을 넘기면 안 되는 마감이라 말일까지 열어두면
+    // 늦은 건을 '아직 마감 주간' 으로 보게 된다. 지나면 '마감 지남' 으로 띄운다.
+    to = prevBusinessDay(new Date(year, month - 1, rule.day));
+    from = new Date(to);
     if (rule.before) {
       from.setDate(from.getDate() - rule.before);
       from = prevBusinessDay(from);
     }
-    to = new Date(year, month, 0);                // 말일
   }
   const soon = new Date(from);
   soon.setDate(from.getDate() - soonDays);
