@@ -20125,11 +20125,19 @@ ${lines}
             );
           };
 
+          // '마감일 경과' 는 빨강이 아니다. 25일이 마감이어도 어쩔 수 없이 뒤에
+          // 입고를 잡아야 하는 품목이 매달 있을 수도, 없을 수도 있다 (2026-11-03 정지민 책임).
+          // 정상적으로 생기는 일이라 경고가 아니라 알림으로 둔다 — 막는 것도 없다.
           const STAGE = {
-            collecting: { label: '수집 중',   cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-            soon:       { label: '마감 임박', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-            due:        { label: '마감 주간', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
-            late:       { label: '마감 지남', cls: 'bg-red-50 text-red-700 border-red-200' },
+            collecting: { label: '수집 중',   cls: 'bg-slate-100 text-slate-600 border-slate-200',
+                          tip: '아직 모으는 중입니다. 일찍 마감하시려면 눌러도 됩니다' },
+            soon:       { label: '마감 임박', cls: 'bg-amber-50 text-amber-700 border-amber-200',
+                          tip: '마감일이 사흘 안으로 들어왔습니다' },
+            due:        { label: '마감 주간', cls: 'bg-violet-50 text-violet-700 border-violet-200',
+                          tip: '지금이 마감 기간입니다' },
+            late:       { label: '마감일 경과', cls: 'bg-orange-50 text-orange-700 border-orange-200',
+                          tip: '마감일이 지났습니다. 뒤늦게 입고를 잡는 건이 있으면 정상이니 '
+                             + '그대로 진행하시면 됩니다 — 막히는 것은 없습니다' },
           };
           const md = (s) => s ? `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}` : '';
           // 명세서 금액이 없으면(입고완료는 분석 json 을 지운다) 발주 기준 금액으로 대체
@@ -20525,7 +20533,8 @@ ${lines}
                 <div className="min-w-[150px]">
                   {rule ? (
                     <>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${st.cls}`}>{st.label}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${st.cls}`}
+                        title={st.tip || ''}>{st.label}</span>
                       <div className="text-[10px] text-gray-400 mt-0.5">
                         {/* 날짜 기준 규칙도 '며칠 전부터' 가 붙어 기준일만 적으면 어긋난다.
                             실제 창을 그대로 보여준다 (미스미 11/20~11/30 식). */}
