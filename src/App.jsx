@@ -1974,11 +1974,14 @@ const WEEKLY_MAIL_SKIP = new Set(['105339', '105362', '100046']);
 // 1주차가 되도록 고쳤다. 2차는 주차로는 이력과 안 맞아(4/5 는 맞았지만 11월이
 // 어긋났다) 25일 기준 날짜로 바꿨다 — 실제 마감은 20~24일에 몰려 있다.
 //
+// before = 기준일 며칠 전부터 '보낼 때' 로 볼지. 당일에만 열면 하루 안에 끝내야
+// 해서 실제로 쓰기 어렵다. 미스미 실제 마감도 21~25일에 퍼져 있다.
+//
 // group/seq 가 같은 규칙은 순서대로 도는 마감이다. 뒤 차수가 보이면 앞 차수는 끝난 것.
 const CLOSE_RULES = [
   { id: 'kj1',    name: '경제1차', match: /경제[^0-9]*1\s*차/,  week: 2, desc: '2주차 끝 무렵', group: 'kj', seq: 1 },
   { id: 'kj2',    name: '경제2차', match: /경제[^0-9]*2\s*차/,  day: 25, before: 2, desc: '25일 이틀 전부터', group: 'kj', seq: 2 },
-  { id: 'misumi', name: '미스미',  match: /미스미|misumi/i,      day: 25, desc: '월말 25일 전후' },
+  { id: 'misumi', name: '미스미',  match: /미스미|misumi/i,      day: 25, before: 3, desc: '25일 사흘 전부터' },
 ];
 
 // (useEffect 안에 있어 업로드 모달에서 부를 수 없던 것을 끌어올렸다)
@@ -20522,7 +20525,9 @@ ${lines}
                     <>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded border ${st.cls}`}>{st.label}</span>
                       <div className="text-[10px] text-gray-400 mt-0.5">
-                        마감 {win.week === undefined && rule.day ? `${rule.day}일` : `${md(win.from)}~${md(win.to)}`}
+                        {/* 날짜 기준 규칙도 '며칠 전부터' 가 붙어 기준일만 적으면 어긋난다.
+                            실제 창을 그대로 보여준다 (미스미 11/20~11/30 식). */}
+                        마감 {md(win.from)}~{md(win.to)}
                         <span className="text-gray-300"> · {rule.desc}</span>
                       </div>
                     </>
