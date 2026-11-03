@@ -1966,13 +1966,18 @@ function vendorName(v) {
 const WEEKLY_MAIL_SKIP = new Set(['105339', '105362', '100046']);
 
 // ── 일괄 마감 주기 ────────────────────────────────────────────────
-// 미스미는 월말 25일 전후, 경제정공은 1차(2주차)·2차(4주차) 전후로 마감한다.
+// 미스미는 25일 전후, 경제정공은 1차가 2주차 끝, 2차가 25일 이틀 전부터다.
 // "전후" 라 날짜를 딱 맞출 수는 없다. 놓치지 않게 돕는 힌트로만 쓴다.
-// 과거 마감 기록 네 건(7·8·9월)이 아래 주차 정의와 맞는 것을 확인했다.
+//
+// 2026-11-03 수정 — 11월 1일이 일요일이라 '1일이 든 주' 를 1주차로 세면 1주차가
+// 10/26~10/30(거의 10월)이 되어 2주차가 한 주 당겨졌다. 그 달의 첫 월요일이
+// 1주차가 되도록 고쳤다. 2차는 주차로는 이력과 안 맞아(4/5 는 맞았지만 11월이
+// 어긋났다) 25일 기준 날짜로 바꿨다 — 실제 마감은 20~24일에 몰려 있다.
+//
 // group/seq 가 같은 규칙은 순서대로 도는 마감이다. 뒤 차수가 보이면 앞 차수는 끝난 것.
 const CLOSE_RULES = [
-  { id: 'kj1',    name: '경제1차', match: /경제[^0-9]*1\s*차/,  week: 2, desc: '2주차 전후', group: 'kj', seq: 1 },
-  { id: 'kj2',    name: '경제2차', match: /경제[^0-9]*2\s*차/,  week: 4, desc: '4주차 전후', group: 'kj', seq: 2 },
+  { id: 'kj1',    name: '경제1차', match: /경제[^0-9]*1\s*차/,  week: 2, desc: '2주차 끝 무렵', group: 'kj', seq: 1 },
+  { id: 'kj2',    name: '경제2차', match: /경제[^0-9]*2\s*차/,  day: 25, before: 2, desc: '25일 이틀 전부터', group: 'kj', seq: 2 },
   { id: 'misumi', name: '미스미',  match: /미스미|misumi/i,      day: 25, desc: '월말 25일 전후' },
 ];
 
@@ -2049,8 +2054,10 @@ const parseDeliveryExcel = (arrayBuf) => {
 // 그 달 N주차의 월~금. 1주차 = 1일이 든 주.
 function nthWeekRange(year, month, n) {
   const first = new Date(year, month - 1, 1);
+  // 그 달의 첫 월요일이 1주차다. '1일이 든 주' 를 쓰면 1일이 주말인 달에서
+  // 1주차가 전달로 넘어가 전체가 한 주 당겨진다 (2026-11 이 그랬다).
   const mon1 = new Date(first);
-  mon1.setDate(1 - ((first.getDay() + 6) % 7));   // 1일이 든 주의 월요일
+  mon1.setDate(1 + ((8 - (first.getDay() || 7)) % 7));
   const from = new Date(mon1);
   from.setDate(mon1.getDate() + (n - 1) * 7);
   const to = new Date(from);
@@ -2058,13 +2065,33 @@ function nthWeekRange(year, month, n) {
   return { from, to };
 }
 
+// 토·일·공휴일이면 그 앞 영업일로 당긴다. 25일이 주말이면 업체는 그 전 금요일에
+// 마감하지, 월요일까지 기다리지 않는다. (2026-11-03 정지민 책임)
+function prevBusinessDay(d) {
+  const p = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  const out = new Date(d);
+  for (let i = 0; i < 10; i++) {                  // 연휴가 길어도 열흘이면 닿는다
+    const wd = out.getDay();
+    if (wd !== 0 && wd !== 6 && !KR_HOLIDAYS.has(p(out))) return out;
+    out.setDate(out.getDate() - 1);
+  }
+  return out;
+}
+
 // 규칙 하나의 이번 달 마감 창. soon = 며칠 전부터 '임박' 으로 볼지.
 function closeWindow(rule, year, month, soonDays = 3) {
   let from, to;
   if (rule.week) {
     ({ from, to } = nthWeekRange(year, month, rule.week));
+    // 주차 창은 월~금 닷새라 그 안에 공휴일이 끼어도 그대로 둔다.
+    // 당기면 창이 길어져 오히려 '마감 주간' 이 늘어진다 (2027-02 가 그랬다).
   } else {
-    from = new Date(year, month - 1, rule.day);
+    // 기준일(보통 25일)을 영업일로 맞추고, 앞당길 일수가 있으면 당긴 뒤 다시 맞춘다
+    from = prevBusinessDay(new Date(year, month - 1, rule.day));
+    if (rule.before) {
+      from.setDate(from.getDate() - rule.before);
+      from = prevBusinessDay(from);
+    }
     to = new Date(year, month, 0);                // 말일
   }
   const soon = new Date(from);
@@ -15231,6 +15258,33 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             !WEEKLY_MAIL_SKIP.has(splitVendor(d.supplier).code));
           const weeklyVendors = new Set(weeklyItems.map(d => splitVendor(d.supplier).code || d.supplier));
           const mdOf = (s) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+
+          // 이 탭의 납기 지연·납품 예정은 둘 다 ME2N 납기일정 한 파일에서 나온다.
+          // 언제 기준 자료인지 모르면 지연 건수를 보고 오해한다 (옛 자료로 32건 vs 실제 8건).
+          const DataAsOf = () => {
+            if (!deliveryLastUpdated) return (
+              <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200">
+                기준 시각 모름
+              </span>
+            );
+            // '2026. 11. 3. 오전 9:11:32' → '11/3 09:11'
+            const m = String(deliveryLastUpdated).match(/(\d+)\.\s*(\d+)\.\s*(\d+)\.\s*(오전|오후)\s*(\d+):(\d+)/);
+            let label = deliveryLastUpdated;
+            if (m) {
+              let h = parseInt(m[5], 10);
+              if (m[4] === '오후' && h !== 12) h += 12;
+              if (m[4] === '오전' && h === 12) h = 0;
+              label = `${Number(m[2])}/${Number(m[3])} ${String(h).padStart(2, '0')}:${m[6]}`;
+            }
+            return (
+              <span className="text-[10px] font-normal px-1.5 py-0.5 rounded bg-white/70 text-gray-500 border border-gray-300 whitespace-nowrap"
+                title={`SAP ME2N 납기일정 기준
+${deliveryLastUpdated}
+${getElapsedTimeDetail(deliveryLastUpdated)}`}>
+                🕒 {label} 기준
+              </span>
+            );
+          };
           // 원래 납품 예정일 배지용 — '기존: 10월 1일'
           const mdKo = (s) => `${Number(s.slice(5, 7))}월 ${Number(s.slice(8, 10))}일`;
           // 해외 업체는 달러 발주가 있다 (현재 200건 중 3건)
@@ -15266,7 +15320,11 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                 <p className="text-sm text-gray-500">납품 예정 · 수입검사 대기 현황</p>
               </div>
               <div className="flex gap-2 items-center">
-                {deliveryLastUpdated && <span className="text-xs text-gray-400">Delivery 업데이트: {deliveryLastUpdated}</span>}
+                {deliveryLastUpdated && (
+                  <span className="text-xs text-gray-400" title={getElapsedTimeDetail(deliveryLastUpdated)}>
+                    Delivery 업데이트: {deliveryLastUpdated}
+                  </span>
+                )}
                 <button onClick={() => setShowDataUploadModal(true)} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1">
                   <Upload className="w-3.5 h-3.5" /> Delivery 업로드
                 </button>
@@ -15399,7 +15457,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             {overdueDeliveries.length > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-                  <h3 className="font-bold text-red-800 flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
+                  <h3 className="font-bold text-red-800 flex items-center gap-2 flex-wrap"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
+                    <DataAsOf />
                     {overdueDismissed.length > 0 && <button onClick={() => { setOverdueDismissed([]); safeStorage.removeItem('pbk_overdue_dismissed'); }} className="text-[10px] font-normal text-gray-400 hover:text-red-500 ml-2">(숨김 {overdueDismissed.length}건 복원)</button>}
                     {(() => {
                       const n = overdueDeliveries.filter(d => (promisedDates[`${d.poNo}_${d.material}`] || {}).date).length;
@@ -15540,8 +15599,9 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             <div className="bg-gradient-to-r from-blue-50 to-white border border-blue-200 rounded-xl p-3.5 flex items-center gap-3 flex-wrap">
               <span className="text-xl">🗓️</span>
               <div>
-                <p className="text-sm font-bold text-blue-900">
+                <p className="text-sm font-bold text-blue-900 flex items-center gap-2 flex-wrap">
                   주간 납품 예정 · {mdOf(weeklyFrom)}~{mdOf(weeklyRange.to)}
+                  <DataAsOf />
                 </p>
                 <p className="text-xs text-blue-700">
                   {weeklyItems.length > 0
