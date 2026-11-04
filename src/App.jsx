@@ -18614,7 +18614,9 @@ ${lines}
                             const docOf = (m) => {
                               const list = (kpiData.adjustReasons || {})[m] || [];
                               const codes = [...new Set(list.map(r => (r.text || '').match(/OP-\d{2}-\d{3}/)?.[0]).filter(Boolean))];
-                              return codes.join(', ');
+                              // 막대 폭보다 길면 옆 달 라벨과 겹친다. 하나만 쓰고 나머지는 수로.
+                              // 전체 목록은 툴팁과 아래 사유 표에 있다.
+                              return codes.length > 1 ? `${codes[0]} 외 ${codes.length - 1}` : (codes[0] || '');
                             };
                             const noteOf = (m) => {
                               const list = (kpiData.adjustReasons || {})[m] || [];
@@ -18633,10 +18635,10 @@ ${lines}
                                   <h4 className="text-base font-bold text-gray-700">재고조정 원인 분해</h4>
                                   <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
                                     <span className="flex items-center gap-1">
-                                      <span className="inline-block w-3 h-3 rounded bg-sky-500"></span>증가 (장부보다 더 있었음)
+                                      <span className="inline-block w-3 h-3 rounded bg-sky-300"></span>증가 (장부보다 더 있었음)
                                     </span>
                                     <span className="flex items-center gap-1">
-                                      <span className="inline-block w-3 h-3 rounded bg-rose-500"></span>손실 (없어짐)
+                                      <span className="inline-block w-3 h-3 rounded bg-rose-300"></span>손실 (없어짐)
                                     </span>
                                     <span className="flex items-center gap-1" title="KPI 분자입니다 — 이 금액을 평균 재고금액으로 나눈 값이 위 차트의 누적률입니다">
                                       <span className="inline-block w-4 border-t-2 border-amber-500"></span>누적 전체 = KPI 분자
@@ -18660,7 +18662,8 @@ ${lines}
                                       }} />
                                     <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:8}} />
                                     <ReferenceLine y={0} stroke="#9ca3af" strokeWidth={1.5} />
-                                    <Bar dataKey="upAmt" name="증가" stackId="v" fill="#0ea5e9" maxBarSize={44} radius={[3,3,0,0]}
+                                    <Bar dataKey="upAmt" name="증가" stackId="v" fill="#7dd3fc" fillOpacity={0.9}
+                                      maxBarSize={44} radius={[3,3,0,0]}
                                       label={(props) => {
                                         const {x,y,width,index}=props;
                                         const d = data[index];
@@ -18668,14 +18671,17 @@ ${lines}
                                         const doc = docOf(d.month);
                                         return (
                                           <g>
-                                            <text x={x+width/2} y={y-16} fill="#0369a1" textAnchor="middle" fontSize={10} fontWeight={700}>
+                                            <text x={x+width/2} y={y-16} fill="#075985" textAnchor="middle" fontSize={10} fontWeight={700}
+                                              stroke="#fff" strokeWidth={3} paintOrder="stroke">
                                               {axisFmt(d.up)}
                                             </text>
-                                            {doc && <text x={x+width/2} y={y-5} fill="#94a3b8" textAnchor="middle" fontSize={8}>{doc}</text>}
+                                            {doc && <text x={x+width/2} y={y-5} fill="#64748b" textAnchor="middle" fontSize={8}
+                                              stroke="#fff" strokeWidth={2.5} paintOrder="stroke">{doc}</text>}
                                           </g>
                                         );
                                       }} />
-                                    <Bar dataKey="downAmt" name="손실" stackId="v" fill="#f43f5e" maxBarSize={44} radius={[0,0,3,3]}
+                                    <Bar dataKey="downAmt" name="손실" stackId="v" fill="#fda4af" fillOpacity={0.9}
+                                      maxBarSize={44} radius={[0,0,3,3]}
                                       label={(props) => {
                                         const {x,y,width,height,index}=props;
                                         const d = data[index];
@@ -18684,7 +18690,8 @@ ${lines}
                                         // 부호를 가정하지 말고 두 끝 중 아래쪽을 고른다.
                                         const bottom = Math.max(y, y + height);
                                         return (
-                                          <text x={x+width/2} y={bottom+14} fill="#be123c" textAnchor="middle" fontSize={10} fontWeight={700}>
+                                          <text x={x+width/2} y={bottom+14} fill="#9f1239" textAnchor="middle" fontSize={10} fontWeight={700}
+                                            stroke="#fff" strokeWidth={3} paintOrder="stroke">
                                             {axisFmt(d.down)}
                                           </text>
                                         );
@@ -18694,10 +18701,12 @@ ${lines}
                                     <Line type="monotone" dataKey="cumVarAmt" name="누적 전체 (증가+손실)"
                                       stroke="#eab308" strokeWidth={3}
                                       dot={{r:4, fill:'#eab308', stroke:'#fff', strokeWidth:2}} connectNulls />
-                                    <Line type="monotone" dataKey="cumUpAmt" name="누적 증가" stroke="#0ea5e9"
-                                      strokeWidth={2} strokeDasharray="5 3" dot={{r:3}} connectNulls />
-                                    <Line type="monotone" dataKey="cumDownNeg" name="누적 손실" stroke="#f43f5e"
-                                      strokeWidth={2} strokeDasharray="5 3" dot={{r:3}} connectNulls />
+                                    <Line type="monotone" dataKey="cumUpAmt" name="누적 증가" stroke="#0369a1"
+                                      strokeWidth={2.5}
+                                      dot={{r:4, fill:'#0369a1', stroke:'#fff', strokeWidth:2}} connectNulls />
+                                    <Line type="monotone" dataKey="cumDownNeg" name="누적 손실" stroke="#be123c"
+                                      strokeWidth={2.5}
+                                      dot={{r:4, fill:'#be123c', stroke:'#fff', strokeWidth:2}} connectNulls />
                                   </ComposedChart>
                                 </ResponsiveContainer>
 
