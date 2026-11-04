@@ -20471,6 +20471,11 @@ ${lines}
                       const pcs = grp.items.map(g => g.price_check).filter(Boolean);
                       if (!pcs.length) return <span className="text-[10px] text-gray-300">단가 미대조</span>;
                       const bad = pcs.filter(x => !x.passed).length;
+                      // passed 는 단가·수량 양쪽에서 떨어진다. 어느 쪽인지 말해 준다.
+                      const allRows = pcs.flatMap(x => x.detail || []);
+                      const nPrice = allRows.filter(d => d.ok === false && !d.tolerated).length;
+                      const nQty = allRows.filter(d => d.qty_over).length;
+                      const hasQtyRef = allRows.some(d => d.po_qty != null);
                       // 대조 자체를 못 했거나 근거가 추정인 자재가 섞여 있으면 '일치'라고 말하면 안 된다.
                       // 명세서에 PO 가 적혀 있어 그대로 대조한 건(item_po)은 확실하므로 뺀다.
                       const WARN_SRC = new Set(['other_po', 'ambiguous', 'none', 'by_price']);
@@ -20482,7 +20487,12 @@ ${lines}
                       return (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${tone}`}
                               title={warn ? '파일명의 PO 에 없어 다른 발주에서 찾았거나, 발주를 특정하지 못한 자재가 있습니다' : ''}>
-                          {bad ? `단가 불일치 ${bad}건` : warn ? `확인 필요 ${warn}건` : '단가 일치'}
+                          {nPrice && nQty ? `단가 ${nPrice}건 · 수량 ${nQty}건`
+                            : nQty ? `수량 초과 ${nQty}건`
+                            : nPrice ? `단가 불일치 ${nPrice}건`
+                            : bad ? `불일치 ${bad}건`
+                            : warn ? `확인 필요 ${warn}건`
+                            : hasQtyRef ? '단가·수량 일치' : '단가 일치'}
                         </span>
                       );
                     })()}
@@ -20590,6 +20600,8 @@ ${lines}
                   const nBad = rows.filter(x => x.ok === false && !x.tolerated).length;
                   const nTol = rows.filter(x => x.tolerated).length;
                   const nWarn = rows.filter(x => x.ok !== false && WARN.has(x.source)).length;
+                  // 수량 초과는 단가와 별개로 막아야 할 일이다 (발주량보다 많이 왔다)
+                  const nQty = rows.filter(x => x.qty_over).length;
                   // 명세서 총액은 VAT 포함, 품목 합계는 공급가액. 1.1 배 차이는 정상이다.
                   const amtMatch = (supply, total) => {
                     if (supply == null || total == null) return null;
@@ -20598,7 +20610,7 @@ ${lines}
                     return 'diff';
                   };
                   // 불일치가 있으면 빨강, 확인만 필요하면 호박색
-                  const tone = nBad
+                  const tone = (nBad || nQty)
                     ? { b: 'border-red-200', bg: 'bg-red-50/50', t: 'text-red-700' }
                     : nWarn
                     ? { b: 'border-amber-200', bg: 'bg-amber-50/50', t: 'text-amber-700' }
@@ -20618,10 +20630,11 @@ ${lines}
                     <div className={`mb-1 text-[11px] font-semibold ${tone.t}`}>
                       단가 대조 {rows.length}품목
                       {docs.length > 1 && <> · 거래명세서 {docs.length}장</>}
-                      {nBad > 0 && <> · 불일치 {nBad}건</>}
+                      {nBad > 0 && <> · 단가 불일치 {nBad}건</>}
+                      {nQty > 0 && <> · 수량 초과 {nQty}건</>}
                       {nWarn > 0 && <> · 확인 필요 {nWarn}건</>}
                       {nTol > 0 && <> · 업체 예외 {nTol}건</>}
-                      {!nBad && !nWarn && !nTol && <> · 전부 일치</>}
+                      {!nBad && !nQty && !nWarn && !nTol && <> · 전부 일치</>}
                     </div>
 
                     {docs.map(({ g, det }, di) => {
@@ -20652,7 +20665,7 @@ ${lines}
                               {det.map(x => {
                                 const mk = x.tolerated ? MARK.tolerated
                                          : x.ok === false ? null : MARK[x.source];
-                                const plain = x.ok === true && !WARN.has(x.source);
+                                const plain = x.ok === true && !WARN.has(x.source) && !x.qty_over;
                                 return (
                                   <tr key={`${g.key}_${x.material}`} className={`align-top ${plain ? 'text-gray-500' : 'text-gray-700'}`}>
                                     <td className="pr-3 font-mono">{x.material}</td>
@@ -20669,7 +20682,22 @@ ${lines}
                                     <td className="pr-3 text-right tabular-nums">
                                       {x.po_price != null ? money(x.po_price, x.currency) : <span className="text-gray-400">-</span>}
                                     </td>
-                                    <td className="pr-3 text-right tabular-nums">{x.qty?.toLocaleString()}</td>
+                                    <td className="pr-3 text-right tabular-nums">
+                                      <span className={x.qty_over ? 'text-red-700 font-bold' : ''}>
+                                        {x.qty?.toLocaleString()}
+                                      </span>
+                                      {/* 발주 수량을 늘 같이 적는다. 분납이면 적은 게 정상이라
+                                          경고는 안 하지만, 몇 개짜리 발주인지는 보여야 한다. */}
+                                      {x.po_qty != null && (
+                                        <div className={`text-[10px] ${x.qty_over ? 'text-red-600 font-semibold' : 'text-gray-400'}`}
+                                          title={x.qty_over
+                                            ? `명세서 ${(x.qty_sum ?? x.qty)?.toLocaleString()} 가 발주 수량 ${Number(x.po_qty).toLocaleString()} 를 넘습니다.`
+                                            : '발주 수량입니다. 명세서가 더 적으면 분납일 수 있습니다.'}>
+                                          발주 {Number(x.po_qty).toLocaleString()}
+                                          {x.qty_over && <> · 초과</>}
+                                        </div>
+                                      )}
+                                    </td>
                                     <td className="pr-4 text-right tabular-nums font-semibold text-gray-700">{money(x.inv_amount, x.currency)}</td>
                                     <td className={`pr-3 text-right tabular-nums font-semibold ${
                                       x.tolerated ? 'text-slate-500' : x.ok === false ? 'text-red-700' : 'text-gray-400'}`}
@@ -20718,6 +20746,7 @@ ${lines}
                       <b className="text-sky-700"> 추정</b> = 어디에도 PO 표기가 없어 자재번호로 찾아낸 발주 ·
                       <b className="text-amber-700"> 판단 보류</b> = 여러 발주에 서로 다른 단가로 있어 어느 건인지 단정 못 함 ·
                       <b className="text-rose-700"> 발주에 없음</b> = 어느 발주에도 없는 자재 ·
+                      <b className="text-red-700"> 초과</b> = 명세서 수량이 발주 수량보다 많음 (분납이라 적게 온 것은 경고하지 않습니다) ·
                       <b className="text-slate-600"> 업체 예외</b> = 단가 차이를 허용하기로 한 업체
                       (DigiKey — SAP 발주 단가가 소수점 첫째 자리까지만 들어가 늘 어긋난다.
                       구매담당자가 Invoice 금액을 고치고 서명한다)
@@ -22008,9 +22037,15 @@ ${lines}
                                   {inv.status === 'failed' && (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 flex-shrink-0">❌ 처리 실패</span>
                                   )}
-                                  {hasPriceErr && (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 flex-shrink-0">⚠️ 단가 불일치</span>
-                                  )}
+                                  {hasPriceErr && (() => {
+                                    // 수량 초과로 막힌 건을 '단가 불일치' 로 부르면 엉뚱한 데를 본다
+                                    const qo = (inv.price_check_detail || []).filter(d => d.qty_over);
+                                    return (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-700 flex-shrink-0">
+                                        ⚠️ {qo.length ? `수량 초과 ${qo.length}건` : '단가 불일치'}
+                                      </span>
+                                    );
+                                  })()}
                                   {isDup && (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 flex-shrink-0">⚠️ 중복 이력</span>
                                   )}
@@ -22305,7 +22340,26 @@ ${lines}
                                             <tr key={i} className={`border-t ${darkMode ? 'border-gray-700/50' : 'border-gray-50'}`}>
                                               <td className={`py-1.5 font-mono font-semibold text-[11px] truncate ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.material_no}</td>
                                               <td className={`py-1.5 truncate ${darkMode ? 'text-gray-300' : 'text-gray-700'}`} title={item.description}>{item.description || <span className="text-gray-400">—</span>}</td>
-                                              <td className={`py-1.5 text-right font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.quantity?.toLocaleString()} <span className={`font-normal ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>EA</span></td>
+                                              <td className={`py-1.5 text-right font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                                <span className={chk?.qty_over ? 'text-red-500 font-bold' : ''}>{item.quantity?.toLocaleString()}</span>
+                                                <span className={`font-normal ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}> EA</span>
+                                                {/* 발주 수량·잔량. 입고 전 화면이라 잔량도 의미가 있다. */}
+                                                {chk && chk.po_qty != null && (
+                                                  <div className={`text-[10px] font-normal ${
+                                                    chk.qty_over ? 'text-red-500 font-semibold'
+                                                    : chk.over_remain ? 'text-amber-500'
+                                                    : darkMode ? 'text-gray-500' : 'text-gray-400'}`}
+                                                    title={chk.qty_over
+                                                      ? `발주 수량 ${Number(chk.po_qty).toLocaleString()} 보다 많이 들어왔습니다.`
+                                                      : chk.over_remain
+                                                      ? `ME2N 미납 잔량은 ${Number(chk.remain_qty).toLocaleString()} 입니다 (기준 ${chk.qty_updated || '-'}). 이 명세서를 이미 입고 처리했다면 잔량이 먼저 줄어든 것이라 정상입니다.`
+                                                      : '발주 수량입니다.'}>
+                                                    발주 {Number(chk.po_qty).toLocaleString()}
+                                                    {chk.qty_over ? ' · 초과'
+                                                      : chk.over_remain ? ` · 잔량 ${Number(chk.remain_qty).toLocaleString()}` : ''}
+                                                  </div>
+                                                )}
+                                              </td>
                                               <td className={`py-1.5 text-right ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                                                 {item.unit_price ? item.unit_price.toLocaleString() + '원' : '—'}
                                                 {chk && chk.po_price != null && !chk.ok && (
@@ -22316,7 +22370,9 @@ ${lines}
                                                 {item.unit_price && item.quantity ? (item.unit_price * item.quantity).toLocaleString() + '원' : '—'}
                                               </td>
                                               {inv.price_check_detail?.length > 0 && (
-                                                <td className="py-1.5 text-center">{chk ? (chk.ok ? '✅' : '❌') : '—'}</td>
+                                                <td className="py-1.5 text-center"
+                                                  title={chk?.qty_over ? '수량이 발주보다 많습니다' : ''}>
+                                                  {chk ? ((chk.ok && !chk.qty_over) ? '✅' : '❌') : '—'}</td>
                                               )}
                                               {inv.bom_check_result?.length > 0 && (
                                                 <td className="py-1.5 text-center" title={bom ? (bom.in_bom ? `BOM 포함: ${bom.models.join(', ')}` : 'BOM 미등록') : ''}>
