@@ -5362,6 +5362,44 @@ export default function PBKWarehouseSystem() {
   // 재고조정률 목표 = 점수표의 80점 기준. 차트·표·보고서가 같은 값을 보게 한다.
   const INV_ADJ_TARGET = KPI_SCORE_TABLE.inventoryAdjust.find(r => r.score === 80).max;
 
+  // ── 재고조정 누적률 ──────────────────────────────────────────
+  // 이 해부터 누적 = 차이금액 누적 ÷ **평균** 재고금액.
+  // 예전 식은 분모에 재고금액을 계속 더했다. 재고는 잔액이라 더하면 실제로
+  // 존재한 적 없는 금액이 되고(2026 10개월 = 235억), 행이 잘게 쪼개질수록
+  // 비율이 저절로 작아진다. 2020~2022 는 연 1행이라 두 식이 같았고, 점수표의
+  // 0.02~0.20% 구간은 그 연율을 겨냥해 만들어졌다.
+  // 2025 까지는 분기 단위로 들어와 되돌릴 수 없으므로 저장값을 그대로 쓴다.
+  // (2026-11-04 정지민 책임 결정: 2026 부터 적용)
+  const CUM_AVG_FROM_YEAR = 2026;
+
+  // 그 해 월별 누적을 한 벌로 만든다. 차트·표·점수가 같은 값을 보게 한다.
+  // 증가(712)와 손실(711)은 MB51 사유에서 나누어 받는다 — 2026 부터 있다.
+  const invAdjustSeries = (detail, reasons, year, months) => {
+    const useAvg = Number(year) >= CUM_AVG_FROM_YEAR;
+    let vAcc = 0, upAcc = 0, dnAcc = 0, stockAcc = 0, n = 0;
+    return months.map((m, i) => {
+      const d = detail?.[m];
+      const rows = reasons?.[m] || [];
+      const up = rows.reduce((a, r) => a + (r.up || 0), 0);
+      const down = rows.reduce((a, r) => a + (r.down || 0), 0);
+      const blank = { name: `${i + 1}월`, month: m, stock: null, variance: null,
+                      up: null, down: null, cumVarAmt: null, cumUpAmt: null, cumDownAmt: null,
+                      cumAll: null, cumUpPct: null, cumDownPct: null };
+      if (!d || !d.stock) return blank;
+      vAcc += d.variance || 0; upAcc += up; dnAcc += down; stockAcc += d.stock; n += 1;
+      const denom = useAvg ? stockAcc / n : stockAcc;
+      const pct = (v) => (denom ? parseFloat((v / denom * 100).toFixed(4)) : null);
+      return {
+        name: `${i + 1}월`, month: m,
+        stock: d.stock, variance: d.variance || 0, up, down,
+        cumVarAmt: vAcc, cumUpAmt: upAcc, cumDownAmt: dnAcc,
+        // 옛 해는 저장된 누적을 그대로 둔다 — 그때 기준으로 보고된 숫자다
+        cumAll: useAvg ? pct(vAcc) : (d.ratioCum ?? null),
+        cumUpPct: pct(upAcc), cumDownPct: pct(dnAcc),
+      };
+    });
+  };
+
   const calculateKpiScore = (type, value) => {
     if (value === null || value === undefined) return null;
     const table = KPI_SCORE_TABLE[type];
@@ -17889,13 +17927,20 @@ ${lines}
                 : null;
               const grCancelScore = calculateKpiScore('grCancel', grCancelAvg);
 
-              // Inventory Adjust 평균
+              // Inventory Adjust — 그 해 누적률 하나로 점수를 낸다.
+              // 예전엔 월별 비율의 단순 평균이었다. 월로 쪼개 넣기 시작한 2026 부터는
+              // 그 평균이 연율의 1/12 라 점수표(연율 기준)와 단위가 안 맞는다.
+              const invSeries = invAdjustSeries(
+                kpiData.invAdjustDetail, kpiData.adjustReasons, selectedYear, yearMonths);
+              const invFilled = invSeries.filter(d => d.stock !== null);
               const invAdjustValues = yearMonths
                 .map(m => kpiData.inventoryAdjust[m])
                 .filter(v => v !== undefined);
-              const invAdjustAvg = invAdjustValues.length > 0 
-                ? invAdjustValues.reduce((a, b) => a + b, 0) / invAdjustValues.length 
-                : null;
+              const invAdjustAvg = selectedYear >= CUM_AVG_FROM_YEAR
+                ? (invFilled.length ? invFilled[invFilled.length - 1].cumAll : null)
+                : (invAdjustValues.length > 0
+                    ? invAdjustValues.reduce((a, b) => a + b, 0) / invAdjustValues.length
+                    : null);
               const invAdjustScore = calculateKpiScore('inventoryAdjust', invAdjustAvg);
 
               // Kitting Lead Time — 구분(Model/Sub-com./Spare Parts)별로 나눠 담는다.
@@ -18068,7 +18113,11 @@ ${lines}
                         <span className="text-lg font-normal ml-1">%</span>
                       </p>
                       <p className="text-xs mt-2 opacity-70">목표: {INV_ADJ_TARGET}% 이하 (80점)</p>
-                      <p className="text-xs opacity-50">{selectedYear}년 {invAdjustValues.length}개월 평균</p>
+                      <p className="text-xs opacity-50">
+                        {selectedYear >= CUM_AVG_FROM_YEAR
+                          ? `${selectedYear}년 ${invFilled.length}개월 누적 ÷ 평균 재고금액`
+                          : `${selectedYear}년 ${invAdjustValues.length}개월 평균`}
+                      </p>
                     </div>
 
                     {/* Kitting Lead Time */}
@@ -18406,17 +18455,12 @@ ${lines}
 
                     {/* Inventory Adjust Cost - Excel 스타일 (파란 막대=Stock, 노란 꺾은선=Cum%) */}
                     {(() => {
-                      // 월별 데이터 구성
-                      const invChartData = yearMonths.map((month, idx) => {
-                        const detail = kpiData.invAdjustDetail[month];
-                        const stockM = detail && detail.stock ? Math.round(detail.stock / 1000000) : null; // 백만원
-                        const ratioCum = detail ? detail.ratioCum : null;
-                        return {
-                          name: `${idx + 1}월`,
-                          stockM,
-                          ratioCum
-                        };
-                      });
+                      // 월별 데이터 구성 — 누적은 공용 계산(invAdjustSeries)에서 받는다
+                      const invChartData = invSeries.map(d => ({
+                        ...d,
+                        stockM: d.stock ? Math.round(d.stock / 1000000) : null,   // 백만원
+                        ratioCum: d.cumAll,
+                      }));
                       const hasData = invChartData.some(d => d.stockM !== null);
                       const stockMax = Math.max(...invChartData.map(d => d.stockM || 0), 1000);
                       // 목표선도 축 안에 들어오게 최대치에 포함한다
@@ -18508,6 +18552,167 @@ ${lines}
                               📂 "Inv. Adjust Cost 업로드" 버튼으로 엑셀 파일을 업로드하세요
                             </p>
                           )}
+
+                          {/* ─── 재고조정 원인 분해 ────────────────────────
+                              위 차트는 '목표 대비 몇 점' 을 본다. 여기는 '왜 그렇게
+                              됐나' 를 본다. 증가(712)와 손실(711)은 절대값으로 합쳐
+                              한 숫자가 되는데, '재고가 93만원 더 있었다' 와 '93만원
+                              없어졌다' 는 관리상 전혀 다른 일이다. */}
+                          {(() => {
+                            const rows = invChartData.filter(d => d.stock !== null);
+                            if (!rows.length) return null;
+                            const hasSplit = rows.some(d => (d.up || 0) + (d.down || 0) > 0);
+                            if (!hasSplit) return null;    // 사유 데이터는 2026 부터 있다
+
+                            const last = rows[rows.length - 1];
+                            const upT = last.cumUpAmt || 0, dnT = last.cumDownAmt || 0;
+                            const totT = upT + dnT;
+                            const won = (v) => `${Math.round(v || 0).toLocaleString()}원`;
+
+                            // 0선 위아래로 뻗게 손실은 음수로 둔다. 막대 전체 높이 = 그 달 차이금액.
+                            const data = invChartData.map(d => ({
+                              ...d,
+                              upAmt: d.stock === null ? null : (d.up || 0) || null,
+                              downAmt: d.stock === null ? null : (d.down ? -d.down : null),
+                              // 누적도 아래로 쌓이게 — 막대와 방향을 맞춘다
+                              cumDownNeg: d.stock === null ? null : -(d.cumDownAmt || 0),
+                            }));
+                            const peak = Math.max(...rows.map(d => Math.max(d.up || 0, d.down || 0, d.cumUpAmt || 0, d.cumDownAmt || 0)), 1);
+                            // 눈금 간격을 최대값의 1/3 에서 잡고 위아래 세 칸씩 쓴다.
+                            // 칸을 더 잘게 잡으면 축 끝이 멀어져 막대가 눌린다.
+                            const rawStep = peak / 3;
+                            const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+                            const step = Math.ceil(rawStep / mag) * mag;
+                            const pad = step * 3;
+                            const ticks = [-3, -2, -1, 0, 1, 2, 3].map(i => i * step);
+                            // 금액이 작은 해에는 '만' 으로 뭉개지 않는다
+                            const axisFmt = (v) => v === 0 ? '0'
+                              : Math.abs(v) >= 10000
+                                ? `${(v / 10000).toLocaleString(undefined, { maximumFractionDigits: 1 })}만`
+                                : v.toLocaleString();
+
+                            // 그 달에 뭐가 있었는지 — 기안서 번호만 뽑아 막대에 붙인다
+                            const docOf = (m) => {
+                              const list = (kpiData.adjustReasons || {})[m] || [];
+                              const codes = [...new Set(list.map(r => (r.text || '').match(/OP-\d{2}-\d{3}/)?.[0]).filter(Boolean))];
+                              return codes.join(', ');
+                            };
+                            const noteOf = (m) => {
+                              const list = (kpiData.adjustReasons || {})[m] || [];
+                              return list.map(r => {
+                                const raw = (r.text || '').trim();
+                                const blank = !raw || /^\(?사유 ?미기재\)?$/.test(raw);
+                                const t = blank ? '연 1회 재고조사 (기안서 없는 게 정상)'
+                                                : raw.replace(/^PBK기안서\(비용\)-/, '').trim();
+                                return `${r.up ? '증가 ' + won(r.up) : ''}${r.up && r.down ? ' · ' : ''}${r.down ? '손실 ' + won(r.down) : ''} — ${t}`;
+                              });
+                            };
+
+                            return (
+                              <div className="mt-8">
+                                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                                  <h4 className="text-base font-bold text-gray-700">재고조정 원인 분해</h4>
+                                  <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+                                    <span className="flex items-center gap-1">
+                                      <span className="inline-block w-3 h-3 rounded bg-sky-500"></span>증가 (장부보다 더 있었음)
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <span className="inline-block w-3 h-3 rounded bg-rose-500"></span>손실 (없어짐)
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <ResponsiveContainer width="100%" height={260}>
+                                  <ComposedChart data={data} margin={{top:20,right:65,left:10,bottom:5}} stackOffset="sign">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                                    <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{fontSize:9, fill:'#6b7280'}} width={70}
+                                      domain={[-pad, pad]} ticks={ticks} tickFormatter={axisFmt} />
+                                    <Tooltip
+                                      contentStyle={{borderRadius:8, border:'1px solid #e5e7eb', fontSize:12}}
+                                      formatter={(v, name) => v === null || v === undefined ? ['-', name] : [won(Math.abs(v)), name]}
+                                      labelFormatter={(label, payload) => {
+                                        const m = payload?.[0]?.payload?.month;
+                                        const lines = m ? noteOf(m) : [];
+                                        return lines.length ? `${label} — ${lines.join(' / ')}` : label;
+                                      }} />
+                                    <Legend verticalAlign="bottom" wrapperStyle={{fontSize:11, paddingTop:8}} />
+                                    <ReferenceLine y={0} stroke="#9ca3af" strokeWidth={1.5} />
+                                    <Bar dataKey="upAmt" name="증가" stackId="v" fill="#0ea5e9" maxBarSize={44} radius={[3,3,0,0]}
+                                      label={(props) => {
+                                        const {x,y,width,index}=props;
+                                        const d = data[index];
+                                        if (!d || !d.up) return null;
+                                        const doc = docOf(d.month);
+                                        return (
+                                          <g>
+                                            <text x={x+width/2} y={y-16} fill="#0369a1" textAnchor="middle" fontSize={10} fontWeight={700}>
+                                              {axisFmt(d.up)}
+                                            </text>
+                                            {doc && <text x={x+width/2} y={y-5} fill="#94a3b8" textAnchor="middle" fontSize={8}>{doc}</text>}
+                                          </g>
+                                        );
+                                      }} />
+                                    <Bar dataKey="downAmt" name="손실" stackId="v" fill="#f43f5e" maxBarSize={44} radius={[0,0,3,3]}
+                                      label={(props) => {
+                                        const {x,y,width,height,index}=props;
+                                        const d = data[index];
+                                        if (!d || !d.down) return null;
+                                        // 음수 막대는 y 가 바닥이고 height 가 음수로 온다.
+                                        // 부호를 가정하지 말고 두 끝 중 아래쪽을 고른다.
+                                        const bottom = Math.max(y, y + height);
+                                        return (
+                                          <text x={x+width/2} y={bottom+14} fill="#be123c" textAnchor="middle" fontSize={10} fontWeight={700}>
+                                            {axisFmt(d.down)}
+                                          </text>
+                                        );
+                                      }} />
+                                    {/* 누적선 — 손실선이 평평한지 계속 오르는지가 핵심이다 */}
+                                    <Line type="monotone" dataKey="cumUpAmt" name="누적 증가" stroke="#0ea5e9"
+                                      strokeWidth={2} strokeDasharray="5 3" dot={{r:3}} connectNulls />
+                                    <Line type="monotone" dataKey="cumDownNeg" name="누적 손실" stroke="#f43f5e"
+                                      strokeWidth={2} strokeDasharray="5 3" dot={{r:3}} connectNulls />
+                                  </ComposedChart>
+                                </ResponsiveContainer>
+
+                                {/* 한 줄 요약 — 점수만 남고 설명이 없으면 숫자가 혼자 돌아다닌다 */}
+                                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                                  <span className="text-sky-700 font-medium">
+                                    증가 {won(upT)} ({totT ? Math.round(upT/totT*100) : 0}%)
+                                  </span>
+                                  <span className="text-rose-700 font-medium">
+                                    손실 {won(dnT)} ({totT ? Math.round(dnT/totT*100) : 0}%)
+                                  </span>
+                                  <span className="text-gray-400">합계 {won(totT)}</span>
+                                  {(() => {
+                                    // 가장 큰 건 둘은 이름을 불러준다.
+                                    // 한 사유 줄에 증가와 손실이 같이 들어 있을 수 있어
+                                    // (3월 재고조사: 증가 192,498 + 손실 1,313,939) 방향을 갈라 센다.
+                                    const all = [];
+                                    rows.forEach(d => (kpiData.adjustReasons?.[d.month] || []).forEach(r => {
+                                      const raw = (r.text || '').trim();
+                                      // Text 가 비면 '(사유 미기재)' 라는 글자로 들어온다.
+                                      // 3월분은 연 1회 전수조사라 기안서가 없는 게 정상이다.
+                                      const blank = !raw || /^\(?사유 ?미기재\)?$/.test(raw);
+                                      const t = blank ? '연 1회 재고조사'
+                                                      : raw.replace(/^PBK기안서\(비용\)-/, '').trim();
+                                      if (r.up)   all.push({ m: d.name, amt: r.up,   dir: '증가', t });
+                                      if (r.down) all.push({ m: d.name, amt: r.down, dir: '손실', t });
+                                    }));
+                                    all.sort((a, b) => b.amt - a.amt);
+                                    if (!all.length) return null;
+                                    return (
+                                      <span className="text-gray-500">
+                                        최대 요인 ·{' '}
+                                        {all.slice(0, 2).map(x =>
+                                          `${x.m} ${x.dir} ${won(x.amt)} ${x.t}`).join(' · ')}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* 재고조정 사유 — MB51 Text 컬럼. 왜 늘고 줄었는지 */}
                           {(() => {
@@ -18689,9 +18894,8 @@ ${lines}
                                   </tr>
                                   <tr className="bg-amber-50/30">
                                     <td className="border border-gray-200 px-2 py-1.5 font-medium text-amber-700 bg-amber-50 whitespace-nowrap">Adjust Cost (Cum.) %</td>
-                                    {yearMonths.map(m => {
-                                      const d = kpiData.invAdjustDetail[m];
-                                      const v = d ? d.ratioCum : null;
+                                    {yearMonths.map((m, mi) => {
+                                      const v = invSeries[mi] ? invSeries[mi].cumAll : null;
                                       return (
                                         <td key={m} className={`border border-gray-200 px-2 py-1.5 text-right font-semibold ${
                                           v !== null && v !== undefined ? (v <= INV_ADJ_TARGET ? 'text-emerald-700' : 'text-red-600') : 'text-gray-400'
@@ -19313,8 +19517,9 @@ ${lines}
                             const totalGRQty = yearMonths.reduce((s,m) => s + (kpiData.grCancelQty[m] || 0), 0);
                             const totalGRCancel = yearMonths.reduce((s,m) => s + (kpiData.grCancel[m] !== undefined ? kpiData.grCancel[m] : 0), 0);
                             const totalCancelRate = totalGRQty > 0 ? (totalGRCancel / totalGRQty * 100) : null;
+                            // 재고조정은 점수와 같은 값을 쓴다 — 두 곳이 다른 숫자를 말하면 안 된다
                             const invVals = yearMonths.map(m => kpiData.inventoryAdjust[m]).filter(v => v !== undefined);
-                            const avgInv = invVals.length > 0 ? invVals.reduce((a,b)=>a+b,0)/invVals.length : null;
+                            const avgInv = invAdjustAvg;
                             const ltVals = Object.values(kittingLTByMonth).map(arr => arr.reduce((a,b)=>a+b,0)/arr.length);
                             const avgLT = ltVals.length > 0 ? ltVals.reduce((a,b)=>a+b,0)/ltVals.length : null;
                             const allCT = Object.values(kittingCTByMonth).flat();
@@ -19338,8 +19543,11 @@ ${lines}
                                 <td className="px-3 py-2 text-center">
                                   {totalCancelRate !== null ? <span className={totalCancelRate === 0 ? 'text-emerald-700' : totalCancelRate <= 0.5 ? 'text-amber-600' : 'text-red-600'}>{totalCancelRate.toFixed(3)}%</span> : '-'}
                                 </td>
-                                {/* Inventory Adjust Cost - 평균 */}
-                                <td className="px-3 py-2 text-center">
+                                {/* Inventory Adjust Cost — 2026 부터 누적(차이금액 합 ÷ 평균 재고금액) */}
+                                <td className="px-3 py-2 text-center"
+                                  title={selectedYear >= CUM_AVG_FROM_YEAR
+                                    ? '누적 차이금액 ÷ 평균 재고금액'
+                                    : '월별 비율의 단순 평균 (그 해 집계 기준)'}>
                                   {avgInv !== null ? <span className={avgInv <= INV_ADJ_TARGET ? 'text-emerald-700' : 'text-amber-600'}>{avgInv.toFixed(3)}%</span> : '-'}
                                 </td>
                                 {/* Kitting L/T - 전체 평균 */}
