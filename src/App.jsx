@@ -18634,10 +18634,10 @@ ${lines}
                                   <h4 className="text-base font-bold text-gray-700">재고조정 원인 분해</h4>
                                   <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
                                     <span className="flex items-center gap-1">
-                                      <span className="inline-block w-3 h-3 rounded bg-sky-300"></span>증가 (장부보다 더 있었음)
+                                      <span className="inline-block w-3 h-3 rounded bg-sky-300"></span>증가
                                     </span>
                                     <span className="flex items-center gap-1">
-                                      <span className="inline-block w-3 h-3 rounded bg-rose-300"></span>손실 (없어짐)
+                                      <span className="inline-block w-3 h-3 rounded bg-rose-300"></span>손실
                                     </span>
                                     <span className="flex items-center gap-1" title="KPI 분자입니다 — 이 금액을 평균 재고금액으로 나눈 값이 위 차트의 누적률입니다">
                                       <span className="inline-block w-4 border-t-2 border-amber-500"></span>누적 전체 = KPI 분자
