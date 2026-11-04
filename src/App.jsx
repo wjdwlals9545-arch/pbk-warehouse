@@ -18498,8 +18498,7 @@ ${lines}
                           <p className="text-[11px] text-gray-400 mb-2">
                             {selectedYear >= CUM_AVG_FROM_YEAR ? (
                               <>누적 = 그 해 <b className="text-gray-500">차이금액 합계 ÷ 평균 재고금액</b>
-                                {' '}· 차이금액은 증가(712)와 손실(711)의 절대값 합입니다
-                                {' '}· {CUM_AVG_FROM_YEAR}년부터 이 기준입니다</>
+                                {' '}· 차이금액은 증가(712)와 손실(711)의 절대값 합입니다</>
                             ) : (
                               <>이 해는 <b className="text-gray-500">분기 단위</b>로 집계돼 월별 비율의 평균을 씁니다
                                 {' '}· {CUM_AVG_FROM_YEAR}년부터는 차이금액 합계 ÷ 평균 재고금액이라 그대로 비교할 수 없습니다</>
