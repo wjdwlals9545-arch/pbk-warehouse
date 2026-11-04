@@ -18493,6 +18493,18 @@ ${lines}
                               </span>
                             </div>
                           </div>
+                          {/* 기준을 바꿨으면 화면에 적어둬야 한다. 안 그러면 2025 는 0.010%,
+                              2026 은 0.130% 인 게 개선·악화로 읽힌다 — 단위가 다른 건데. */}
+                          <p className="text-[11px] text-gray-400 mb-2">
+                            {selectedYear >= CUM_AVG_FROM_YEAR ? (
+                              <>누적 = 그 해 <b className="text-gray-500">차이금액 합계 ÷ 평균 재고금액</b>
+                                {' '}· 차이금액은 증가(712)와 손실(711)의 절대값 합입니다
+                                {' '}· {CUM_AVG_FROM_YEAR}년부터 이 기준입니다</>
+                            ) : (
+                              <>이 해는 <b className="text-gray-500">분기 단위</b>로 집계돼 월별 비율의 평균을 씁니다
+                                {' '}· {CUM_AVG_FROM_YEAR}년부터는 차이금액 합계 ÷ 평균 재고금액이라 그대로 비교할 수 없습니다</>
+                            )}
+                          </p>
                           <ResponsiveContainer width="100%" height={300}>
                             <ComposedChart data={invChartData} margin={{top:30,right:65,left:10,bottom:5}}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#d1d5db" vertical={false} />
@@ -18577,14 +18589,21 @@ ${lines}
                               // 누적도 아래로 쌓이게 — 막대와 방향을 맞춘다
                               cumDownNeg: d.stock === null ? null : -(d.cumDownAmt || 0),
                             }));
-                            const peak = Math.max(...rows.map(d => Math.max(d.up || 0, d.down || 0, d.cumUpAmt || 0, d.cumDownAmt || 0)), 1);
-                            // 눈금 간격을 최대값의 1/3 에서 잡고 위아래 세 칸씩 쓴다.
-                            // 칸을 더 잘게 잡으면 축 끝이 멀어져 막대가 눌린다.
-                            const rawStep = peak / 3;
-                            const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+                            // 위아래가 대칭이 아니다 — 누적 전체·증가는 위로만, 손실은 아래로만
+                            // 간다. 대칭으로 잡으면 한쪽이 비고 막대가 눌린다.
+                            const posMax = Math.max(...rows.map(d =>
+                              Math.max(d.up || 0, d.cumUpAmt || 0, d.cumVarAmt || 0)), 1);
+                            const negMax = Math.max(...rows.map(d =>
+                              Math.max(d.down || 0, d.cumDownAmt || 0)), 1);
+                            // 눈금 간격은 위쪽 폭의 1/3. 한 자리 더 잘게 끊어야
+                            // 축 끝이 멀어지지 않는다 (100만 단위면 330만이 600만이 된다).
+                            const rawStep = posMax / 3;
+                            const mag = Math.pow(10, Math.max(0, Math.floor(Math.log10(rawStep)) - 1));
                             const step = Math.ceil(rawStep / mag) * mag;
-                            const pad = step * 3;
-                            const ticks = [-3, -2, -1, 0, 1, 2, 3].map(i => i * step);
+                            const upN = Math.max(1, Math.ceil(posMax / step));
+                            const dnN = Math.max(1, Math.ceil(negMax / step));
+                            const ticks = [];
+                            for (let i = -dnN; i <= upN; i++) ticks.push(i * step);
                             // 금액이 작은 해에는 '만' 으로 뭉개지 않는다
                             const axisFmt = (v) => v === 0 ? '0'
                               : Math.abs(v) >= 10000
@@ -18619,15 +18638,18 @@ ${lines}
                                     <span className="flex items-center gap-1">
                                       <span className="inline-block w-3 h-3 rounded bg-rose-500"></span>손실 (없어짐)
                                     </span>
+                                    <span className="flex items-center gap-1" title="KPI 분자입니다 — 이 금액을 평균 재고금액으로 나눈 값이 위 차트의 누적률입니다">
+                                      <span className="inline-block w-4 border-t-2 border-amber-500"></span>누적 전체 = KPI 분자
+                                    </span>
                                   </div>
                                 </div>
 
-                                <ResponsiveContainer width="100%" height={260}>
+                                <ResponsiveContainer width="100%" height={300}>
                                   <ComposedChart data={data} margin={{top:20,right:65,left:10,bottom:5}} stackOffset="sign">
                                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                                     <XAxis dataKey="name" tick={{fontSize:11}} axisLine={false} tickLine={false} />
                                     <YAxis tick={{fontSize:9, fill:'#6b7280'}} width={70}
-                                      domain={[-pad, pad]} ticks={ticks} tickFormatter={axisFmt} />
+                                      domain={[-dnN * step, upN * step]} ticks={ticks} tickFormatter={axisFmt} />
                                     <Tooltip
                                       contentStyle={{borderRadius:8, border:'1px solid #e5e7eb', fontSize:12}}
                                       formatter={(v, name) => v === null || v === undefined ? ['-', name] : [won(Math.abs(v)), name]}
@@ -18667,7 +18689,11 @@ ${lines}
                                           </text>
                                         );
                                       }} />
-                                    {/* 누적선 — 손실선이 평평한지 계속 오르는지가 핵심이다 */}
+                                    {/* 누적선 — 손실선이 평평한지 계속 오르는지가 핵심이다.
+                                        전체선은 위 차트의 누적률과 같은 것이다(÷ 평균 재고금액). */}
+                                    <Line type="monotone" dataKey="cumVarAmt" name="누적 전체 (증가+손실)"
+                                      stroke="#eab308" strokeWidth={3}
+                                      dot={{r:4, fill:'#eab308', stroke:'#fff', strokeWidth:2}} connectNulls />
                                     <Line type="monotone" dataKey="cumUpAmt" name="누적 증가" stroke="#0ea5e9"
                                       strokeWidth={2} strokeDasharray="5 3" dot={{r:3}} connectNulls />
                                     <Line type="monotone" dataKey="cumDownNeg" name="누적 손실" stroke="#f43f5e"
@@ -18710,6 +18736,44 @@ ${lines}
                                     );
                                   })()}
                                 </div>
+
+                                {/* 손실만 떼어 보면 — 40점의 정체가 증가분이라는 걸 숫자로.
+                                    점수는 전체(절대값) 기준 그대로다. 장부가 어느 쪽으로
+                                    틀렸든 관리 실패이기 때문이다. 이건 설명용이다. */}
+                                {(() => {
+                                  if (selectedYear < CUM_AVG_FROM_YEAR) return null;
+                                  const allPct = last.cumAll, lossPct = last.cumDownPct;
+                                  if (allPct === null || lossPct === null) return null;
+                                  const sAll = calculateKpiScore('inventoryAdjust', allPct);
+                                  const sLoss = calculateKpiScore('inventoryAdjust', lossPct);
+                                  const Row = ({ label, pct, score, note, tone }) => (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`w-28 shrink-0 ${tone}`}>{label}</span>
+                                      <b className="w-16 text-right tabular-nums">{pct.toFixed(3)}%</b>
+                                      <span className={`px-1.5 py-0.5 rounded text-[11px] font-bold ${
+                                        score >= 80 ? 'bg-emerald-100 text-emerald-700'
+                                        : score >= 60 ? 'bg-amber-100 text-amber-700'
+                                        : 'bg-red-100 text-red-700'}`}>{score}점</span>
+                                      <span className="text-gray-400 text-[11px]">{note}</span>
+                                    </div>
+                                  );
+                                  return (
+                                    <div className="mt-3 rounded-lg border bg-slate-50 px-3 py-2.5 text-xs space-y-1.5">
+                                      <div className="font-semibold text-gray-600">
+                                        손실만 따로 보면 — 같은 평균 재고금액으로 나눈 값
+                                      </div>
+                                      <Row label="전체 (증가+손실)" pct={allPct} score={sAll}
+                                        tone="text-gray-700 font-medium" note="← 지금 KPI 점수" />
+                                      <Row label="손실만" pct={lossPct} score={sLoss}
+                                        tone="text-rose-700 font-medium"
+                                        note={lossPct <= INV_ADJ_TARGET ? `목표 ${INV_ADJ_TARGET}% 이내` : `목표 ${INV_ADJ_TARGET}% 초과`} />
+                                      <p className="text-[11px] text-gray-400 pt-0.5">
+                                        점수는 전체 기준입니다 — 장부가 어느 쪽으로 틀렸든 관리해야 할 일이라서입니다.
+                                        손실 쪽은 설명을 위한 참고치입니다.
+                                      </p>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             );
                           })()}
