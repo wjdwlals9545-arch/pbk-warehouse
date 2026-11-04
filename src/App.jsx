@@ -9663,12 +9663,24 @@ ${tableRows}</tbody>
 
     try {
       const now = new Date();
-      const ym = now.toISOString().slice(0, 7);
-      const prevYm = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 7);
-      const last12 = [...Array(12)].map((_, i) => {
-        const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+
+      // 화면에서 끈 항목은 보고서에도 넣지 않는다 (KPI 탭 '표시 항목' 토글)
+      const show = (k) => !kpiHidden.has(k);
+
+      // 기준월 = 자료가 있는 마지막 달. 달이 바뀌자마자 뽑으면 그 달은 아직 비어 있어
+      // 전부 '-' 인 보고서가 나온다 (11월 1일에 11월 보고서를 뽑는 경우).
+      const hasAnyKpi = (mm) =>
+        (kpiData.grCancelQty?.[mm] ?? 0) > 0
+        || (kpiData.invAdjustDetail?.[mm]?.stock ?? 0) > 0;
+      const back = [...Array(24)].map((_, i) => {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       });
+      const ym = back.find(hasAnyKpi) || back[0];
+      const [ry, rmo] = ym.split('-').map(Number);
+      const prevYm = `${rmo === 1 ? ry - 1 : ry}-${String(rmo === 1 ? 12 : rmo - 1).padStart(2, '0')}`;
+      // 대시보드 KPI 화면과 같은 범위(그 해 1~12월). 최근 12개월로 하면 눈금이 어긋난다.
+      const last12 = [...Array(12)].map((_, i) => `${ry}-${String(i + 1).padStart(2, '0')}`);
 
       // ── 코드 집계 ──
       const kit = chatToolImpl.get_kitting_status({ month: ym });
@@ -9691,22 +9703,45 @@ ${tableRows}</tbody>
       const sKitLT = last12.map(m => avg(kitByMonth[m]));
       const sCycle = last12.map(m => avg(cycByMonth[m]));
 
-      // 월간 보고서는 자재담당 고유 KPI 4종만 다룬다
+      // 재고조정은 대시보드와 같은 계산을 쓴다 — 두 곳이 다른 숫자를 말하면 안 된다
+      const invSer = invAdjustSeries(kpiData.invAdjustDetail, kpiData.adjustReasons, ry, last12);
+      const invLast = [...invSer].reverse().find(d => d.stock !== null) || null;
+      const invMonths = invSer.filter(d => d.stock !== null).length;
+      const hasSplit = invSer.some(d => (d.up || 0) + (d.down || 0) > 0);
+
+      // 월간 보고서는 화면에 켜 둔 지표만 다룬다.
+      // 끈 지표를 JSON 에 넣으면 AI 가 "데이터 없음" 이라고 굳이 한 줄 쓴다.
       // (수입검사=QA, 납품지연=구매 소관 → 주간 운영 보고서로 분리)
       const metrics = {
         기준월: ym,
         데이터기준: { Stock: lastUpdated || null, OpenPO: openPOLastUpdated || null },
-        GR취소: { 당월_취소건수: kpiData.grCancel?.[ym] ?? null, 당월_GR수량: kpiData.grCancelQty?.[ym] ?? null, 전월_취소건수: kpiData.grCancel?.[prevYm] ?? null, 목표: '월 2건 이하' },
-        재고조정률_pct: { 당월: kpiData.inventoryAdjust?.[ym] ?? null, 전월: kpiData.inventoryAdjust?.[prevYm] ?? null, 목표: `${INV_ADJ_TARGET}% 이하` },
-        키팅: {
+        ...(show('gr') ? { GR취소: {
+          당월_취소건수: kpiData.grCancel?.[ym] ?? null,
+          당월_GR수량: kpiData.grCancelQty?.[ym] ?? null,
+          전월_취소건수: kpiData.grCancel?.[prevYm] ?? null,
+          목표: '월 2건 이하',
+        } } : {}),
+        ...(show('inv') ? { 재고조정률_pct: {
+          당월: kpiData.inventoryAdjust?.[ym] ?? null,
+          전월: kpiData.inventoryAdjust?.[prevYm] ?? null,
+          연누적: invLast?.cumAll ?? null,
+          연누적_증가분: invLast?.cumUpPct ?? null,
+          연누적_손실분: invLast?.cumDownPct ?? null,
+          증가금액_원: invLast?.cumUpAmt ?? null,
+          손실금액_원: invLast?.cumDownAmt ?? null,
+          산식: '연 누적 차이금액 ÷ 평균 재고금액',
+          목표: `${INV_ADJ_TARGET}% 이하`,
+        } } : {}),
+        ...(show('lt') ? { 키팅: {
           당월: { 건수: kit.count, 상태별: kit.byStatus, 평균리드타임_일: kit.avgLeadTimeDays, 목표: '3일 이내' },
           전월: { 건수: kitPrev.count, 평균리드타임_일: kitPrev.avgLeadTimeDays }
-        },
-        키팅_평균사이클타임_분: cycleArr.length ? +(cycleArr.reduce((a, b) => a + b, 0) / cycleArr.length).toFixed(1) : null,
-        연간누계: {
-          GR수량: last12.filter((_, i) => last12[i].startsWith(String(now.getFullYear()))).reduce((s, m) => s + (kpiData.grCancelQty?.[m] ?? 0), 0),
-          GR취소건수: last12.filter((_, i) => last12[i].startsWith(String(now.getFullYear()))).reduce((s, m) => s + (kpiData.grCancel?.[m] ?? 0), 0),
-        },
+        } } : {}),
+        ...(show('ct') ? { 키팅_평균사이클타임_분: cycleArr.length
+          ? +(cycleArr.reduce((a, b) => a + b, 0) / cycleArr.length).toFixed(1) : null } : {}),
+        ...(show('gr') ? { 연간누계: {
+          GR수량: last12.reduce((s, m) => s + (kpiData.grCancelQty?.[m] ?? 0), 0),
+          GR취소건수: last12.reduce((s, m) => s + (kpiData.grCancel?.[m] ?? 0), 0),
+        } } : {}),
         재고_품목수: Array.isArray(inventoryData) ? inventoryData.length : 0,
       };
 
@@ -9727,7 +9762,10 @@ ${tableRows}</tbody>
 구성 (섹션 제목 형식을 정확히 지킬 것):
 [종합등급] 양호/주의/위험 중 하나만 쓰고, 이어서 한 줄 사유
 [요약] 3줄 이내 핵심 요약
-[지표 분석] GR취소 / 재고조정 / 키팅 리드타임 / 수입검사 / 납품 순으로 각 1~3줄 (전월 대비, 목표 대비 언급)
+[지표 분석] ${[show('gr') && 'GR취소', show('inv') && '재고조정', show('lt') && '키팅 리드타임', show('ct') && '키팅 사이클타임'].filter(Boolean).join(' / ')} 순으로 각 2~4줄 (전월 대비, 목표 대비 언급)
+  JSON 에 없는 지표는 아예 언급하지 말 것 — "데이터 없음" 이라고 쓰지도 말 것.${show('inv') ? `
+  재고조정은 연누적(= 차이금액 합계 ÷ 평균 재고금액)을 기준으로 쓰고, 증가분과 손실분을
+  나눠 볼 것. 증가는 재고 이전·기안구매 등 장부 정리이고, 손실분이 실제 재고 차이다.` : ''}
 [리스크 및 특이사항] 주의가 필요한 항목
 [권고] 다음 달 조치 제안 2~3개`,
           messages: [{ role: 'user', content: `${ym} 월간 KPI 지표:\n${JSON.stringify(metrics, null, 1)}` }]
@@ -9760,12 +9798,21 @@ ${tableRows}</tbody>
         return `<span style="color:${good ? '#10b981' : '#ef4444'};font-weight:700;">${down ? '▼' : '▲'} 전월 ${prev}</span>`;
       };
       const m = metrics;
-      const cards = [
-        { label: 'GR 취소', val: v(m.GR취소.당월_취소건수, '건'), sub: `GR ${v(m.GR취소.당월_GR수량, '건')} · ${diffArrow(m.GR취소.당월_취소건수, m.GR취소.전월_취소건수)}`, goal: '목표 2건 이하' },
-        { label: '재고 조정률', val: v(m.재고조정률_pct.당월, '%'), sub: diffArrow(m.재고조정률_pct.당월, m.재고조정률_pct.전월), goal: `목표 ${INV_ADJ_TARGET}% 이하` },
-        { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'), sub: `${m.키팅.당월.건수}건 · ${diffArrow(m.키팅.당월.평균리드타임_일, m.키팅.전월.평균리드타임_일)}`, goal: '목표 3일 이내' },
-        { label: '키팅 사이클타임', val: v(m.키팅_평균사이클타임_분, '분'), sub: `${m.키팅.당월.상태별.completed}건 완료`, goal: '' },
-      ].map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval">${c.val}</div><div class="ksub">${c.sub || ''}</div><div class="kgoal">${c.goal}</div></div>`).join('');
+      const cardList = [
+        show('gr') && { label: 'GR 취소', val: v(m.GR취소.당월_취소건수, '건'),
+          sub: `GR ${v(m.GR취소.당월_GR수량, '건')} · ${diffArrow(m.GR취소.당월_취소건수, m.GR취소.전월_취소건수)}`,
+          goal: '목표 2건 이하' },
+        // 대시보드 점수 카드와 같은 값을 쓴다 — 거기는 연 누적을 크게 띄운다
+        show('inv') && { label: '재고 조정률', val: v(m.재고조정률_pct.연누적, '%'),
+          sub: `${invMonths}개월 누적 ÷ 평균 재고금액 · 당월 ${v(m.재고조정률_pct.당월, '%')}`,
+          goal: `목표 ${INV_ADJ_TARGET}% 이하` },
+        show('lt') && { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'),
+          sub: `${m.키팅.당월.건수}건 · ${diffArrow(m.키팅.당월.평균리드타임_일, m.키팅.전월.평균리드타임_일)}`,
+          goal: '목표 3일 이내' },
+        show('ct') && { label: '키팅 사이클타임', val: v(m.키팅_평균사이클타임_분, '분'),
+          sub: `${m.키팅.당월.상태별.completed}건 완료`, goal: '' },
+      ].filter(Boolean);
+      const cards = cardList.map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval">${c.val}</div><div class="ksub">${c.sub || ''}</div><div class="kgoal">${c.goal}</div></div>`).join('');
 
       // 월별 표: 12월 PPT 형식(GR Qty/Pass/Cancel/월별·누적률)을 그대로 따름
       const pct = (x) => x == null ? '-' : `${(+x).toFixed(x < 0.01 ? 4 : 3)}%`;
@@ -9778,22 +9825,11 @@ ${tableRows}</tbody>
         });
       })();
       // 대시보드와 같은 단위(백만원)로 막대를 그린다
-      const stockMil = last12.map(mm => {
-        const st = kpiData.invAdjustDetail?.[mm];
-        return st && st.stock ? +(st.stock / 1e6).toFixed(0) : null;
-      });
-      const cumAdjRate = (() => {
-        let v = 0, s = 0, any = false;
-        return sInvAdj.map((r, i) => {
-          const st = kpiData.invAdjustDetail?.[last12[i]];
-          if (!st) return any ? +(v / s * 100).toFixed(4) : null;
-          any = true; v += st.variance || 0; s += st.stock || 0;
-          return s > 0 ? +(v / s * 100).toFixed(4) : null;
-        });
-      })();
+      const stockMil = invSer.map(d => d.stock ? +(d.stock / 1e6).toFixed(0) : null);
+      const cumAdjRate = invSer.map(d => d.cumAll);
 
-      const charts =
-        kpiChartSvg({
+      const charts = [
+        show('gr') && kpiChartSvg({
           title: 'GR 처리량 & 취소 건수', labels: last12,
           series: [
             { type: 'bar', name: 'GR 수량', data: sGrQty, color: '#455DA0' },
@@ -9806,8 +9842,8 @@ ${tableRows}</tbody>
             { label: 'GR Cancel', values: sGrCancel },
             { label: 'Cancel (Cum.)', values: cumGrRate, fmt: pct },
           ]
-        }) +
-        kpiChartSvg({
+        }),
+        show('inv') && kpiChartSvg({
           title: '재고조정 추이 (Inventory Adjust Cost)', labels: last12,
           series: [
             { type: 'bar', name: 'Total stock value', data: stockMil, color: '#455DA0',
@@ -9817,13 +9853,18 @@ ${tableRows}</tbody>
           target: INV_ADJ_TARGET, targetAxis: 'right', targetLabel: `목표 ${INV_ADJ_TARGET}% (80점)`,
           leftUnit: '백만원', rightUnit: '%', valueLabels: true,
           rows: [
-            { label: 'Total value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.stock ?? null) },
-            { label: 'Fail value', values: last12.map(mm => kpiData.invAdjustDetail?.[mm]?.variance ?? null) },
+            { label: 'Total value', values: invSer.map(d => d.stock) },
+            { label: 'Abs. Variance', values: invSer.map(d => d.variance) },
+            // 증가·손실은 MB51 사유에서 갈라 받는다. 2026 부터만 있다.
+            ...(hasSplit ? [
+              { label: '  증가', values: invSer.map(d => d.up || null) },
+              { label: '  손실', values: invSer.map(d => d.down || null) },
+            ] : []),
             { label: '(Month.)', values: sInvAdj, fmt: pct },
             { label: '(Cum.)', values: cumAdjRate, fmt: pct },
           ]
-        }) +
-        kpiChartSvg({
+        }),
+        show('lt') && kpiChartSvg({
           title: '키팅 평균 리드타임 (일)', labels: last12,
           series: [{ type: 'line', name: '리드타임', data: sKitLT, color: '#199AC2' }],
           target: 3, targetLabel: '목표 3일',
@@ -9831,8 +9872,8 @@ ${tableRows}</tbody>
             { label: '완료 건수', values: last12.map(mm => (kitByMonth[mm] || []).length || null) },
             { label: '평균 (일)', values: sKitLT },
           ]
-        }) +
-        kpiChartSvg({
+        }),
+        show('ct') && kpiChartSvg({
           title: '키팅 평균 사이클타임 (분)', labels: last12,
           series: [{ type: 'line', name: '사이클타임', data: sCycle, color: '#FDB813' }],
           target: null,
@@ -9840,7 +9881,8 @@ ${tableRows}</tbody>
             { label: '완료 건수', values: last12.map(mm => (cycByMonth[mm] || []).length || null) },
             { label: '평균 (분)', values: sCycle },
           ]
-        });
+        }),
+      ].filter(Boolean).join('');
 
       const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
 
@@ -9861,7 +9903,7 @@ ${tableRows}</tbody>
 <div class="body">
   <div class="sec">
     <div class="sechd"><span class="secno">01</span><h2>핵심 지표</h2><span class="note">${ym} 기준 · 전월 대비</span></div>
-    <div class="cards">${cards}</div>
+    <div class="cards" style="grid-template-columns:repeat(${Math.max(1, cardList.length)},1fr)">${cards}</div>
   </div>
   <div class="sec">
     <div class="sechd"><span class="secno">02</span><h2>12개월 추이</h2><span class="note">그래프에 마우스를 올리면 월별 값이 표시됩니다</span></div>
