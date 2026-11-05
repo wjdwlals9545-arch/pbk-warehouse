@@ -2613,6 +2613,11 @@ export default function PBKWarehouseSystem() {
   const [deliveryLastUpdated, setDeliveryLastUpdated] = useState(() => {
     return safeStorage.getItem('pbk_delivery_updated') || null;
   });
+  // 수입검사 대기(Q-Stock)는 재고와 같은 Zbindata 에서 나오지만 따로 갱신될 수
+  // 있다. 제 시각을 들고 있어야 '언제 기준 목록인지' 를 말할 수 있다.
+  const [qStockUpdated, setQStockUpdated] = useState(() => {
+    return safeStorage.getItem('pbk_qstock_updated') || null;
+  });
   // 납기 지연 선택/숨김 관리
   const [overdueSelected, setOverdueSelected] = useState(new Set());
   // 업체별 납기 독촉 메일 초안 (발송 안 함 — 초안만 만들고 보내는 건 사람이)
@@ -3668,7 +3673,7 @@ export default function PBKWarehouseSystem() {
         'pbk_open_po', 'pbk_open_po_raw', 'pbk_open_po_updated',
         'pbk_delivery_data', 'pbk_delivery_updated',
         'pbk_stock_epoch', 'pbk_po_epoch', 'pbk_del_epoch',
-        'pbk_qstock',
+        'pbk_qstock', 'pbk_qstock_updated',
       ]);
       const localExcelEpoch = Math.max(
         parseInt(safeStorage.getItem('pbk_stock_epoch') || '0'),
@@ -3716,6 +3721,7 @@ export default function PBKWarehouseSystem() {
         pbk_delivery_data: setDeliveryData,
         pbk_delivery_updated: (val) => { safeStorage.setItem('pbk_delivery_updated', val); setDeliveryLastUpdated(val); },
         pbk_qstock: setQStockData,
+        pbk_qstock_updated: (val) => { safeStorage.setItem('pbk_qstock_updated', val); setQStockUpdated(val); },
         pbk_last_auto_backup: setLastAutoBackup,
       };
 
@@ -5832,6 +5838,7 @@ export default function PBKWarehouseSystem() {
       let stockLoaded = false;
       let poLoaded = false;
       let delLoaded = false;
+      let qLoaded = false;   // Zbindata 를 방금 파싱했으면 JSON 으로 되돌리지 않는다
 
       // ── Excel 로드: GitHub 커밋 시간이 저장된 데이터보다 새로우면 파싱 ──
       {
@@ -5864,6 +5871,9 @@ export default function PBKWarehouseSystem() {
                 setQStockData([]);
                 safeStorage.removeItem('pbk_qstock');
               }
+              setQStockUpdated(ts);
+              safeStorage.setItem('pbk_qstock_updated', ts);
+              qLoaded = true;
               safeStorage.setItem('pbk_parse_version', PARSE_VERSION);
               console.log(`[Stock] GitHub Excel 자동 파싱 완료 (${inventory.length}개${qStockItems.length > 0 ? `, Q:${qStockItems.length}건` : ''})`);
               addDataHistory('stock', 'GitHub Excel 자동 로드', inventory.length);
@@ -5960,14 +5970,24 @@ export default function PBKWarehouseSystem() {
         } catch (e) { console.log('Stock JSON fetch skip:', e.message); }
       }
 
-      // Q Stock JSON fallback (로컬에 없을 때만)
-      if (!safeStorage.getItem('pbk_qstock')) try {
+      // Q-Stock JSON — 원격 updated 가 저장본과 다르면 받는다.
+      // 예전엔 '로컬에 없을 때만' 이라 한번 받고 나면 영영 그대로였다. 수입검사가
+      // 끝나 Q 재고에서 빠진 품목이 '수입검사 대기' 에 계속 남은 원인이다.
+      // 빈 배열도 받아들인다 — 전부 검사가 끝나면 0건이 맞는 답이다.
+      if (!qLoaded) try {
         const qResp = await fetch(`${BASE}/qstock_data.json?t=${Date.now()}`);
         if (qResp.ok) {
           const qJson = await qResp.json();
-          if (qJson && qJson.data && qJson.data.length > 0) {
+          const qStale = !safeStorage.getItem('pbk_qstock')
+            || (qJson?.updated && qJson.updated !== safeStorage.getItem('pbk_qstock_json'));
+          if (qStale && qJson && Array.isArray(qJson.data) && qJson.updated) {
             setQStockData(qJson.data);
-            safeStorage.setItem('pbk_qstock', JSON.stringify(qJson.data));
+            if (qJson.data.length) safeStorage.setItem('pbk_qstock', JSON.stringify(qJson.data));
+            else safeStorage.removeItem('pbk_qstock');
+            safeStorage.setItem('pbk_qstock_json', qJson.updated);
+            setQStockUpdated(qJson.updated);
+            safeStorage.setItem('pbk_qstock_updated', qJson.updated);
+            console.log(`[Q-Stock] GitHub JSON 로드 (${qJson.data.length}건, ${qJson.updated})`);
           }
         }
       } catch (e) { console.log('Q-Stock JSON fetch skip:', e.message); }
@@ -7005,6 +7025,8 @@ export default function PBKWarehouseSystem() {
         setQStockData([]);
         safeStorage.removeItem('pbk_qstock');
       }
+      setQStockUpdated(now);
+      safeStorage.setItem('pbk_qstock_updated', now);
 
       setShowUploadModal(false);
 
@@ -15499,11 +15521,37 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                 <p className="text-sm text-gray-500">납품 예정 · 수입검사 대기 현황</p>
               </div>
               <div className="flex gap-2 items-center">
-                {deliveryLastUpdated && (
-                  <span className="text-xs text-gray-400" title={getElapsedTimeDetail(deliveryLastUpdated)}>
-                    Delivery 업데이트: {deliveryLastUpdated}
-                  </span>
-                )}
+                {(() => {
+                  // 이 화면은 파일 두 개에서 나온다. 납기 지연·납품 예정은 ME2N 납기일정,
+                  // 수입검사 대기는 Zbindata 안의 Q-Stock 이다. 'Delivery 업데이트' 만
+                  // 적어 두면 수입검사 쪽이 며칠 묵어도 방금 올린 것처럼 보인다.
+                  const srcs = [
+                    { k: '납기 지연 · 납품 예정', f: 'ME2N 납기일정', v: deliveryLastUpdated },
+                    { k: '수입검사 대기', f: 'Zbindata Q-Stock', v: qStockUpdated || lastUpdated },
+                  ].filter(x => x.v);
+                  if (!srcs.length) return null;
+                  // '2026. 11. 5. 오후 3:52:36' 을 시각으로
+                  const ms = (t) => {
+                    const m = String(t).match(/(\d+)\.\s*(\d+)\.\s*(\d+)\.\s*(오전|오후)?\s*(\d+):(\d+)(?::(\d+))?/);
+                    if (!m) return 0;
+                    let h = parseInt(m[5], 10);
+                    if (m[4] === '오후' && h !== 12) h += 12;
+                    if (m[4] === '오전' && h === 12) h = 0;
+                    return new Date(+m[1], +m[2] - 1, +m[3], h, +m[6], +(m[7] || 0)).getTime();
+                  };
+                  // 화면은 가장 오래된 자료만큼만 믿을 수 있다
+                  const oldest = srcs.reduce((a, b) => (ms(b.v) < ms(a.v) ? b : a));
+                  const newest = srcs.reduce((a, b) => (ms(b.v) > ms(a.v) ? b : a));
+                  const gapH = (ms(newest.v) - ms(oldest.v)) / 3600000;
+                  const stale = srcs.length > 1 && gapH >= 12;
+                  return (
+                    <span className={`text-xs ${stale ? 'text-amber-600 font-medium' : 'text-gray-400'}`}
+                      title={srcs.map(x => `${x.k} — ${x.f}\n  ${x.v} (${getElapsedTimeDetail(x.v)})`).join('\n')}>
+                      입고 관리 업데이트: {oldest.v}
+                      {stale && <> · {oldest.k} 자료가 {Math.floor(gapH / 24) >= 1 ? `${Math.floor(gapH / 24)}일` : `${Math.floor(gapH)}시간`} 묵음</>}
+                    </span>
+                  );
+                })()}
                 <button onClick={() => setShowDataUploadModal(true)} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1">
                   <Upload className="w-3.5 h-3.5" /> Delivery 업로드
                 </button>
