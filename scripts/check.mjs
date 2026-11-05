@@ -95,6 +95,36 @@ console.log('\n[1] 연결이 끊긴 곳');
   }
 }
 
+// ── 데이터 JSON 을 한 번 받고 마는 곳이 있는가 ────────
+// Q-Stock 이 '로컬에 없을 때만' 받아서, 수입검사가 끝난 품목이 대기 목록에
+// 계속 남았다 (2026-11-05). 받아 온 updated 를 저장본과 비교해야 갱신된다.
+{
+  // 피드마다 '원격이 더 새로운가' 를 판단할 근거가 하나는 있어야 한다.
+  // Excel 을 파싱하는 피드는 커밋 시각(epoch), JSON 만 받는 피드는 updated 비교.
+  const feeds = {
+    stock_data:    ['pbk_stock_epoch'],
+    openpo_data:   ['pbk_po_epoch', 'pbk_open_po_json'],
+    delivery_data: ['pbk_del_epoch', 'pbk_delivery_json'],
+    qstock_data:   ['pbk_qstock_epoch', 'pbk_qstock_json'],
+  };
+  const bad = [];
+  for (const [f, keys] of Object.entries(feeds)) {
+    if (src.indexOf(`${f}.json?t=`) < 0) continue;   // 안 쓰는 피드는 넘어간다
+    if (!keys.some(k => src.includes(k))) {
+      bad.push(`${f}.json — 갱신 기준이 없음 (${keys.join(' 또는 ')})`);
+    }
+  }
+  if (bad.length) {
+    fail('원격 데이터를 한 번 받고 마는 곳이 있음', [
+      ...bad,
+      'localStorage 에 없을 때만 받으면 캐시가 영영 안 바뀝니다.',
+      '수입검사 대기가 그래서 끝난 품목을 계속 보여 줬습니다 (2026-11-05).',
+    ]);
+  } else {
+    ok(`데이터 피드 ${Object.keys(feeds).length}개가 갱신 기준을 가짐`);
+  }
+}
+
 // ── 같은 기준값이 두 번 적혀 있는가 ───────────────────
 // 재고조정 목표가 차트 0.095 / 점수표 0.064 로 갈려 있던 적이 있다.
 {
