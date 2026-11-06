@@ -118,8 +118,32 @@ const SYNC_KEYS = [
   'pbk_close_dismissed',
   'pbk_promised_dates',   // 업체 회신 일정 — 납기 변경 이력이라 날아가면 안 된다
   'pbk_adjust_notes',     // 재고조정 사유 메모 — 손으로 적은 거라 백업한다
+  'pbk_adjust_kinds',     // 재고조정 구분(실물/품번/발주외) — 손으로 고친 것만 담는다
   'pbk_work_issues',
 ];
+
+// 재고조정 구분 — 같은 조정이라도 성격이 다르다.
+// 'A 가 B 보다 낫다' 를 말하려는 게 아니라, 줄일 수 있는 것과 없는 것을 가르려는 것이다.
+const ADJ_KINDS = [
+  { id: 'real',  label: '실물 차이',    cls: 'bg-rose-100 text-rose-700',   chip: 'bg-rose-50 text-rose-700 border-rose-200',
+    desc: '장부와 실물이 실제로 달랐다 — 재고조사 차이, 재단 로스' },
+  { id: 'repn',  label: '품번 재편',    cls: 'bg-violet-100 text-violet-700', chip: 'bg-violet-50 text-violet-700 border-violet-200',
+    desc: '실물은 안 움직였다 — 새 품번 채번, 자재유형(ROH) 전환' },
+  { id: 'nonpo', label: '발주 외 입고', cls: 'bg-sky-100 text-sky-700',     chip: 'bg-sky-50 text-sky-700 border-sky-200',
+    desc: 'PO 아닌 경로로 실물이 들어왔다 — 샘플, 긴급조달' },
+];
+const ADJ_KIND_MAP = Object.fromEntries(ADJ_KINDS.map(k => [k.id, k]));
+
+// MB51 Text + 손으로 적은 메모를 같이 읽어 1차로 찍는다.
+// 순서가 중요하다 — 메모에 '구매' 와 '재고조정' 이 같이 나오는 줄이 많다.
+const guessAdjKind = (text, note, isAnnualCount) => {
+  const t = `${text || ''} ${note || ''}`;
+  if (/채번|ROH|ECO-|BOM에 구성|원가에 정상 반영|자재유형/i.test(t)) return 'repn';
+  if (/실물\s*구매|Sample\s*로\s*구매|샘플\s*로\s*구매|직접\s*접촉|기안으로\s*구매|PCS\s*구매/i.test(t)) return 'nonpo';
+  if (/재고\s*조사|physical inventory|inventory count|실물\s*확인|재단/i.test(t)) return 'real';
+  if (isAnnualCount) return 'real';   // 3월 미기재 = 연 1회 전수조사 차이
+  return '';
+};
 
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
 // 월별 기록자 — 담당자 타부서 지원 기간(2026-04~06)은 대체 인원 HJ. Kim 이 점검함
@@ -2665,6 +2689,16 @@ export default function PBKWarehouseSystem() {
   });
 
   // 재고조정 사유에 덧붙이는 메모. MB51 Text 는 다시 올리면 덮이므로 따로 둔다.
+  // 사람이 고친 구분만 담는다. 비어 있으면 자동 판정을 쓴다.
+  const [adjustKinds, setAdjustKinds] = useState(() => {
+    try { const v = safeStorage.getItem('pbk_adjust_kinds'); return v ? JSON.parse(v) : {}; } catch { return {}; }
+  });
+  const setAdjustKind = (k, v) => setAdjustKinds(prev => {
+    const next = { ...prev };
+    if (v) next[k] = v; else delete next[k];   // 미지정으로 되돌리면 자동 판정으로 돌아간다
+    try { safeStorage.setItem('pbk_adjust_kinds', JSON.stringify(next)); } catch {}
+    return next;
+  });
   const [adjustNotes, setAdjustNotes] = useState(() => {
     try { const v = safeStorage.getItem('pbk_adjust_notes'); return v ? JSON.parse(v) : {}; } catch { return {}; }
   });
@@ -3723,6 +3757,9 @@ export default function PBKWarehouseSystem() {
         pbk_qstock: setQStockData,
         pbk_qstock_updated: (val) => { safeStorage.setItem('pbk_qstock_updated', val); setQStockUpdated(val); },
         pbk_last_auto_backup: setLastAutoBackup,
+        // 손으로 적은 것들 — 다른 PC 에서 적은 게 새로고침 없이 바로 보이게
+        pbk_adjust_notes: setAdjustNotes,
+        pbk_adjust_kinds: setAdjustKinds,
       };
 
       for (const key of SYNC_KEYS) {
@@ -18893,6 +18930,31 @@ ${lines}
                             const countBlank2 = countBlank(m => parseInt(m.slice(5, 7)) === ANNUAL_COUNT_MONTH);
                             const noText = countBlank(() => true) - countBlank2;
                             const allCnt = months.reduce((a, m) => a + (all[m] || []).reduce((x, r) => x + r.n, 0), 0);
+
+                            // ── 구분 (실물 차이 / 품번 재편 / 발주 외 입고) ──
+                            // 메모와 같은 키를 쓴다. MB51 을 다시 올려도 안 떨어진다.
+                            const rowKey = (m, r) => `${m}|${r.reason || ''}|${r.amt || 0}|${r.n || 0}`;
+                            const kindOf = (m, r) => {
+                              const k = rowKey(m, r);
+                              if (adjustKinds[k]) return { id: adjustKinds[k], auto: false };
+                              const annual = r.text === '(사유 미기재)'
+                                && parseInt(m.slice(5, 7)) === ANNUAL_COUNT_MONTH;
+                              return { id: guessAdjKind(r.text, adjustNotes[k], annual), auto: true };
+                            };
+                            const byKind = {};
+                            months.forEach(m => (all[m] || []).forEach(r => {
+                              const id = kindOf(m, r).id || 'none';
+                              byKind[id] = (byKind[id] || 0) + (r.up || 0) + (r.down || 0);
+                            }));
+                            // 비율은 KPI 와 같은 분모(그 해 평균 재고금액)를 쓴다.
+                            // months 는 조정이 있는 달뿐이라 그걸로 평균을 내면 분모가 달라진다.
+                            const stocks = Object.keys(kpiData.invAdjustDetail || {})
+                              .filter(m => m.startsWith(String(selectedYear)))
+                              .map(m => kpiData.invAdjustDetail[m]?.stock)
+                              .filter(v => v > 0);
+                            const avgStock = stocks.length
+                              ? stocks.reduce((a, b) => a + b, 0) / stocks.length : 0;
+                            const kPct = (v) => (avgStock ? (v / avgStock * 100) : null);
                             return (
                               <div className="mt-5 pt-4 border-t border-gray-100">
                                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
@@ -18908,6 +18970,32 @@ ${lines}
                                     )}
                                   </div>
                                 </div>
+                                {/* 구분별 소계 — 줄일 수 있는 것과 구조적으로 생기는 것을 갈라 본다.
+                                    점수는 전과 같이 전체 기준이다. 여기는 출처를 보여 줄 뿐이다. */}
+                                {avgStock > 0 && (
+                                  <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                    {ADJ_KINDS.map(k => {
+                                      const v = byKind[k.id] || 0;
+                                      if (!v) return null;
+                                      const p = kPct(v);
+                                      return (
+                                        <span key={k.id} className={`px-2 py-1 rounded border ${k.chip}`} title={k.desc}>
+                                          {k.label} <b>{fmt(v)}</b>원
+                                          {p !== null && <span className="ml-1 opacity-70">· {p.toFixed(3)}%</span>}
+                                        </span>
+                                      );
+                                    })}
+                                    {byKind.none > 0 && (
+                                      <span className="px-2 py-1 rounded border bg-gray-50 text-gray-500 border-gray-200"
+                                        title="자동으로 못 가른 줄입니다. 표에서 직접 골라 주세요.">
+                                        미지정 <b>{fmt(byKind.none)}</b>원
+                                      </span>
+                                    )}
+                                    <span className="text-gray-400 ml-0.5">
+                                      · 평균 재고금액 {fmt(Math.round(avgStock))}원 대비
+                                    </span>
+                                  </div>
+                                )}
                                 {countBlank2 > 0 && (
                                   <div className="mb-2 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
                                     📦 {ANNUAL_COUNT_MONTH}월 미기재 {countBlank2}건은 <b>연 1회 재고조사 차이</b>로 봅니다
@@ -18927,6 +19015,8 @@ ${lines}
                                         <th className="px-2 py-1.5 text-left font-medium">월</th>
                                         <th className="px-2 py-1.5 text-left font-medium">사유 (Text)</th>
                                         <th className="px-2 py-1.5 text-center font-medium">사유코드</th>
+                                        <th className="px-2 py-1.5 text-center font-medium" style={{width:'104px'}}
+                                            title="Text 와 메모로 자동 판정합니다. 틀리면 직접 고르면 되고, 고른 값이 우선합니다.">구분</th>
                                         <th className="px-2 py-1.5 text-right font-medium">증가</th>
                                         <th className="px-2 py-1.5 text-right font-medium">감소</th>
                                         <th className="px-2 py-1.5 text-center font-medium">건수</th>
@@ -18952,6 +19042,24 @@ ${lines}
                                             ) : r.text}
                                           </td>
                                           <td className="px-2 py-1.5 text-center text-gray-500">{r.reason || '-'}</td>
+                                          <td className="px-2 py-1.5 text-center">
+                                            {(() => {
+                                              const k = rowKey(m, r);
+                                              const { id, auto } = kindOf(m, r);
+                                              const def = ADJ_KIND_MAP[id];
+                                              return (
+                                                <select value={id} onChange={e => setAdjustKind(k, e.target.value)}
+                                                  title={auto && def ? `자동 판정: ${def.desc}` : (def ? def.desc : '아직 안 정했습니다')}
+                                                  className={`w-full border rounded px-1 py-0.5 text-[11px] focus:outline-none focus:border-teal-400 ${
+                                                    !def ? 'border-gray-200 text-gray-400'
+                                                    : auto ? 'border-dashed border-gray-300 text-gray-600 bg-white'
+                                                           : `border-transparent font-semibold ${def.cls}`}`}>
+                                                  <option value="">미지정</option>
+                                                  {ADJ_KINDS.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+                                                </select>
+                                              );
+                                            })()}
+                                          </td>
                                           <td className="px-2 py-1.5 text-right text-blue-700">{r.up ? fmt(r.up) : '-'}</td>
                                           <td className="px-2 py-1.5 text-right text-red-700">{r.down ? fmt(r.down) : '-'}</td>
                                           <td className="px-2 py-1.5 text-center">{r.n}</td>
@@ -18978,14 +19086,14 @@ ${lines}
                                         합계는 상쇄가 아니라 절대값 합이다 (Adjust Cost 에 들어가는 값). */}
                                     <tfoot>
                                       <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold text-gray-800">
-                                        <td className="px-2 py-2" colSpan={3}>{selectedYear}년 합계</td>
+                                        <td className="px-2 py-2" colSpan={4}>{selectedYear}년 합계</td>
                                         <td className="px-2 py-2 text-right text-blue-700">{fmt(totalUp)}</td>
                                         <td className="px-2 py-2 text-right text-red-700">{fmt(totalDown)}</td>
                                         <td className="px-2 py-2 text-center">{allCnt}</td>
                                         <td className="px-2 py-2" colSpan={2} />
                                       </tr>
                                       <tr className="bg-violet-50 font-bold text-violet-800">
-                                        <td className="px-2 py-2" colSpan={3}
+                                        <td className="px-2 py-2" colSpan={4}
                                           title="증가와 감소를 절대값으로 더한 금액입니다. 상쇄하지 않습니다.">
                                           증가 + 감소 (차이금액 합계)
                                         </td>
@@ -18996,6 +19104,11 @@ ${lines}
                                   </table>
                                 </div>
                                 <div className="mt-1.5 text-[10px] text-gray-400">
+                                  <b className="text-gray-500">구분</b>은 Text 와 메모로 자동 판정합니다 (점선 테두리).
+                                  직접 고르면 그 값이 우선하고 색이 채워집니다. 다시 '미지정' 으로 두면 자동 판정으로 돌아갑니다.
+                                  <b className="text-gray-500"> KPI 점수는 전과 같이 전체 기준</b>입니다 — 구분은 금액이 어디서
+                                  왔는지 보기 위한 것입니다.
+                                  <br />
                                   711 = 재고 감소, 712 = 재고 증가. 금액은 절대값 합계이며 Adjust Cost 계산에 쓰이는 값과 같습니다.
                                   <b className="text-gray-500"> 증가와 감소는 상쇄하지 않고 더합니다</b> — 장부와 실물이
                                   얼마나 어긋났는지를 보는 값이라, 100원 늘고 100원 줄었으면 틀린 건 200원어치입니다.
