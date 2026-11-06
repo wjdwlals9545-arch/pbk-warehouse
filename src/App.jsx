@@ -16390,6 +16390,17 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                       </>
                     )}
                     <button onClick={() => {
+                      // 체크와 무관하게 지금 지연 리스트에 떠 있는 것을 전부 담는다.
+                      // 구매는 일부만 보면 판단을 못 한다 (숨김 처리한 건만 빠진다)
+                      setVendorMailItems(null);
+                      setVendorMailKind('internal');
+                      setVendorMailOpen(true);
+                      setVendorMailPick('');
+                    }} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs hover:bg-rose-700 flex items-center gap-1"
+                      title="지연 전체를 구매담당에게 Order Close 검토 요청하는 사내 메일 초안입니다. 업체에는 가지 않습니다.">
+                      <Mail className="w-3 h-3" /> 구매 검토 요청 ({overdueDeliveries.length})
+                    </button>
+                    <button onClick={() => {
                       setVendorMailItems(null);
                       setVendorMailKind('overdue');
                       setVendorMailOpen(true);
@@ -17019,9 +17030,13 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
             {/* 업체별 메일 초안 — 발송하지 않는다. 외부로 나가는 메일은 사람이 보낸다 */}
             {vendorMailOpen && (() => {
               const src = vendorMailItems || overdueDeliveries;
-              // 수신은 항상 업체. 구매담당은 참조로만 들어간다.
+              // 사내 검토본 — 업체가 아니라 구매담당에게 Order Close 여부를 묻는다.
+              const internal = vendorMailKind === 'internal';
+              const INTERNAL_TO = [{ name: '황지원', email: 'jiwon.hwang@promega.com' }];
+              // 수신은 업체, 구매담당은 참조로만.
               // 보내는 사람이 정지민 책임이라 자기 주소를 참조로 또 넣을 이유가 없다.
-              const MAIL_CC = 'jiwon.hwang@promega.com';
+              // 사내 검토본은 구매담당이 수신이라 참조가 없다.
+              const MAIL_CC = internal ? '' : 'jiwon.hwang@promega.com';
               const byV = {};
               src.forEach(d => {
                 const { code, name } = splitVendor(d.supplier);
@@ -17031,11 +17046,14 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
               });
               const vsAll = Object.values(byV).sort((a, b) => b.items.length - a.items.length);
               if (!vsAll.length) return null;
-              const vs = vsAll;
+              // 사내 검토는 업체를 나누지 않는다. 구매는 전체를 한 통으로 본다.
+              const vs = internal
+                ? [{ code: '_internal', name: '구매 검토', items: src.slice() }]
+                : vsAll;
               const cur = vs.find(v => v.code === vendorMailPick) || vs[0];
               const curKey = cur.code || cur.name;
 
-              const knownC = vendorContacts(cur.code);
+              const knownC = internal ? INTERNAL_TO : vendorContacts(cur.code);
               const known = knownC.map(c => c.email);
               const nameOf = (a) => (knownC.find(c => c.email === a) || {}).name || '';
               const picked = vendorMailTo[curKey] !== undefined
@@ -17067,15 +17085,68 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                   return t;
                 }).join('\n');
 
+              // 사내 검토본은 금액과 업체 회신 일정을 같이 적는다.
+              // Close 여부는 그 둘을 봐야 판단이 된다.
+              const wonTxt = (v, c) => (c || 'KRW').toUpperCase() === 'KRW'
+                ? `${Math.round(v).toLocaleString()}원`
+                : `${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${(c || '').toUpperCase()}`;
+              const amtOf = (d) => (d.unitPrice ? d.unitPrice * (d.qty || 0) : null);
+              const promiseOf = (d) => {
+                const p = promisedDates[`${d.poNo}_${d.material}`] || {};
+                if (!p.date && !p.note) return '';
+                return `업체 회신 일정: ${p.date || '-'}${p.note ? ` (${p.note})` : ''}`;
+              };
+              // 통화가 섞이면 합치지 않고 나란히 적는다 (달러 발주가 몇 건 있다)
+              const totalTxt = (() => {
+                const by = {};
+                src.forEach(d => {
+                  const a = amtOf(d);
+                  if (a) { const c = (d.currency || 'KRW').toUpperCase(); by[c] = (by[c] || 0) + a; }
+                });
+                const ks = Object.keys(by);
+                return ks.length ? ks.map(c => wonTxt(by[c], c)).join(' + ') : '';
+              })();
+              // 오래 끈 것부터. 구매가 위에서부터 읽으면 된다
+              const intGroups = vsAll
+                .map(v => ({ name: v.name, rows: v.items.slice()
+                  .sort((a, b) => String(a.deliveryDate).localeCompare(String(b.deliveryDate))) }))
+                .sort((a, b) => String(a.rows[0].deliveryDate).localeCompare(String(b.rows[0].deliveryDate)));
+              const intLines = intGroups.map(g =>
+                `[${g.name}] ${g.rows.length}건\n` + g.rows.map((d, i) => {
+                  const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                  const a = amtOf(d), pr = promiseOf(d);
+                  let t = ` ${i + 1}) PO ${d.poNo} / ${d.material}  ${d.description || ''}\n`;
+                  t += `    납기 ${d.deliveryDate} (${daysPast(d.deliveryDate)}일 경과)`;
+                  t += partial
+                    ? ` · 발주 ${d.orderQty} / 입고 ${d.receivedQty} / 잔여 ${d.remainQty} ${d.unit || 'EA'}`
+                    : ` · 미입고 ${d.qty} ${d.unit || 'EA'}`;
+                  if (a) t += ` · ${wonTxt(a, d.currency)}`;
+                  if (pr) t += `\n    ${pr}`;
+                  return t;
+                }).join('\n')).join('\n\n');
+
               const dueDate = reminder ? (cur.items[0] || {}).deliveryDate : '';
               const rng = vendorMailRange || {};
               const weekTxt = weekly ? `${rng.from} ~ ${rng.to}` : '';
-              const subject = weekly
+              const subject = internal
+                ? `[Promega] 납기 경과 건 Order Close 검토 요청 (${src.length}건)`
+                : weekly
                 ? `[Promega] 납품 예정 확인 요청 (${cur.items.length}건)`
                 : reminder
                 ? `[Promega] 납품 예정 건 확인 요청 (${cur.items.length}건)`
                 : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
-              const body = weekly ?
+              const body = internal ?
+`안녕하세요, 자재 정지민입니다.
+
+아래 발주 건이 납기일을 경과하여 Order Close 여부 검토 요청드립니다.
+계속 진행할 건과 닫을 건을 구분해 주시면 그대로 반영하겠습니다.
+
+■ 납기 경과 (${src.length}건${totalTxt ? ` · ${totalTxt}` : ''})
+
+${intLines}
+
+검토 후 회신 부탁드립니다.
+감사합니다.` : weekly ?
 `안녕하세요 프로메가 정지민입니다.
 
 ${weekTxt} 납품 예정인 건을 아래와 같이 안내드립니다.
@@ -17131,7 +17202,37 @@ ${lines}
                   }).join('')
                 + '</div>';
 
-              const html = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
+              const intHtml = intGroups.map(g =>
+                `<p style="margin:16px 0 6px;"><b>[${esc(g.name)}]</b> ${g.rows.length}건</p>`
+                + '<div style="margin-left:4px;">'
+                + g.rows.map((d, i) => {
+                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                    const a = amtOf(d), pr = promiseOf(d);
+                    return '<div style="margin-bottom:10px;">'
+                      + `<div><b>${i + 1})</b> PO ${esc(d.poNo)} / <b>${esc(d.material)}</b>`
+                      + (d.description ? `&nbsp;&nbsp;${esc(d.description)}` : '') + '</div>'
+                      + `<div style="margin-left:20px;">납기 <span style="color:#dc2626;font-weight:600;">${esc(d.deliveryDate)}</span>`
+                      + ` (${daysPast(d.deliveryDate)}일 경과) &middot; `
+                      + (partial
+                          ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty} ${esc(d.unit || 'EA')}</b>`
+                          : `미입고 <b>${d.qty} ${esc(d.unit || 'EA')}</b>`)
+                      + (a ? ` &middot; <b>${esc(wonTxt(a, d.currency))}</b>` : '') + '</div>'
+                      + (pr ? `<div style="margin-left:20px;color:#047857;">${esc(pr)}</div>` : '')
+                      + '</div>';
+                  }).join('')
+                + '</div>').join('');
+
+              const htmlInternal = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
+                + `<p>안녕하세요, 자재 정지민입니다.</p>`
+                + `<p>아래 발주 건이 납기일을 경과하여 <b>Order Close 여부 검토</b> 요청드립니다.<br/>`
+                + `계속 진행할 건과 닫을 건을 구분해 주시면 그대로 반영하겠습니다.</p>`
+                + `<p style="margin-bottom:0;"><b>■ 납기 경과 (${src.length}건${totalTxt ? ` &middot; ${esc(totalTxt)}` : ''})</b></p>`
+                + intHtml
+                + `<p style="margin-top:18px;">검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`
+                + `</div>`;
+
+              const html = internal ? htmlInternal
+                : `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
                 + `<p>안녕하세요 프로메가 정지민입니다.</p>`
                 + (weekly
                     ? `<p><b>${weekTxt}</b> 납품 예정인 건을 아래와 같이 안내드립니다.<br/>`
@@ -17178,30 +17279,34 @@ ${lines}
                     onClick={e => e.stopPropagation()}>
                     <div className="px-5 py-3 border-b flex items-center gap-2">
                       <h3 className="font-bold text-gray-800">
-                        {weekly ? '🗓️ 주간 납품 예정 메일 초안'
+                        {internal ? '🏷️ 구매 검토 요청 초안 (사내)'
+                                : weekly ? '🗓️ 주간 납품 예정 메일 초안'
                                 : reminder ? '🔔 하루 전 납품 확인 메일 초안'
                                 : '📧 업체별 납기 확인 메일 초안'}
                       </h3>
                       <span className="text-xs text-gray-500">
-                        {weekly ? `${weekTxt} · ${vs.length}개 업체 · ${src.length}품목`
+                        {internal ? `${vsAll.length}개 업체 · 지연 ${src.length}건 한 통`
+                                : weekly ? `${weekTxt} · ${vs.length}개 업체 · ${src.length}품목`
                                 : reminder ? `${vs.length}개 업체 · ${src.length}품목`
                                 : `${vs.length}개 업체 · 지연 ${src.length}건`}
                       </span>
                       <span className="ml-auto text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                         초안만 만듭니다. 발송은 직접 하십시오.
                       </span>
-                      <button onClick={() => { setContactDraft(null); setContactEditOpen(true); }}
-                        className="text-[11px] px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 ml-2">
-                        ✏️ 담당자 관리
-                      </button>
+                      {!internal && (
+                        <button onClick={() => { setContactDraft(null); setContactEditOpen(true); }}
+                          className="text-[11px] px-2 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 ml-2">
+                          ✏️ 담당자 관리
+                        </button>
+                      )}
                       <button onClick={() => setVendorMailOpen(false)} className="text-gray-400 hover:text-gray-700 ml-1">
                         <X className="w-5 h-5" />
                       </button>
                     </div>
 
                     <div className="flex-1 flex overflow-hidden">
-                      {/* 업체 목록 */}
-                      <div className="w-56 border-r overflow-y-auto shrink-0">
+                      {/* 업체 목록 — 사내 검토는 한 통이라 나눌 게 없다 */}
+                      <div className={`w-56 border-r overflow-y-auto shrink-0 ${internal ? 'hidden' : ''}`}>
                         {vs.map(v => {
                           const k = v.code || v.name;
                           const hasAddr = vendorContacts(v.code).length > 0
@@ -17261,7 +17366,9 @@ ${lines}
                             onChange={e => setVendorMailExtra(m => ({ ...m, [curKey]: e.target.value }))}
                             placeholder="주소 직접 추가 (쉼표로 구분)"
                             className="mt-2 w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-teal-400" />
-                          <p className="mt-1 text-[10px] text-gray-400">참조: {MAIL_CC}</p>
+                          {MAIL_CC
+                            ? <p className="mt-1 text-[10px] text-gray-400">참조: {MAIL_CC}</p>
+                            : <p className="mt-1 text-[10px] text-gray-400">사내 메일입니다. 업체에는 가지 않습니다.</p>}
                           {(supplierMap.emailNotes || {})[cur.code] && (
                             <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
                               ⚠ 미확인 주소 — {supplierMap.emailNotes[cur.code]}
