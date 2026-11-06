@@ -9614,6 +9614,16 @@ ${tableRows}</tbody>
   .t-nonpo{background:#dcf0fb;color:#1d6f96;} .t-none{background:#eef1f6;color:#8a93a6;}
   .t-ok{background:#d9f5e9;color:#0f7a56;} .t-mid{background:#fdf0d5;color:#9a6a08;}
   .t-bad{background:#fde3e0;color:#b2352a;}
+  /* 차트 범례 — 화면과 같은 색칩 */
+  .lg{display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-size:10px;color:#6b7482;margin:2px 0 6px;}
+  .lg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px;}
+  .lg u{display:inline-block;width:15px;border-top:2.5px solid;margin-right:4px;vertical-align:3px;text-decoration:none;}
+  .cnote{font-size:10px;color:#9aa3b2;margin:0 0 6px;}
+  .cnote b{color:#6b7482;}
+  /* 차트 아래 한 줄 요약 */
+  .csum{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;font-size:11px;margin-top:8px;}
+  .csum .up{color:#0369a1;font-weight:700;} .csum .dn{color:#be123c;font-weight:700;}
+  .csum .tt{color:#9aa3b2;} .csum .mx{color:#6b7482;}
   /* 구분 요약 칩 */
   .kchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px;font-size:11px;}
   .kchip{border:1px solid #e6eaf1;border-radius:7px;padding:4px 9px;background:#fff;}
@@ -9658,7 +9668,9 @@ ${tableRows}</tbody>
   // 12개월 추이 차트 + 월별 데이터 표 (hover 시 값 표시)
   // 재고조정 원인 분해 — 증가는 0선 위, 손실은 아래. 누적 3선을 얹는다.
   // kpiChartSvg 는 음수 막대를 못 그려서 따로 만든다 (화면 차트와 같은 그림).
-  const adjSplitSvg = (ser, labels) => {
+  const adjSplitSvg = (ser, labels, reasons = {}) => {
+    // esc 는 보고서 생성기 안에만 있다. 여기선 제 것을 쓴다.
+    const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const up = ser.map(d => d.up || 0), dn = ser.map(d => d.down || 0);
     const posMax = Math.max(...up, ...ser.map(d => d.cumUpAmt || 0), ...ser.map(d => d.cumVarAmt || 0), 1);
     const negMax = Math.max(...dn, ...ser.map(d => d.cumDownAmt || 0), 1);
@@ -9679,9 +9691,17 @@ ${tableRows}</tbody>
       el += `<line x1="${padL}" y1="${yDn(negMax * g / 3)}" x2="${W - padR}" y2="${yDn(negMax * g / 3)}" stroke="#eef1f6"/>`
         + `<text x="${padL - 6}" y="${yDn(negMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2">-${won(negMax * g / 3)}</text>`;
     }
+    // 막대 위 기안서 번호 — 화면과 같다. 금액만 있으면 '무슨 건인지' 를 못 읽는다.
+    const docOf = (mm) => {
+      const list = reasons[mm] || [];
+      const codes = [...new Set(list.map(r => (r.text || '').match(/OP-\d{2}-\d{3}/)?.[0]).filter(Boolean))];
+      return codes.length > 1 ? `${codes[0]} 외 ${codes.length - 1}` : (codes[0] || '');
+    };
     ser.forEach((d, i) => {
+      const doc = docOf(d.month);
       if (d.up) el += `<rect x="${cx(i) - bw / 2}" y="${yUp(d.up)}" width="${bw}" height="${Math.max(1, y0 - yUp(d.up))}" fill="#7dd3fc" rx="2"/>`
-        + `<text x="${cx(i)}" y="${yUp(d.up) - 4}" text-anchor="middle" font-size="9" font-weight="700" fill="#075985">${won(d.up)}</text>`;
+        + `<text x="${cx(i)}" y="${yUp(d.up) - 15}" text-anchor="middle" font-size="9" font-weight="700" fill="#075985">${won(d.up)}</text>`
+        + (doc ? `<text x="${cx(i)}" y="${yUp(d.up) - 5}" text-anchor="middle" font-size="7.5" fill="#8a93a6">${doc}</text>` : '');
       if (d.down) el += `<rect x="${cx(i) - bw / 2}" y="${y0}" width="${bw}" height="${Math.max(1, yDn(d.down) - y0)}" fill="#fda4af" rx="2"/>`
         + `<text x="${cx(i)}" y="${yDn(d.down) + 11}" text-anchor="middle" font-size="9" font-weight="700" fill="#9f1239">${won(d.down)}</text>`;
       el += `<text x="${cx(i)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="#8a93a6">${i + 1}월</text>`;
@@ -9691,10 +9711,35 @@ ${tableRows}</tbody>
       return pts.length < 2 ? '' : `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2.2"/>`;
     };
     el += line('cumVarAmt', '#eab308') + line('cumUpAmt', '#0369a1') + line('cumDownAmt', '#be123c', true);
-    return `<div class="chart"><div class="ctitle">재고조정 원인 분해
-      <span style="font-weight:500;color:#8a93a6;font-size:10px;">
-        ■ 증가  ■ 손실 &nbsp; — 누적 전체(KPI 분자)  — 누적 증가  — 누적 손실</span></div>
-      <svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg></div>`;
+
+    // 한 줄 요약 — 화면과 같다. 점수만 남고 설명이 없으면 숫자가 혼자 돌아다닌다.
+    const upT = ser.reduce((a, d) => a + (d.up || 0), 0);
+    const dnT = ser.reduce((a, d) => a + (d.down || 0), 0);
+    const totT = upT + dnT;
+    const wonFull = (v) => Math.round(v).toLocaleString() + '원';
+    const big = [];
+    ser.forEach(d => (reasons[d.month] || []).forEach(r => {
+      const raw = (r.text || '').trim();
+      const blank = !raw || /^\(?사유 ?미기재\)?$/.test(raw);
+      const t = blank ? '연 1회 재고조사' : raw.replace(/^PBK기안서\(비용\)-/, '').trim();
+      if (r.up) big.push({ m: d.name, amt: r.up, dir: '증가', t });
+      if (r.down) big.push({ m: d.name, amt: r.down, dir: '손실', t });
+    }));
+    big.sort((a, b) => b.amt - a.amt);
+    const summary = `<div class="csum">
+      <span class="up">증가 ${wonFull(upT)} (${totT ? Math.round(upT / totT * 100) : 0}%)</span>
+      <span class="dn">손실 ${wonFull(dnT)} (${totT ? Math.round(dnT / totT * 100) : 0}%)</span>
+      <span class="tt">합계 ${wonFull(totT)}</span>
+      ${big.length ? `<span class="mx">최대 요인 · ${esc(big.slice(0, 2).map(x => `${x.m} ${x.dir} ${wonFull(x.amt)} ${x.t}`).join(' · '))}</span>` : ''}
+    </div>`;
+
+    return `<div class="chart"><div class="ctitle">재고조정 원인 분해</div>
+      <div class="lg"><span><i style="background:#7dd3fc"></i>증가</span>
+        <span><i style="background:#fda4af"></i>손실</span>
+        <span><u style="border-color:#eab308"></u>누적 전체 = KPI 분자</span>
+        <span><u style="border-color:#0369a1"></u>누적 증가</span>
+        <span><u style="border-color:#be123c"></u>누적 손실</span></div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg>${summary}</div>`;
   };
 
   const kpiChartSvg = ({ title, labels, series, target, targetLabel, rows,
@@ -10029,6 +10074,8 @@ ${tableRows}</tbody>
             { label: 'Cancel (Cum.)', values: cumGrRate, fmt: pct },
           ]
         }),
+        show('inv') && `<div class="cnote">누적 = 그 해 <b>차이금액 합계 ÷ 평균 재고금액</b>
+          · 차이금액은 증가(712)와 손실(711)의 절대값 합입니다</div>`,
         show('inv') && kpiChartSvg({
           title: '재고조정 추이 (Inventory Adjust Cost)', labels: last12,
           series: [
@@ -10197,7 +10244,8 @@ ${tableRows}</tbody>
       const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
 
       // 재고조정 원인 분해 — 화면과 같은 그림
-      const splitChart = (show('inv') && hasSplit) ? adjSplitSvg(invSer, last12) : '';
+      const splitChart = (show('inv') && hasSplit)
+        ? adjSplitSvg(invSer, last12, kpiData.adjustReasons || {}) : '';
       const adjDetail = [splitChart, lossBox, reasonTable].filter(Boolean).join('');
 
       // 섹션은 토글로 통째로 빠질 수 있다. 번호를 박아 두면 02 다음에 04 가 나온다.
