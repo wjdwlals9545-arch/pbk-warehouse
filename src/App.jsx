@@ -9682,7 +9682,9 @@ ${tableRows}</tbody>
     const up = ser.map(d => d.up || 0), dn = ser.map(d => d.down || 0);
     const posMax = Math.max(...up, ...ser.map(d => d.cumUpAmt || 0), ...ser.map(d => d.cumVarAmt || 0), 1);
     const negMax = Math.max(...dn, ...ser.map(d => d.cumDownAmt || 0), 1);
-    const W = 900, H = 320, padL = 74, padR = 18, padT = 26, padB = 26;
+    // padB 가 좁으면 바닥까지 내려간 손실 막대의 금액이 월 표시와 겹친다
+    const W = 900, H = 352, padL = 74, padR = 18, padT = 28, padB = 54;
+    const halo = 'paint-order="stroke" stroke="#fff" stroke-width="3" stroke-linejoin="round"';
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const span = posMax + negMax;
     const y0 = padT + plotH * (posMax / span);                  // 0 선
@@ -9695,9 +9697,9 @@ ${tableRows}</tbody>
     let el = `<line x1="${padL}" y1="${y0}" x2="${W - padR}" y2="${y0}" stroke="#cbd2de"/>`;
     for (let g = 1; g <= 3; g++) {
       el += `<line x1="${padL}" y1="${yUp(posMax * g / 3)}" x2="${W - padR}" y2="${yUp(posMax * g / 3)}" stroke="#eef1f6"/>`
-        + `<text x="${padL - 6}" y="${yUp(posMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2">${won(posMax * g / 3)}</text>`;
+        + `<text x="${padL - 6}" y="${yUp(posMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2" ${halo}>${won(posMax * g / 3)}</text>`;
       el += `<line x1="${padL}" y1="${yDn(negMax * g / 3)}" x2="${W - padR}" y2="${yDn(negMax * g / 3)}" stroke="#eef1f6"/>`
-        + `<text x="${padL - 6}" y="${yDn(negMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2">-${won(negMax * g / 3)}</text>`;
+        + `<text x="${padL - 6}" y="${yDn(negMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2" ${halo}>-${won(negMax * g / 3)}</text>`;
     }
     // 막대 위 기안서 번호 — 화면과 같다. 금액만 있으면 '무슨 건인지' 를 못 읽는다.
     const docOf = (mm) => {
@@ -9705,20 +9707,30 @@ ${tableRows}</tbody>
       const codes = [...new Set(list.map(r => (r.text || '').match(/OP-\d{2}-\d{3}/)?.[0]).filter(Boolean))];
       return codes.length > 1 ? `${codes[0]} 외 ${codes.length - 1}` : (codes[0] || '');
     };
+    let lbl = '';   // 라벨은 선보다 나중에 그려야 위로 온다
     ser.forEach((d, i) => {
       const doc = docOf(d.month);
-      if (d.up) el += `<rect x="${cx(i) - bw / 2}" y="${yUp(d.up)}" width="${bw}" height="${Math.max(1, y0 - yUp(d.up))}" fill="#7dd3fc" rx="2"/>`
-        + `<text x="${cx(i)}" y="${yUp(d.up) - 15}" text-anchor="middle" font-size="9" font-weight="700" fill="#075985">${won(d.up)}</text>`
-        + (doc ? `<text x="${cx(i)}" y="${yUp(d.up) - 5}" text-anchor="middle" font-size="7.5" fill="#8a93a6">${doc}</text>` : '');
-      if (d.down) el += `<rect x="${cx(i) - bw / 2}" y="${y0}" width="${bw}" height="${Math.max(1, yDn(d.down) - y0)}" fill="#fda4af" rx="2"/>`
-        + `<text x="${cx(i)}" y="${yDn(d.down) + 11}" text-anchor="middle" font-size="9" font-weight="700" fill="#9f1239">${won(d.down)}</text>`;
-      el += `<text x="${cx(i)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="#8a93a6">${i + 1}월</text>`;
+      if (d.up) {
+        // 막대가 위로 붙어도 금액이 그림 밖으로 나가지 않게 가둔다
+        const ay = Math.max(yUp(d.up) - (doc ? 15 : 6), 13);
+        el += `<rect x="${cx(i) - bw / 2}" y="${yUp(d.up)}" width="${bw}" height="${Math.max(1, y0 - yUp(d.up))}" fill="#7dd3fc" rx="2"/>`;
+        lbl += `<text x="${cx(i)}" y="${ay}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#075985" ${halo}>${won(d.up)}</text>`
+          + (doc ? `<text x="${cx(i)}" y="${ay + 10}" text-anchor="middle" font-size="7.5" fill="#6b7482" ${halo}>${doc}</text>` : '');
+      }
+      if (d.down) {
+        // 아래로 붙어도 월 표시와 겹치지 않게 가둔다
+        const dy = Math.min(yDn(d.down) + 12, padT + plotH + 12);
+        el += `<rect x="${cx(i) - bw / 2}" y="${y0}" width="${bw}" height="${Math.max(1, yDn(d.down) - y0)}" fill="#fda4af" rx="2"/>`;
+        lbl += `<text x="${cx(i)}" y="${dy}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#9f1239" ${halo}>${won(d.down)}</text>`;
+      }
+      lbl += `<text x="${cx(i)}" y="${H - 14}" text-anchor="middle" font-size="9.5" fill="#8a93a6">${i + 1}월</text>`;
     });
     const line = (key, color, down) => {
       const pts = ser.map((d, i) => (d[key] == null ? null : `${cx(i)},${down ? yDn(d[key]) : yUp(d[key])}`)).filter(Boolean);
       return pts.length < 2 ? '' : `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2.2"/>`;
     };
-    el += line('cumVarAmt', '#eab308') + line('cumUpAmt', '#0369a1') + line('cumDownAmt', '#be123c', true);
+    // 막대 → 선 → 라벨 순. 선을 마지막에 그리면 글자를 가로지른다.
+    el += line('cumVarAmt', '#eab308') + line('cumUpAmt', '#0369a1') + line('cumDownAmt', '#be123c', true) + lbl;
 
     // 한 줄 요약 — 화면과 같다. 점수만 남고 설명이 없으면 숫자가 혼자 돌아다닌다.
     const upT = ser.reduce((a, d) => a + (d.up || 0), 0);
