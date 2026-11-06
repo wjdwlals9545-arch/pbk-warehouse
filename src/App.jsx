@@ -145,6 +145,32 @@ const guessAdjKind = (text, note, isAnnualCount) => {
   return '';
 };
 
+// 구분별 금액 합계. 대시보드 표와 월간 보고서가 같은 값을 말해야 한다.
+// 행 키는 메모와 같다 — 월|사유코드|금액|건수. MB51 을 다시 올려도 안 떨어진다.
+const ADJ_ROW_KEY = (m, r) => `${m}|${r.reason || ''}|${r.amt || 0}|${r.n || 0}`;
+const adjKindOf = (m, r, kinds = {}, notes = {}, annualMonth = 3) => {
+  const key = ADJ_ROW_KEY(m, r);
+  if (kinds[key]) return { id: kinds[key], auto: false };
+  const annual = r.text === '(사유 미기재)' && parseInt(m.slice(5, 7)) === annualMonth;
+  return { id: guessAdjKind(r.text, notes[key], annual), auto: true };
+};
+const adjKindTotals = (adjustReasons, year, kinds = {}, notes = {}, annualMonth = 3) => {
+  const sum = { real: 0, repn: 0, nonpo: 0, none: 0 };
+  const byMonth = {};
+  let total = 0;
+  Object.keys(adjustReasons || {})
+    .filter(m => m.startsWith(String(year))).sort()
+    .forEach(m => (adjustReasons[m] || []).forEach(r => {
+      const id = adjKindOf(m, r, kinds, notes, annualMonth).id || 'none';
+      const v = (r.up || 0) + (r.down || 0);
+      sum[id] = (sum[id] || 0) + v;
+      byMonth[m] = byMonth[m] || { real: 0, repn: 0, nonpo: 0, none: 0 };
+      byMonth[m][id] += v;
+      total += v;
+    }));
+  return { sum, byMonth, total };
+};
+
 // 과거 온습도 데이터 (2022-12 ~ 2026-02)
 // 월별 기록자 — 담당자 타부서 지원 기간(2026-04~06)은 대체 인원 HJ. Kim 이 점검함
 const DEFAULT_RECORDER_BY_MONTH = { '2026-04': 'HJ. Kim', '2026-05': 'HJ. Kim', '2026-06': 'HJ. Kim' };
@@ -9767,6 +9793,15 @@ ${tableRows}</tbody>
       const invLast = [...invSer].reverse().find(d => d.stock !== null) || null;
       const invMonths = invSer.filter(d => d.stock !== null).length;
       const hasSplit = invSer.some(d => (d.up || 0) + (d.down || 0) > 0);
+      // 구분 — 화면의 재고조정 사유 표와 같은 집계
+      const kt = adjKindTotals(kpiData.adjustReasons, ry, adjustKinds, adjustNotes);
+      const hasKind = kt.total > 0;
+      const kShare = (v) => (kt.total ? +(v / kt.total * 100).toFixed(1) : null);
+      const avgStockR = (() => {
+        const v = invSer.map(d => d.stock).filter(x => x > 0);
+        return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+      })();
+      const kStock = (v) => (avgStockR ? +(v / avgStockR * 100).toFixed(4) : null);
 
       // 월간 보고서는 화면에 켜 둔 지표만 다룬다.
       // 끈 지표를 JSON 에 넣으면 AI 가 "데이터 없음" 이라고 굳이 한 줄 쓴다.
@@ -9788,6 +9823,15 @@ ${tableRows}</tbody>
           연누적_손실분: invLast?.cumDownPct ?? null,
           증가금액_원: invLast?.cumUpAmt ?? null,
           손실금액_원: invLast?.cumDownAmt ?? null,
+          ...(hasKind ? { 구분별: {
+            실물차이: { 금액_원: kt.sum.real, 비중_pct: kShare(kt.sum.real), 재고대비_pct: kStock(kt.sum.real),
+                        설명: '장부와 실물이 실제로 달랐다 — 재고조사 차이, 재단 로스' },
+            품번재편: { 금액_원: kt.sum.repn, 비중_pct: kShare(kt.sum.repn), 재고대비_pct: kStock(kt.sum.repn),
+                        설명: '실물은 안 움직였다 — 새 품번 채번, 자재유형(ROH) 전환' },
+            발주외입고: { 금액_원: kt.sum.nonpo, 비중_pct: kShare(kt.sum.nonpo), 재고대비_pct: kStock(kt.sum.nonpo),
+                        설명: 'PO 아닌 경로로 실물이 들어왔다 — 샘플, 긴급조달' },
+            ...(kt.sum.none ? { 미지정: { 금액_원: kt.sum.none, 비중_pct: kShare(kt.sum.none) } } : {}),
+          } } : {}),
           산식: '연 누적 차이금액 ÷ 평균 재고금액',
           목표: `${INV_ADJ_TARGET}% 이하`,
         } } : {}),
@@ -9823,8 +9867,11 @@ ${tableRows}</tbody>
 [요약] 3줄 이내 핵심 요약
 [지표 분석] ${[show('gr') && 'GR취소', show('inv') && '재고조정', show('lt') && '키팅 리드타임', show('ct') && '키팅 사이클타임'].filter(Boolean).join(' / ')} 순으로 각 2~4줄 (전월 대비, 목표 대비 언급)
   JSON 에 없는 지표는 아예 언급하지 말 것 — "데이터 없음" 이라고 쓰지도 말 것.${show('inv') ? `
-  재고조정은 연누적(= 차이금액 합계 ÷ 평균 재고금액)을 기준으로 쓰고, 증가분과 손실분을
-  나눠 볼 것. 증가는 재고 이전·기안구매 등 장부 정리이고, 손실분이 실제 재고 차이다.` : ''}
+  재고조정은 연누적(= 차이금액 합계 ÷ 평균 재고금액)을 기준으로 쓸 것.${hasKind ? `
+  구분별 금액을 반드시 다룰 것 — 실물 차이(재고조사·재단 로스)만이 자재가 줄일 수 있는
+  몫이고, 품번 재편(채번·ROH 전환)과 발주 외 입고(샘플·긴급조달)는 실물 관리와 무관하게
+  생긴다. 어느 쪽이 큰지, 줄이려면 무엇을 해야 하는지 쓸 것.` : `
+  증가분과 손실분을 나눠 볼 것.`}` : ''}
 [리스크 및 특이사항] 주의가 필요한 항목
 [권고] 다음 달 조치 제안 2~3개`,
           messages: [{ role: 'user', content: `${ym} 월간 KPI 지표:\n${JSON.stringify(metrics, null, 1)}` }]
@@ -9863,7 +9910,8 @@ ${tableRows}</tbody>
           goal: '목표 2건 이하' },
         // 대시보드 점수 카드와 같은 값을 쓴다 — 거기는 연 누적을 크게 띄운다
         show('inv') && { label: '재고 조정률', val: v(m.재고조정률_pct.연누적, '%'),
-          sub: `${invMonths}개월 누적 ÷ 평균 재고금액 · 당월 ${v(m.재고조정률_pct.당월, '%')}`,
+          sub: `${invMonths}개월 누적 ÷ 평균 재고금액 · 당월 ${v(m.재고조정률_pct.당월, '%')}`
+            + (hasKind ? ` · 실물 차이 ${kShare(kt.sum.real)}% / 품번 재편 ${kShare(kt.sum.repn)}% / 발주 외 입고 ${kShare(kt.sum.nonpo)}%` : ''),
           goal: `목표 ${INV_ADJ_TARGET}% 이하` },
         show('lt') && { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'),
           sub: `${m.키팅.당월.건수}건 · ${diffArrow(m.키팅.당월.평균리드타임_일, m.키팅.전월.평균리드타임_일)}`,
@@ -9918,6 +9966,13 @@ ${tableRows}</tbody>
             ...(hasSplit ? [
               { label: '  증가', values: invSer.map(d => d.up || null) },
               { label: '  손실', values: invSer.map(d => d.down || null) },
+            ] : []),
+            // 구분 — 증가/손실과는 다른 축이다. 줄일 수 있는 몫이 어디인지 본다.
+            ...(hasKind ? [
+              { label: '실물 차이', values: last12.map(mm => kt.byMonth[mm]?.real || null) },
+              { label: '품번 재편', values: last12.map(mm => kt.byMonth[mm]?.repn || null) },
+              { label: '발주 외 입고', values: last12.map(mm => kt.byMonth[mm]?.nonpo || null) },
+              ...(kt.sum.none ? [{ label: '미지정', values: last12.map(mm => kt.byMonth[mm]?.none || null) }] : []),
             ] : []),
             { label: '(Month.)', values: sInvAdj, fmt: pct },
             { label: '(Cum.)', values: cumAdjRate, fmt: pct },
@@ -18933,19 +18988,12 @@ ${lines}
 
                             // ── 구분 (실물 차이 / 품번 재편 / 발주 외 입고) ──
                             // 메모와 같은 키를 쓴다. MB51 을 다시 올려도 안 떨어진다.
-                            const rowKey = (m, r) => `${m}|${r.reason || ''}|${r.amt || 0}|${r.n || 0}`;
-                            const kindOf = (m, r) => {
-                              const k = rowKey(m, r);
-                              if (adjustKinds[k]) return { id: adjustKinds[k], auto: false };
-                              const annual = r.text === '(사유 미기재)'
-                                && parseInt(m.slice(5, 7)) === ANNUAL_COUNT_MONTH;
-                              return { id: guessAdjKind(r.text, adjustNotes[k], annual), auto: true };
-                            };
-                            const byKind = {};
-                            months.forEach(m => (all[m] || []).forEach(r => {
-                              const id = kindOf(m, r).id || 'none';
-                              byKind[id] = (byKind[id] || 0) + (r.up || 0) + (r.down || 0);
-                            }));
+                            const rowKey = (m, r) => ADJ_ROW_KEY(m, r);
+                            const kindOf = (m, r) =>
+                              adjKindOf(m, r, adjustKinds, adjustNotes, ANNUAL_COUNT_MONTH);
+                            // 보고서와 같은 함수에서 뽑는다 — 두 곳이 다른 금액을 말하면 안 된다
+                            const byKind = adjKindTotals(all, selectedYear, adjustKinds,
+                                                         adjustNotes, ANNUAL_COUNT_MONTH).sum;
                             // 비율은 KPI 와 같은 분모(그 해 평균 재고금액)를 쓴다.
                             // months 는 조정이 있는 달뿐이라 그걸로 평균을 내면 분모가 달라진다.
                             const stocks = Object.keys(kpiData.invAdjustDetail || {})
