@@ -17204,9 +17204,14 @@ ${lines}
               // 업체마다 표 하나. 구매가 업체 단위로 끊어 보게 된다.
               // 업체 회신 일정 열은 적힌 게 하나라도 있을 때만 — 빈 열은 자리만 먹는다
               const anyPromise = src.some(d => promiseOf(d));
-              const TH = 'border:1px solid #d7dbe0;padding:6px 8px;background:#f1f3f5;'
+              const TH = 'box-sizing:border-box;border:1px solid #d7dbe0;padding:5px 7px;background:#f1f3f5;'
                        + 'font-weight:600;white-space:nowrap;';
-              const TD = 'border:1px solid #e5e7eb;padding:6px 8px;';
+              const TD = 'box-sizing:border-box;border:1px solid #e5e7eb;padding:5px 7px;';
+              // 메일 표는 고정 폭이 정석이다. % 로 두면 받는 쪽 창 너비대로 늘어난다
+              const W = { no: 32, po: 92, mat: 70, desc: anyPromise ? 190 : 250,
+                          due: 86, past: 46, qty: 92, amt: 84, pr: 96 };
+              const TW = W.no + W.po + W.mat + W.desc + W.due + W.past + W.qty + W.amt
+                       + (anyPromise ? W.pr : 0);
               const intHtml = intGroups.map(g => {
                 const gTot = (() => {
                   const by = {};
@@ -17220,17 +17225,18 @@ ${lines}
                 return `<p style="margin:22px 0 6px;font-size:14px;"><b>■ ${esc(g.name)}</b>`
                   + `<span style="color:#6b7280;font-weight:400;"> — ${g.rows.length}건`
                   + (gTot ? ` · ${esc(gTot)}` : '') + `</span></p>`
-                  + `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:13px;width:100%;table-layout:auto;">`
+                  + `<table width="${TW}" cellspacing="0" cellpadding="0"`
+                  + ` style="border-collapse:collapse;font-size:12.5px;width:${TW}px;table-layout:fixed;">`
                   + `<tr>`
-                  + `<th style="${TH}">No</th>`
-                  + `<th style="${TH}">PO</th>`
-                  + `<th style="${TH}">Material</th>`
-                  + `<th style="${TH}">Description</th>`
-                  + `<th style="${TH}">Delivery date</th>`
-                  + `<th style="${TH}">경과</th>`
-                  + `<th style="${TH}">잔여 수량</th>`
-                  + `<th style="${TH}">금액</th>`
-                  + (anyPromise ? `<th style="${TH}">업체 회신 일정</th>` : '')
+                  + `<th width="${W.no}" style="${TH}width:${W.no}px;">No</th>`
+                  + `<th width="${W.po}" style="${TH}width:${W.po}px;">PO</th>`
+                  + `<th width="${W.mat}" style="${TH}width:${W.mat}px;">Material</th>`
+                  + `<th width="${W.desc}" style="${TH}width:${W.desc}px;white-space:normal;">Description</th>`
+                  + `<th width="${W.due}" style="${TH}width:${W.due}px;">Delivery</th>`
+                  + `<th width="${W.past}" style="${TH}width:${W.past}px;">경과</th>`
+                  + `<th width="${W.qty}" style="${TH}width:${W.qty}px;">잔여</th>`
+                  + `<th width="${W.amt}" style="${TH}width:${W.amt}px;">금액</th>`
+                  + (anyPromise ? `<th width="${W.pr}" style="${TH}width:${W.pr}px;">업체 회신</th>` : '')
                   + `</tr>`
                   + g.rows.map((d, i) => {
                       const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
@@ -17240,7 +17246,7 @@ ${lines}
                         + `<td style="${TD}text-align:center;color:#6b7280;">${i + 1}</td>`
                         + `<td style="${TD}white-space:nowrap;">${esc(d.poNo)}</td>`
                         + `<td style="${TD}white-space:nowrap;font-weight:600;">${esc(d.material)}</td>`
-                        + `<td style="${TD}">${esc(d.description || '')}</td>`
+                        + `<td style="${TD}word-break:break-word;">${esc(d.description || '')}</td>`
                         + `<td style="${TD}white-space:nowrap;color:#c92a2a;font-weight:600;">${esc(d.deliveryDate)}</td>`
                         + `<td style="${TD}text-align:right;white-space:nowrap;">${daysPast(d.deliveryDate)}일</td>`
                         + `<td style="${TD}text-align:right;white-space:nowrap;"><b>${d.qty} ${esc(d.unit || 'EA')}</b>`
