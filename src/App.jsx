@@ -9857,6 +9857,17 @@ ${tableRows}</tbody>
       + `<svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg>${tableHtml}</div>`;
   };
 
+  // AI 코멘트 한 덩어리 → 그래프 밑에 붙는 불릿 상자.
+  // 월간·연간이 같은 모양이어야 한다.
+  const kpiCmtHtml = (body, title) => {
+    if (!body) return '';
+    const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const items = String(body).split('\n').map(t => t.replace(/^[-·•*\s]+/, '').trim()).filter(Boolean);
+    if (!items.length) return '';
+    return `<div class="cmt"><div class="ct">${title}</div><ul>${
+      items.map(t => `<li>${esc(t).replace(/^([^:—]{2,22})([:—])/, '<b>$1</b>$2')}</li>`).join('')}</ul></div>`;
+  };
+
   // 그 해 12개월치 계산과 화면 블록. 월간·연간 보고서가 같이 쓴다.
   // 복사본을 두면 한쪽만 고쳤을 때 두 보고서가 다른 숫자를 말한다.
   const kpiYearParts = (ry, show) => {
@@ -10146,7 +10157,7 @@ ${tableRows}</tbody>
       const Y = kpiYearParts(ry, show);
       const { invSer, invLast, invMonths, hasSplit, kt, hasKind, kShare, kStock,
               sGrQty, sGrCancel, sInvAdj, sKitLT, sCycle, sRcv,
-              charts, grYearBlock, invYearBlock, adjDetail, monthTable } = Y;
+              chartList, grYearBlock, invYearBlock, splitChart, lossBox, reasonTable, monthTable } = Y;
 
       // ── 코드 집계 ──
       const kit = chatToolImpl.get_kitting_status({ month: ym });
@@ -10155,6 +10166,10 @@ ${tableRows}</tbody>
       const dl = chatToolImpl.get_delivery_schedule({ days: 14 });
       const cycleArr = (Array.isArray(pickCycles) ? pickCycles : [])
         .filter(p => p.status === 'completed' && p.cycleMin && (p.completed || '').startsWith(ym)).map(p => p.cycleMin);
+
+      // 퍼센트는 숫자로 주면 안 된다. 0.1302 를 비율로 읽고 13.02% 라고 쓴다.
+      const PCT4 = (v) => v == null ? null : `${(+v).toFixed(4)}%`;
+      const PCT1 = (v) => v == null ? null : `${(+v).toFixed(1)}%`;
 
       // 월간 보고서는 화면에 켜 둔 지표만 다룬다.
       // 끈 지표를 JSON 에 넣으면 AI 가 "데이터 없음" 이라고 굳이 한 줄 쓴다.
@@ -10168,22 +10183,22 @@ ${tableRows}</tbody>
           전월_취소건수: kpiData.grCancel?.[prevYm] ?? null,
           목표: '월 2건 이하',
         } } : {}),
-        ...(show('inv') ? { 재고조정률_pct: {
-          당월: kpiData.inventoryAdjust?.[ym] ?? null,
-          전월: kpiData.inventoryAdjust?.[prevYm] ?? null,
-          연누적: invLast?.cumAll ?? null,
-          연누적_증가분: invLast?.cumUpPct ?? null,
-          연누적_손실분: invLast?.cumDownPct ?? null,
+        ...(show('inv') ? { 재고조정률: {
+          당월: PCT4(kpiData.inventoryAdjust?.[ym]),
+          전월: PCT4(kpiData.inventoryAdjust?.[prevYm]),
+          연누적: PCT4(invLast?.cumAll),
+          연누적_증가분: PCT4(invLast?.cumUpPct),
+          연누적_손실분: PCT4(invLast?.cumDownPct),
           증가금액_원: invLast?.cumUpAmt ?? null,
           손실금액_원: invLast?.cumDownAmt ?? null,
           ...(hasKind ? { 구분별: {
-            실물차이: { 금액_원: kt.sum.real, 비중_pct: kShare(kt.sum.real), 재고대비_pct: kStock(kt.sum.real),
+            실물차이: { 금액_원: kt.sum.real, 비중: PCT1(kShare(kt.sum.real)), 재고대비: PCT4(kStock(kt.sum.real)),
                         설명: '장부와 실물이 실제로 달랐다 — 재고조사 차이, 재단 로스' },
-            품번재편: { 금액_원: kt.sum.repn, 비중_pct: kShare(kt.sum.repn), 재고대비_pct: kStock(kt.sum.repn),
+            품번재편: { 금액_원: kt.sum.repn, 비중: PCT1(kShare(kt.sum.repn)), 재고대비: PCT4(kStock(kt.sum.repn)),
                         설명: '실물은 안 움직였다 — 새 품번 채번, 자재유형(ROH) 전환' },
-            발주외입고: { 금액_원: kt.sum.nonpo, 비중_pct: kShare(kt.sum.nonpo), 재고대비_pct: kStock(kt.sum.nonpo),
+            발주외입고: { 금액_원: kt.sum.nonpo, 비중: PCT1(kShare(kt.sum.nonpo)), 재고대비: PCT4(kStock(kt.sum.nonpo)),
                         설명: 'PO 아닌 경로로 실물이 들어왔다 — 샘플, 긴급조달' },
-            ...(kt.sum.none ? { 미지정: { 금액_원: kt.sum.none, 비중_pct: kShare(kt.sum.none) } } : {}),
+            ...(kt.sum.none ? { 미지정: { 금액_원: kt.sum.none, 비중: PCT1(kShare(kt.sum.none)) } } : {}),
           } } : {}),
           산식: '연 누적 차이금액 ÷ 평균 재고금액',
           목표: `${INV_ADJ_TARGET}% 이하`,
@@ -10207,26 +10222,35 @@ ${tableRows}</tbody>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-5',
-          max_tokens: 1500,
+          max_tokens: 2000,
           system: `당신은 물류창고 자재관리 KPI 월간 보고서 작성자입니다. 제공된 JSON 지표만 근거로 작성하세요.
 규칙:
 - 새로운 숫자를 만들지 말 것. JSON에 있는 수치만 인용.
-- null인 지표는 "데이터 없음"으로 간단히 처리하고 억지 해석 금지.
+- 퍼센트는 '0.1302%' 처럼 % 가 붙은 문자열로 들어온다. 그대로 쓸 것.
+  100을 곱하거나 자릿수를 바꾸지 말 것. 0.1302% 는 13.02% 가 아니다.
+- JSON 에 없는 지표는 아예 언급하지 말 것 — "데이터 없음" 이라고 쓰지도 말 것.
 - 마크다운 기호(#, *, -) 없이, 아래 섹션 제목 형식의 일반 텍스트로 작성.
 - 경영보고 문체(간결한 개조식), 한국어.
 
-구성 (섹션 제목 형식을 정확히 지킬 것):
+작성 방식 — PPT 장표의 Key Takeaway 처럼 쓴다:
+- 각 항목은 한 줄 = 한 문장. 줄 앞에 기호를 붙이지 말 것(시스템이 붙인다).
+- 한 줄은 25~60자. 숫자를 앞세울 것.
+  예) "당월 재고조정 12,025원 — 전월 300,000원 대비 96% 감소"
+- 각 섹션 2~4줄. 추측이 아니라 JSON 수치로만 말할 것.
+
+아래 대괄호 제목을 그대로 쓰고, 그 아래에 줄바꿈으로 항목을 나열하세요.
+
 [종합등급] 양호/주의/위험 중 하나만 쓰고, 이어서 한 줄 사유
-[요약] 3줄 이내 핵심 요약
-[지표 분석] ${[show('gr') && 'GR취소', show('inv') && '재고조정', show('lt') && '키팅 리드타임', show('ct') && '키팅 사이클타임', show('rc') && '입고 사이클타임'].filter(Boolean).join(' / ')} 순으로 각 2~4줄 (전월 대비, 목표 대비 언급)
-  JSON 에 없는 지표는 아예 언급하지 말 것 — "데이터 없음" 이라고 쓰지도 말 것.${show('inv') ? `
-  재고조정은 연누적(= 차이금액 합계 ÷ 평균 재고금액)을 기준으로 쓸 것.${hasKind ? `
-  구분별 금액을 반드시 다룰 것 — 실물 차이(재고조사·재단 로스)만이 자재가 줄일 수 있는
-  몫이고, 품번 재편(채번·ROH 전환)과 발주 외 입고(샘플·긴급조달)는 실물 관리와 무관하게
-  생긴다. 어느 쪽이 큰지, 줄이려면 무엇을 해야 하는지 쓸 것.` : `
-  증가분과 손실분을 나눠 볼 것.`}` : ''}
-[리스크 및 특이사항] 주의가 필요한 항목
-[권고] 다음 달 조치 제안 2~3개`,
+[요약] 이번 달 핵심
+[리스크] 주의가 필요한 항목
+[권고] 다음 달 조치 제안
+${show('gr') ? '[GR] GR 취소 그래프에 붙일 코멘트. 전월 대비와 목표 대비\n' : ''}${show('inv') ? `[재고조정] 재고조정 추이 그래프 코멘트. 연누적(= 차이금액 합계 ÷ 평균 재고금액)과 목표 대비
+[원인분해] 증가/손실 분해 그래프 코멘트. 어느 건이 컸는지${hasKind ? `
+[구분] 실물 차이 / 품번 재편 / 발주 외 입고 코멘트.
+  실물 차이(재고조사·재단 로스)만이 자재가 줄일 수 있는 몫이고, 품번 재편(채번·ROH)과
+  발주 외 입고(샘플·긴급조달)는 실물 관리와 무관하게 생긴다. 다만 KPI 점수는 전체
+  기준이라 그대로 반영된다 — 빼자는 제안은 하지 말 것.` : ''}
+` : ''}${(show('lt') || show('ct') || show('rc')) ? '[키팅] 키팅·입고 사이클타임 코멘트\n' : ''}`,
           messages: [{ role: 'user', content: `${ym} 월간 KPI 지표:\n${JSON.stringify(metrics, null, 1)}` }]
         })
       });
@@ -10262,8 +10286,9 @@ ${tableRows}</tbody>
           sub: `GR ${v(m.GR취소.당월_GR수량, '건')} · ${diffArrow(m.GR취소.당월_취소건수, m.GR취소.전월_취소건수)}`,
           goal: '목표 2건 이하' },
         // 대시보드 점수 카드와 같은 값을 쓴다 — 거기는 연 누적을 크게 띄운다
-        show('inv') && { label: '재고 조정률', val: v(m.재고조정률_pct.연누적, '%'),
-          sub: `${invMonths}개월 누적 ÷ 평균 재고금액 · 당월 ${v(m.재고조정률_pct.당월, '%')}`
+        // 퍼센트는 이미 '%' 가 붙은 문자열이다 (모델이 100배로 읽지 않게)
+        show('inv') && { label: '재고 조정률', val: v(m.재고조정률.연누적),
+          sub: `${invMonths}개월 누적 ÷ 평균 재고금액 · 당월 ${v(m.재고조정률.당월)}`
             + (hasKind ? ` · 실물 차이 ${kShare(kt.sum.real)}% / 품번 재편 ${kShare(kt.sum.repn)}% / 발주 외 입고 ${kShare(kt.sum.nonpo)}%` : ''),
           goal: `목표 ${INV_ADJ_TARGET}% 이하` },
         show('lt') && { label: '키팅 리드타임', val: v(m.키팅.당월.평균리드타임_일, '일'),
@@ -10274,25 +10299,32 @@ ${tableRows}</tbody>
       ].filter(Boolean);
       const cards = cardList.map(c => `<div class="kcard"><div class="klabel">${c.label}</div><div class="kval">${c.val}</div><div class="ksub">${c.sub || ''}</div><div class="kgoal">${c.goal}</div></div>`).join('');
 
-      const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
+      // 코멘트는 그래프 바로 밑에 붙인다 — 문서 끝에 몰아 두면 올렸다 내렸다 해야 한다
+      const cmt = (name, title) => kpiCmtHtml(section(name), title);
+      const NOTE = { gr: ['GR', 'GR 취소 — 짚을 점'], inv: ['재고조정', '재고조정 추이 — 짚을 점'],
+                     lt: ['키팅', '키팅·입고 — 짚을 점'], ct: ['키팅', ''], rc: ['키팅', ''] };
+      const usedNote = new Set();
+      const withNote = chartList.map(([k, html]) => {
+        const d = NOTE[k];
+        if (!d || !d[1] || usedNote.has(d[0])) return html;
+        usedNote.add(d[0]);
+        return html + cmt(d[0], d[1]);
+      }).join('');
 
       // 섹션은 토글로 통째로 빠질 수 있다. 번호를 박아 두면 02 다음에 04 가 나온다.
       const secs = [
         { t: '핵심 지표', note: `${ym} 기준 · 전월 대비`,
-          body: `<div class="cards" style="grid-template-columns:repeat(${Math.max(1, cardList.length)},1fr)">${cards}</div>` },
+          body: `<div class="cards" style="grid-template-columns:repeat(${Math.max(1, cardList.length)},1fr)">${cards}</div>`
+            + cmt('요약', '이번 달 핵심') + cmt('리스크', '리스크 — 주의할 것')
+            + cmt('권고', '권고 — 다음 달 조치') },
         (grYearBlock || invYearBlock) && { t: '연도별 추이', note: '과거 연간 실적',
           body: `<div class="chartwrap">${grYearBlock}${invYearBlock}</div>` },
-        charts && { t: `${ry}년 월별 추이`, note: '그래프에 마우스를 올리면 월별 값이 표시됩니다',
-          body: `<div class="chartwrap">${charts}</div>` },
-        adjDetail && { t: '재고조정 상세', note: '원인 분해 · 구분별 집계 · 사유 전체',
-          body: `<div class="chartwrap">${adjDetail}</div>` },
+        withNote && { t: `${ry}년 월별 추이`, note: '그래프에 마우스를 올리면 월별 값이 표시됩니다',
+          body: `<div class="chartwrap">${withNote}</div>` },
+        (splitChart || lossBox || reasonTable) && { t: '재고조정 상세', note: '원인 분해 · 구분별 집계 · 사유 전체',
+          body: `<div class="chartwrap">${splitChart}${cmt('원인분해', '원인 분해 — 짚을 점')}${lossBox}${reasonTable}${cmt('구분', '구분별 — 줄일 수 있는 몫')}</div>` },
         monthTable && { t: `${ry}년 월별 데이터`, note: '대시보드 월별 표와 같은 값',
           body: monthTable },
-        { t: '분석 및 권고', note: 'AI 작성',
-          body: `${aiBlock('📌', '요약', section('요약'), '#455DA0')}
-${aiBlock('📈', '지표 분석', section('지표 분석'), '#199AC2')}
-${aiBlock('⚠️', '리스크 및 특이사항', section('리스크'), '#e0483b')}
-${aiBlock('💡', '권고', section('권고'), '#FDB813')}` },
       ].filter(Boolean);
       const secsHtml = secs.map((x, i) => `<div class="sec">
     <div class="sechd"><span class="secno">${String(i + 1).padStart(2, '0')}</span><h2>${x.t}</h2><span class="note">${x.note}</span></div>
@@ -10495,6 +10527,7 @@ ${show('inv') ? `- 재고조정 구분을 반드시 다룰 것. 실물 차이만
 
 [종합등급] 양호/주의/위험 중 하나와 한 줄 근거
 [연간 총평] 올 한 해 전체. 전년 대비와 목표 대비를 반드시 포함
+[리스크] 내년에도 반복될 구조적 요인
 [권고] 실행 항목. 무엇을 하면 숫자가 얼마나 움직이는지까지
 [GR] GR 취소 그래프에 붙일 코멘트. 월별 흐름과 전년 대비
 [재고조정] 재고조정 추이 그래프 코멘트. 목표선을 언제 넘겼는지, 월별 흐름
@@ -10519,14 +10552,7 @@ ${show('inv') ? `- 재고조정 구분을 반드시 다룰 것. 실물 차이만
         return mt ? mt[1].trim() : null;
       };
       // 그래프 밑에 붙는 코멘트. 문서 끝에 몰아 두면 올렸다 내렸다 해야 한다.
-      const cmt = (name, title) => {
-        const body = section(name);
-        if (!body) return '';
-        const items = body.split('\n').map(t => t.replace(/^[-·•*\s]+/, '').trim()).filter(Boolean);
-        if (!items.length) return '';
-        return `<div class="cmt"><div class="ct">${title}</div><ul>${
-          items.map(t => `<li>${esc(t).replace(/^([^:—]{2,22})([:—])/, '<b>$1</b>$2')}</li>`).join('')}</ul></div>`;
-      };
+      const cmt = (name, title) => kpiCmtHtml(section(name), title);
       // 차트 조각에 제 코멘트를 달아 준다
       const NOTE = { gr: ['GR', 'GR 취소 — 짚을 점'], inv: ['재고조정', '재고조정 추이 — 짚을 점'],
                      lt: ['키팅', '키팅·입고 — 짚을 점'], ct: ['키팅', ''], rc: ['키팅', ''] };
@@ -10541,7 +10567,8 @@ ${show('inv') ? `- 재고조정 구분을 반드시 다룰 것. 실물 차이만
       const secs = [
         { t: `${ry}년 연간 성적`, note: `1~${upTo}월 누적`,
           body: `<div class="cards" style="grid-template-columns:repeat(${Math.max(1, cardList.length)},1fr)">${cards}</div>`
-            + vsPrev + cmt('연간 총평', '연간 총평') + cmt('권고', '권고 — 무엇을 하면 숫자가 움직이나') },
+            + vsPrev + cmt('연간 총평', '연간 총평') + cmt('리스크', '리스크 — 내년에도 반복될 것')
+            + cmt('권고', '권고 — 무엇을 하면 숫자가 움직이나') },
         (grYearBlock || invYearBlock) && { t: '연도별 추이', note: '과거 6년 실적',
           body: `<div class="chartwrap">${grYearBlock}${invYearBlock}</div>` },
         withNote && { t: `${ry}년 월별 추이`, note: '어느 달에 몰렸는지를 봅니다',
