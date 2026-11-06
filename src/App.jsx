@@ -9594,6 +9594,38 @@ ${tableRows}</tbody>
   th{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mute);font-weight:700;
      border-bottom:1.5px solid #d9e0ec;}
   tbody tr:last-child td{border-bottom:none;}
+  /* 연도별 추이 카드 — KPI 탭의 6칸 그리드와 같은 모양 */
+  .ygrid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:4px;}
+  .ycard{background:#f8fafc;border:1px solid #eef1f6;border-radius:10px;padding:12px 8px;text-align:center;}
+  .ycard .yy{font-size:11px;color:#8a93a6;margin-bottom:4px;}
+  .ycard .yv{font-size:17px;font-weight:800;}
+  .ycard .yn{font-size:10px;color:#a3abba;margin-top:3px;}
+  .good{color:#0f9b6c;} .warn{color:#c2860b;} .bad{color:#d3463a;}
+  /* 일반 표 (사유·월별 데이터) */
+  .rtab{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px;}
+  .rtab th{background:#f6f8fb;color:#586277;font-weight:700;padding:7px 6px;
+    border-bottom:1px solid #e6eaf1;text-align:center;white-space:nowrap;}
+  .rtab td{padding:6px;border-bottom:1px solid #f1f4f9;text-align:right;}
+  .rtab td.l{text-align:left;} .rtab td.c{text-align:center;}
+  .rtab tfoot td{font-weight:800;background:#f8fafc;border-top:2px solid #dfe4ec;}
+  .rtab .muted{color:#9aa3b2;}
+  .tag{display:inline-block;padding:1px 6px;border-radius:5px;font-size:10px;font-weight:700;}
+  .t-real{background:#ffe4e8;color:#b02a44;} .t-repn{background:#ede6ff;color:#6b45c0;}
+  .t-nonpo{background:#dcf0fb;color:#1d6f96;} .t-none{background:#eef1f6;color:#8a93a6;}
+  .t-ok{background:#d9f5e9;color:#0f7a56;} .t-mid{background:#fdf0d5;color:#9a6a08;}
+  .t-bad{background:#fde3e0;color:#b2352a;}
+  /* 구분 요약 칩 */
+  .kchips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px;font-size:11px;}
+  .kchip{border:1px solid #e6eaf1;border-radius:7px;padding:4px 9px;background:#fff;}
+  /* 손실만 따로 보면 */
+  .kbox{margin-top:12px;border:1px solid #e6eaf1;background:#f8fafc;border-radius:10px;padding:11px 13px;font-size:11px;}
+  .kbox .kb-t{font-weight:800;color:#586277;margin-bottom:6px;}
+  .kbox .kb-r{display:flex;align-items:center;gap:8px;margin:3px 0;}
+  .kbox .kb-r .n{width:112px;font-weight:700;}
+  .kbox .kb-r .v{width:62px;text-align:right;font-weight:800;}
+  .score{padding:1px 7px;border-radius:5px;font-weight:800;font-size:10px;}
+  .s-hi{background:#d9f5e9;color:#0f7a56;} .s-mid{background:#fdf0d5;color:#9a6a08;}
+  .s-lo{background:#fde3e0;color:#b2352a;}
   .ctab{margin-top:12px;table-layout:fixed;font-size:11px;}
   .ctab th,.ctab td{padding:5px 4px;text-align:right;border-bottom:1px solid #f1f4f9;}
   .ctab th{text-align:center;font-size:10px;letter-spacing:.04em;}
@@ -9624,6 +9656,47 @@ ${tableRows}</tbody>
   }`;
 
   // 12개월 추이 차트 + 월별 데이터 표 (hover 시 값 표시)
+  // 재고조정 원인 분해 — 증가는 0선 위, 손실은 아래. 누적 3선을 얹는다.
+  // kpiChartSvg 는 음수 막대를 못 그려서 따로 만든다 (화면 차트와 같은 그림).
+  const adjSplitSvg = (ser, labels) => {
+    const up = ser.map(d => d.up || 0), dn = ser.map(d => d.down || 0);
+    const posMax = Math.max(...up, ...ser.map(d => d.cumUpAmt || 0), ...ser.map(d => d.cumVarAmt || 0), 1);
+    const negMax = Math.max(...dn, ...ser.map(d => d.cumDownAmt || 0), 1);
+    const W = 900, H = 320, padL = 74, padR = 18, padT = 26, padB = 26;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const span = posMax + negMax;
+    const y0 = padT + plotH * (posMax / span);                  // 0 선
+    const yUp = (v) => y0 - (v / posMax) * (y0 - padT);
+    const yDn = (v) => y0 + (v / negMax) * (padT + plotH - y0);
+    const slot = plotW / labels.length, bw = Math.max(8, slot * 0.42);
+    const cx = (i) => padL + (i + 0.5) * slot;
+    const won = (v) => Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(1) + '백만'
+      : Math.abs(v) >= 1000 ? Math.round(v / 1000) + '천' : String(Math.round(v));
+    let el = `<line x1="${padL}" y1="${y0}" x2="${W - padR}" y2="${y0}" stroke="#cbd2de"/>`;
+    for (let g = 1; g <= 3; g++) {
+      el += `<line x1="${padL}" y1="${yUp(posMax * g / 3)}" x2="${W - padR}" y2="${yUp(posMax * g / 3)}" stroke="#eef1f6"/>`
+        + `<text x="${padL - 6}" y="${yUp(posMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2">${won(posMax * g / 3)}</text>`;
+      el += `<line x1="${padL}" y1="${yDn(negMax * g / 3)}" x2="${W - padR}" y2="${yDn(negMax * g / 3)}" stroke="#eef1f6"/>`
+        + `<text x="${padL - 6}" y="${yDn(negMax * g / 3) + 3}" text-anchor="end" font-size="9" fill="#9aa3b2">-${won(negMax * g / 3)}</text>`;
+    }
+    ser.forEach((d, i) => {
+      if (d.up) el += `<rect x="${cx(i) - bw / 2}" y="${yUp(d.up)}" width="${bw}" height="${Math.max(1, y0 - yUp(d.up))}" fill="#7dd3fc" rx="2"/>`
+        + `<text x="${cx(i)}" y="${yUp(d.up) - 4}" text-anchor="middle" font-size="9" font-weight="700" fill="#075985">${won(d.up)}</text>`;
+      if (d.down) el += `<rect x="${cx(i) - bw / 2}" y="${y0}" width="${bw}" height="${Math.max(1, yDn(d.down) - y0)}" fill="#fda4af" rx="2"/>`
+        + `<text x="${cx(i)}" y="${yDn(d.down) + 11}" text-anchor="middle" font-size="9" font-weight="700" fill="#9f1239">${won(d.down)}</text>`;
+      el += `<text x="${cx(i)}" y="${H - 8}" text-anchor="middle" font-size="9" fill="#8a93a6">${i + 1}월</text>`;
+    });
+    const line = (key, color, down) => {
+      const pts = ser.map((d, i) => (d[key] == null ? null : `${cx(i)},${down ? yDn(d[key]) : yUp(d[key])}`)).filter(Boolean);
+      return pts.length < 2 ? '' : `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2.2"/>`;
+    };
+    el += line('cumVarAmt', '#eab308') + line('cumUpAmt', '#0369a1') + line('cumDownAmt', '#be123c', true);
+    return `<div class="chart"><div class="ctitle">재고조정 원인 분해
+      <span style="font-weight:500;color:#8a93a6;font-size:10px;">
+        ■ 증가  ■ 손실 &nbsp; — 누적 전체(KPI 분자)  — 누적 증가  — 누적 손실</span></div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%">${el}</svg></div>`;
+  };
+
   const kpiChartSvg = ({ title, labels, series, target, targetLabel, rows,
                         targetAxis, leftUnit, rightUnit, valueLabels }) => {
     // 오른쪽 축: 막대(금액·수량)와 선(비율·건수)은 자릿수가 달라 한 축에 못 올린다.
@@ -9785,8 +9858,14 @@ ${tableRows}</tbody>
       (Array.isArray(pickCycles) ? pickCycles : []).filter(p => p.status === 'completed' && p.cycleMin)
         .forEach(p => { const m = (p.completed || '').slice(0, 7); if (m) { (cycByMonth[m] = cycByMonth[m] || []).push(p.cycleMin); } });
       const avg = (arr) => arr && arr.length ? +(arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : null;
+      // 입고 Cycle Time — 월별 데이터 표에 쓴다
+      const rcvByMonth = {};
+      (Array.isArray(receiveCycles) ? receiveCycles : [])
+        .filter(r => r.status === 'completed' && r.cycleMin)
+        .forEach(r => { const mm = (r.migo || '').slice(0, 7); if (mm) { (rcvByMonth[mm] = rcvByMonth[mm] || []).push(r.cycleMin); } });
       const sKitLT = last12.map(m => avg(kitByMonth[m]));
       const sCycle = last12.map(m => avg(cycByMonth[m]));
+      const sRcv = last12.map(m => avg(rcvByMonth[m]));
 
       // 재고조정은 대시보드와 같은 계산을 쓴다 — 두 곳이 다른 숫자를 말하면 안 된다
       const invSer = invAdjustSeries(kpiData.invAdjustDetail, kpiData.adjustReasons, ry, last12);
@@ -9865,7 +9944,7 @@ ${tableRows}</tbody>
 구성 (섹션 제목 형식을 정확히 지킬 것):
 [종합등급] 양호/주의/위험 중 하나만 쓰고, 이어서 한 줄 사유
 [요약] 3줄 이내 핵심 요약
-[지표 분석] ${[show('gr') && 'GR취소', show('inv') && '재고조정', show('lt') && '키팅 리드타임', show('ct') && '키팅 사이클타임'].filter(Boolean).join(' / ')} 순으로 각 2~4줄 (전월 대비, 목표 대비 언급)
+[지표 분석] ${[show('gr') && 'GR취소', show('inv') && '재고조정', show('lt') && '키팅 리드타임', show('ct') && '키팅 사이클타임', show('rc') && '입고 사이클타임'].filter(Boolean).join(' / ')} 순으로 각 2~4줄 (전월 대비, 목표 대비 언급)
   JSON 에 없는 지표는 아예 언급하지 말 것 — "데이터 없음" 이라고 쓰지도 말 것.${show('inv') ? `
   재고조정은 연누적(= 차이금액 합계 ÷ 평균 재고금액)을 기준으로 쓸 것.${hasKind ? `
   구분별 금액을 반드시 다룰 것 — 실물 차이(재고조사·재단 로스)만이 자재가 줄일 수 있는
@@ -9996,9 +10075,153 @@ ${tableRows}</tbody>
             { label: '평균 (분)', values: sCycle },
           ]
         }),
+        // 입고 Cycle Time — KPI 탭에는 있는데 보고서에만 없던 것
+        show('rc') && kpiChartSvg({
+          title: '입고 평균 사이클타임 (분)', labels: last12,
+          series: [{ type: 'line', name: '사이클타임', data: sRcv, color: '#0f9b6c' }],
+          target: null,
+          rows: [
+            { label: '완료 건수', values: last12.map(mm => (rcvByMonth[mm] || []).length || null) },
+            { label: '평균 (분)', values: sRcv },
+          ]
+        }),
       ].filter(Boolean).join('');
 
+      // ── 연도별 추이 (KPI 탭과 같은 6년 카드) ──
+      const yearCards = (items) => `<div class="ygrid">${items.map(i =>
+        `<div class="ycard"><div class="yy">${i.year}</div>
+          <div class="yv ${i.cls}">${i.val}</div>
+          ${i.note ? `<div class="yn">${i.note}</div>` : ''}</div>`).join('')}</div>`;
+
+      const grYearBlock = !show('grTrend') ? '' : (() => {
+        const a = [{ year: 2020, qty: 3294, cancel: 141 }, { year: 2021, qty: 1773, cancel: 31 },
+                   { year: 2022, qty: 1411, cancel: 24 }, { year: 2023, qty: 1220, cancel: 6 },
+                   { year: 2024, qty: 1277, cancel: 2 }, { year: 2025, qty: 1377, cancel: 5 }];
+        return `<div class="chart"><div class="ctitle">GR Cancel Rate 연도별 추이</div>${
+          yearCards(a.map(d => {
+            const r = d.qty ? d.cancel / d.qty * 100 : 0;
+            return { year: d.year, val: r.toFixed(2) + '%', note: `${d.cancel}/${d.qty}건`,
+                     cls: r <= 0.5 ? 'good' : r <= 2 ? 'warn' : 'bad' };
+          }))}</div>`;
+      })();
+
+      const invYearBlock = !show('invTrend') ? '' : (() => {
+        const a = [{ year: 2020, ratio: 0.1046 }, { year: 2021, ratio: 0.3257 }, { year: 2022, ratio: 0.2981 },
+                   { year: 2023, ratio: 0.0912 }, { year: 2024, ratio: 0.0224 }, { year: 2025, ratio: 0.0145 }];
+        return `<div class="chart"><div class="ctitle">Inventory Adjust Cost 연도별 추이
+          <span style="font-weight:500;color:#8a93a6;font-size:10px;">2023~2025 는 분기 집계라 ${ry}년 기준과 그대로 비교할 수 없습니다</span></div>${
+          yearCards(a.map(d => ({ year: d.year, val: d.ratio.toFixed(4) + '%', note: '',
+            cls: d.ratio <= INV_ADJ_TARGET ? 'good' : d.ratio <= 0.15 ? 'warn' : 'bad' })))}</div>`;
+      })();
+
+      // ── 손실만 따로 보면 (화면과 같은 비교) ──
+      const sCls = (v) => v >= 80 ? 's-hi' : v >= 60 ? 's-mid' : 's-lo';
+      const lossBox = (!show('inv') || !invLast || invLast.cumAll == null || invLast.cumDownPct == null) ? '' : (() => {
+        const all = invLast.cumAll, loss = invLast.cumDownPct;
+        const sa = calculateKpiScore('inventoryAdjust', all), sl = calculateKpiScore('inventoryAdjust', loss);
+        const row = (n, v, sc, note) => `<div class="kb-r"><span class="n">${n}</span>
+          <span class="v">${v.toFixed(3)}%</span>
+          <span class="score ${sCls(sc)}">${sc}점</span>
+          <span class="muted" style="color:#9aa3b2;">${note}</span></div>`;
+        return `<div class="kbox"><div class="kb-t">손실만 따로 보면 — 같은 평균 재고금액으로 나눈 값</div>
+          ${row('전체 (증가+손실)', all, sa, '← 지금 KPI 점수')}
+          ${row('손실만', loss, sl, loss <= INV_ADJ_TARGET ? `목표 ${INV_ADJ_TARGET}% 이내` : `목표 ${INV_ADJ_TARGET}% 초과`)}
+          <div style="color:#9aa3b2;margin-top:5px;">점수는 전체 기준입니다 — 장부가 어느 쪽으로 틀렸든 관리해야 할 일이라서입니다. 손실 쪽은 설명을 위한 참고치입니다.</div>
+        </div>`;
+      })();
+
+      // ── 재고조정 사유 표 (구분 포함) ──
+      const reasonTable = (!show('inv') || !hasKind) ? '' : (() => {
+        const months = Object.keys(kpiData.adjustReasons || {})
+          .filter(mm => mm.startsWith(String(ry))).sort();
+        const n = (v) => (v ? Math.round(v).toLocaleString() : '-');
+        const body = months.flatMap(mm => (kpiData.adjustReasons[mm] || []).map(r => {
+          const id = adjKindOf(mm, r, adjustKinds, adjustNotes).id || 'none';
+          const def = ADJ_KIND_MAP[id];
+          const note = adjustNotes[ADJ_ROW_KEY(mm, r)] || '';
+          const annual = r.text === '(사유 미기재)' && parseInt(mm.slice(5, 7)) === 3;
+          return `<tr>
+            <td class="c">${parseInt(mm.slice(5, 7))}월</td>
+            <td class="l">${esc(annual ? '재고조사 차이 (연 1회 전수조사)' : r.text)}</td>
+            <td class="c muted">${esc(r.reason || '-')}</td>
+            <td class="c"><span class="tag t-${id}">${def ? def.label : '미지정'}</span></td>
+            <td>${n(r.up)}</td><td>${n(r.down)}</td><td class="c">${r.n || '-'}</td>
+            <td class="l muted">${esc((r.mats || []).join(', '))}</td>
+            <td class="l muted">${esc(note)}</td></tr>`;
+        })).join('');
+        const chips = ADJ_KINDS.filter(k => kt.sum[k.id]).map(k =>
+          `<span class="kchip"><b>${k.label}</b> ${n(kt.sum[k.id])}원 · 비중 <b>${kShare(kt.sum[k.id])}%</b>
+            <span style="color:#9aa3b2;">· 재고 대비 ${kStock(kt.sum[k.id])}%</span></span>`).join('')
+          + (kt.sum.none ? `<span class="kchip"><b>미지정</b> ${n(kt.sum.none)}원 · 비중 <b>${kShare(kt.sum.none)}%</b></span>` : '');
+        return `<div class="chart"><div class="ctitle">재고조정 사유 (MB51 Text)</div>
+          <div class="kchips">${chips}</div>
+          <table class="rtab"><thead><tr>
+            <th style="width:42px">월</th><th>사유 (Text)</th><th style="width:56px">사유코드</th>
+            <th style="width:76px">구분</th><th style="width:84px">증가</th><th style="width:84px">감소</th>
+            <th style="width:40px">건수</th><th style="width:150px">자재</th><th style="width:210px">메모</th>
+          </tr></thead><tbody>${body}</tbody>
+          <tfoot><tr><td class="l" colspan="4">${ry}년 합계</td>
+            <td>${n(invLast?.cumUpAmt)}</td><td>${n(invLast?.cumDownAmt)}</td>
+            <td colspan="3"></td></tr>
+          <tr><td class="l" colspan="4">증가 + 감소 (차이금액 합계)</td>
+            <td colspan="2">${n(kt.total)}원</td><td colspan="3"></td></tr></tfoot>
+        </table></div>`;
+      })();
+
+      // ── 월별 데이터 표 (KPI 탭의 큰 표) ──
+      const monthTable = !show('table') ? '' : (() => {
+        const cell = (v, fmt, cls) => v == null ? '<td class="c muted">-</td>'
+          : `<td class="c"><span class="tag ${cls(v)}">${fmt(v)}</span></td>`;
+        const okbad = (hi, mid) => (v) => v <= hi ? 't-ok' : v <= mid ? 't-mid' : 't-bad';
+        const rows = last12.map((mm, i) => {
+          const q = kpiData.grCancelQty?.[mm], c = kpiData.grCancel?.[mm];
+          const rate = (q && c != null) ? (c / q * 100) : null;
+          const inv = kpiData.inventoryAdjust?.[mm];
+          return `<tr>
+            <td class="l"><b>${i + 1}월</b></td>
+            <td class="c">${q != null ? q : '<span class="muted">-</span>'}</td>
+            ${cell(c ?? null, v => v, okbad(2, 5))}
+            ${cell(rate, v => v.toFixed(3) + '%', okbad(0, 0.5))}
+            ${cell(inv ?? null, v => v.toFixed(3) + '%', okbad(INV_ADJ_TARGET, 0.12))}
+            <td class="c">${sKitLT[i] != null ? sKitLT[i] : '<span class="muted">-</span>'}</td>
+            <td class="c">${sCycle[i] != null ? Math.round(sCycle[i]).toLocaleString() : '<span class="muted">-</span>'}</td>
+            <td class="c">${sRcv[i] != null ? Math.round(sRcv[i]).toLocaleString() : '<span class="muted">-</span>'}</td>
+          </tr>`;
+        }).join('');
+        return `<table class="rtab"><thead><tr>
+          <th style="width:48px">월</th><th>GR Qty<br>(건)</th><th>GR Cancel<br>(건)</th><th>취소율<br>(%)</th>
+          <th>Inventory Adjust Cost<br>(%)</th><th>Kitting L/T<br>(일)</th><th>Kitting CT<br>(분/건)</th><th>입고 CT<br>(분/건)</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+      })();
+
       const aiBlock = (icon, title, body, accent) => body ? `<div class="asec" style="border-left-color:${accent}"><div class="atitle">${icon} ${title}</div><div class="abody">${esc(body).replace(/\n/g, '<br>')}</div></div>` : '';
+
+      // 재고조정 원인 분해 — 화면과 같은 그림
+      const splitChart = (show('inv') && hasSplit) ? adjSplitSvg(invSer, last12) : '';
+      const adjDetail = [splitChart, lossBox, reasonTable].filter(Boolean).join('');
+
+      // 섹션은 토글로 통째로 빠질 수 있다. 번호를 박아 두면 02 다음에 04 가 나온다.
+      const secs = [
+        { t: '핵심 지표', note: `${ym} 기준 · 전월 대비`,
+          body: `<div class="cards" style="grid-template-columns:repeat(${Math.max(1, cardList.length)},1fr)">${cards}</div>` },
+        (grYearBlock || invYearBlock) && { t: '연도별 추이', note: '과거 연간 실적',
+          body: `<div class="chartwrap">${grYearBlock}${invYearBlock}</div>` },
+        charts && { t: `${ry}년 월별 추이`, note: '그래프에 마우스를 올리면 월별 값이 표시됩니다',
+          body: `<div class="chartwrap">${charts}</div>` },
+        adjDetail && { t: '재고조정 상세', note: '원인 분해 · 구분별 집계 · 사유 전체',
+          body: `<div class="chartwrap">${adjDetail}</div>` },
+        monthTable && { t: `${ry}년 월별 데이터`, note: '대시보드 월별 표와 같은 값',
+          body: monthTable },
+        { t: '분석 및 권고', note: 'AI 작성',
+          body: `${aiBlock('📌', '요약', section('요약'), '#455DA0')}
+${aiBlock('📈', '지표 분석', section('지표 분석'), '#199AC2')}
+${aiBlock('⚠️', '리스크 및 특이사항', section('리스크'), '#e0483b')}
+${aiBlock('💡', '권고', section('권고'), '#FDB813')}` },
+      ].filter(Boolean);
+      const secsHtml = secs.map((x, i) => `<div class="sec">
+    <div class="sechd"><span class="secno">${String(i + 1).padStart(2, '0')}</span><h2>${x.t}</h2><span class="note">${x.note}</span></div>
+    ${x.body}
+  </div>`).join('\n  ');
 
       const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>자재관리 KPI 월간 보고서 ${ym}</title>
@@ -10015,21 +10238,7 @@ ${tableRows}</tbody>
   </div>` : ''}
 </div></div>
 <div class="body">
-  <div class="sec">
-    <div class="sechd"><span class="secno">01</span><h2>핵심 지표</h2><span class="note">${ym} 기준 · 전월 대비</span></div>
-    <div class="cards" style="grid-template-columns:repeat(${Math.max(1, cardList.length)},1fr)">${cards}</div>
-  </div>
-  <div class="sec">
-    <div class="sechd"><span class="secno">02</span><h2>12개월 추이</h2><span class="note">그래프에 마우스를 올리면 월별 값이 표시됩니다</span></div>
-    <div class="chartwrap">${charts}</div>
-  </div>
-  <div class="sec">
-    <div class="sechd"><span class="secno">03</span><h2>분석 및 권고</h2><span class="note">AI 작성</span></div>
-    ${aiBlock('📌', '요약', section('요약'), '#455DA0')}
-    ${aiBlock('📈', '지표 분석', section('지표 분석'), '#199AC2')}
-    ${aiBlock('⚠️', '리스크 및 특이사항', section('리스크'), '#e0483b')}
-    ${aiBlock('💡', '권고', section('권고'), '#FDB813')}
-  </div>
+  ${secsHtml}
 </div>
 <div class="foot">
   <span>수치·그래프 대시보드 자동 집계 · 분석 코멘트 AI(Claude) 작성<br>납품 지연 · 수입검사 현황은 주간 운영 보고서 참조</span>
