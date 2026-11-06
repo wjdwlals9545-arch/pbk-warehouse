@@ -18955,6 +18955,9 @@ ${lines}
                             const avgStock = stocks.length
                               ? stocks.reduce((a, b) => a + b, 0) / stocks.length : 0;
                             const kPct = (v) => (avgStock ? (v / avgStock * 100) : null);
+                            // 셋 중 어느 게 큰 덩어리인지는 차이금액 합계 대비로 봐야 보인다
+                            const kindTotal = totalUp + totalDown;
+                            const kShare = (v) => (kindTotal ? (v / kindTotal * 100) : null);
                             return (
                               <div className="mt-5 pt-4 border-t border-gray-100">
                                 <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
@@ -18977,11 +18980,12 @@ ${lines}
                                     {ADJ_KINDS.map(k => {
                                       const v = byKind[k.id] || 0;
                                       if (!v) return null;
-                                      const p = kPct(v);
+                                      const p = kPct(v), sh = kShare(v);
                                       return (
                                         <span key={k.id} className={`px-2 py-1 rounded border ${k.chip}`} title={k.desc}>
                                           {k.label} <b>{fmt(v)}</b>원
-                                          {p !== null && <span className="ml-1 opacity-70">· {p.toFixed(3)}%</span>}
+                                          {sh !== null && <span className="ml-1">· 비중 <b>{sh.toFixed(1)}%</b></span>}
+                                          {p !== null && <span className="ml-1 opacity-60">· 재고 대비 {p.toFixed(3)}%</span>}
                                         </span>
                                       );
                                     })}
@@ -18989,10 +18993,14 @@ ${lines}
                                       <span className="px-2 py-1 rounded border bg-gray-50 text-gray-500 border-gray-200"
                                         title="자동으로 못 가른 줄입니다. 표에서 직접 골라 주세요.">
                                         미지정 <b>{fmt(byKind.none)}</b>원
+                                        {kShare(byKind.none) !== null && (
+                                          <span className="ml-1">· 비중 <b>{kShare(byKind.none).toFixed(1)}%</b></span>
+                                        )}
                                       </span>
                                     )}
-                                    <span className="text-gray-400 ml-0.5">
-                                      · 평균 재고금액 {fmt(Math.round(avgStock))}원 대비
+                                    <span className="text-gray-400 ml-0.5"
+                                      title={`비중 = 차이금액 합계 ${fmt(kindTotal)}원 중 차지하는 몫\n재고 대비 = 평균 재고금액 ${fmt(Math.round(avgStock))}원 으로 나눈 값 (KPI 와 같은 분모)`}>
+                                      · 비중은 차이금액 {fmt(kindTotal)}원 중 · 재고 대비는 평균 재고금액 {fmt(Math.round(avgStock))}원 대비
                                     </span>
                                   </div>
                                 )}
