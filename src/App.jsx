@@ -16390,15 +16390,15 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                       </>
                     )}
                     <button onClick={() => {
-                      // 체크와 무관하게 지금 지연 리스트에 떠 있는 것을 전부 담는다.
-                      // 구매는 일부만 보면 판단을 못 한다 (숨김 처리한 건만 빠진다)
-                      setVendorMailItems(null);
+                      // 체크한 게 있으면 그것만. 없으면 지금 리스트에 떠 있는 전부
+                      const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
+                      setVendorMailItems(sel.length ? sel : null);
                       setVendorMailKind('internal');
                       setVendorMailOpen(true);
                       setVendorMailPick('');
                     }} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs hover:bg-rose-700 flex items-center gap-1"
-                      title="지연 전체를 구매담당에게 Order Close 검토 요청하는 사내 메일 초안입니다. 업체에는 가지 않습니다.">
-                      <Mail className="w-3 h-3" /> 구매 검토 요청 ({overdueDeliveries.length})
+                      title="구매담당에게 Order Close 를 요청하는 사내 메일 초안입니다. 체크한 건이 있으면 그것만 담습니다. 업체에는 가지 않습니다.">
+                      <Mail className="w-3 h-3" /> Order close 요청 ({overdueSelected.size || overdueDeliveries.length})
                     </button>
                     <button onClick={() => {
                       setVendorMailItems(null);
@@ -17316,13 +17316,13 @@ ${lines}
                     onClick={e => e.stopPropagation()}>
                     <div className="px-5 py-3 border-b flex items-center gap-2">
                       <h3 className="font-bold text-gray-800">
-                        {internal ? '🏷️ 구매 검토 요청 초안 (사내)'
+                        {internal ? '🏷️ Order close 요청 초안 (사내)'
                                 : weekly ? '🗓️ 주간 납품 예정 메일 초안'
                                 : reminder ? '🔔 하루 전 납품 확인 메일 초안'
                                 : '📧 업체별 납기 확인 메일 초안'}
                       </h3>
                       <span className="text-xs text-gray-500">
-                        {internal ? `${vsAll.length}개 업체 · 지연 ${src.length}건 한 통`
+                        {internal ? `${vsAll.length}개 업체 · ${src.length}건${vendorMailItems ? ' (선택분)' : ''} 한 통`
                                 : weekly ? `${weekTxt} · ${vs.length}개 업체 · ${src.length}품목`
                                 : reminder ? `${vs.length}개 업체 · ${src.length}품목`
                                 : `${vs.length}개 업체 · 지연 ${src.length}건`}
