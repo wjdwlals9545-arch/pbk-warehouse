@@ -17129,23 +17129,22 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
               const rng = vendorMailRange || {};
               const weekTxt = weekly ? `${rng.from} ~ ${rng.to}` : '';
               const subject = internal
-                ? `[Promega] 납기 경과 건 Order Close 검토 요청 (${src.length}건)`
+                ? `[Promega] Open PO Order Close 검토 요청 (${src.length}건)`
                 : weekly
                 ? `[Promega] 납품 예정 확인 요청 (${cur.items.length}건)`
                 : reminder
                 ? `[Promega] 납품 예정 건 확인 요청 (${cur.items.length}건)`
                 : `[Promega] 납기 경과 건 확인 요청 (${cur.items.length}건)`;
               const body = internal ?
-`안녕하세요, 자재 정지민입니다.
+`안녕하세요, 정지민입니다.
 
-아래 발주 건이 납기일을 경과하여 Order Close 여부 검토 요청드립니다.
-계속 진행할 건과 닫을 건을 구분해 주시면 그대로 반영하겠습니다.
+현재 Open PO 중 Delivery date가 장기간 지났거나, 잔여 수량이 있는 품목들의 리스트를 공유드립니다.
+Order Close 검토 요청 부탁드립니다.
 
-■ 납기 경과 (${src.length}건${totalTxt ? ` · ${totalTxt}` : ''})
+■ 총 ${src.length}건${totalTxt ? ` · ${totalTxt}` : ''}
 
 ${intLines}
 
-검토 후 회신 부탁드립니다.
 감사합니다.` : weekly ?
 `안녕하세요 프로메가 정지민입니다.
 
@@ -17202,33 +17201,71 @@ ${lines}
                   }).join('')
                 + '</div>';
 
-              const intHtml = intGroups.map(g =>
-                `<p style="margin:16px 0 6px;"><b>[${esc(g.name)}]</b> ${g.rows.length}건</p>`
-                + '<div style="margin-left:4px;">'
-                + g.rows.map((d, i) => {
-                    const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
-                    const a = amtOf(d), pr = promiseOf(d);
-                    return '<div style="margin-bottom:10px;">'
-                      + `<div><b>${i + 1})</b> PO ${esc(d.poNo)} / <b>${esc(d.material)}</b>`
-                      + (d.description ? `&nbsp;&nbsp;${esc(d.description)}` : '') + '</div>'
-                      + `<div style="margin-left:20px;">납기 <span style="color:#dc2626;font-weight:600;">${esc(d.deliveryDate)}</span>`
-                      + ` (${daysPast(d.deliveryDate)}일 경과) &middot; `
-                      + (partial
-                          ? `발주 ${d.orderQty} / 입고 ${d.receivedQty} / <b>잔여 ${d.remainQty} ${esc(d.unit || 'EA')}</b>`
-                          : `미입고 <b>${d.qty} ${esc(d.unit || 'EA')}</b>`)
-                      + (a ? ` &middot; <b>${esc(wonTxt(a, d.currency))}</b>` : '') + '</div>'
-                      + (pr ? `<div style="margin-left:20px;color:#047857;">${esc(pr)}</div>` : '')
-                      + '</div>';
-                  }).join('')
-                + '</div>').join('');
+              // 업체마다 표 하나. 구매가 업체 단위로 끊어 보게 된다.
+              // 업체 회신 일정 열은 적힌 게 하나라도 있을 때만 — 빈 열은 자리만 먹는다
+              const anyPromise = src.some(d => promiseOf(d));
+              const TH = 'border:1px solid #d7dbe0;padding:6px 8px;background:#f1f3f5;'
+                       + 'font-weight:600;white-space:nowrap;';
+              const TD = 'border:1px solid #e5e7eb;padding:6px 8px;';
+              const intHtml = intGroups.map(g => {
+                const gTot = (() => {
+                  const by = {};
+                  g.rows.forEach(d => {
+                    const a = amtOf(d);
+                    if (a) { const c = (d.currency || 'KRW').toUpperCase(); by[c] = (by[c] || 0) + a; }
+                  });
+                  const ks = Object.keys(by);
+                  return ks.length ? ks.map(c => wonTxt(by[c], c)).join(' + ') : '';
+                })();
+                return `<p style="margin:22px 0 6px;font-size:14px;"><b>■ ${esc(g.name)}</b>`
+                  + `<span style="color:#6b7280;font-weight:400;"> — ${g.rows.length}건`
+                  + (gTot ? ` · ${esc(gTot)}` : '') + `</span></p>`
+                  + `<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:13px;width:100%;table-layout:auto;">`
+                  + `<tr>`
+                  + `<th style="${TH}">No</th>`
+                  + `<th style="${TH}">PO</th>`
+                  + `<th style="${TH}">Material</th>`
+                  + `<th style="${TH}">Description</th>`
+                  + `<th style="${TH}">Delivery date</th>`
+                  + `<th style="${TH}">경과</th>`
+                  + `<th style="${TH}">잔여 수량</th>`
+                  + `<th style="${TH}">금액</th>`
+                  + (anyPromise ? `<th style="${TH}">업체 회신 일정</th>` : '')
+                  + `</tr>`
+                  + g.rows.map((d, i) => {
+                      const partial = (d.receivedQty > 0 && d.orderQty > 0 && (d.remainQty ?? 0) > 0);
+                      const a = amtOf(d);
+                      const p = promisedDates[`${d.poNo}_${d.material}`] || {};
+                      return `<tr>`
+                        + `<td style="${TD}text-align:center;color:#6b7280;">${i + 1}</td>`
+                        + `<td style="${TD}white-space:nowrap;">${esc(d.poNo)}</td>`
+                        + `<td style="${TD}white-space:nowrap;font-weight:600;">${esc(d.material)}</td>`
+                        + `<td style="${TD}">${esc(d.description || '')}</td>`
+                        + `<td style="${TD}white-space:nowrap;color:#c92a2a;font-weight:600;">${esc(d.deliveryDate)}</td>`
+                        + `<td style="${TD}text-align:right;white-space:nowrap;">${daysPast(d.deliveryDate)}일</td>`
+                        + `<td style="${TD}text-align:right;white-space:nowrap;"><b>${d.qty} ${esc(d.unit || 'EA')}</b>`
+                        + (partial ? `<div style="font-size:11px;color:#6b7280;font-weight:400;">발주 ${d.orderQty} · 입고 ${d.receivedQty}</div>` : '')
+                        + `</td>`
+                        + `<td style="${TD}text-align:right;white-space:nowrap;">${a ? esc(wonTxt(a, d.currency)) : '-'}</td>`
+                        + (anyPromise
+                            ? `<td style="${TD}white-space:nowrap;color:#1b6e4b;">`
+                              + (p.date || p.note ? `${esc(p.date || '-')}${p.note ? `<div style="font-size:11px;color:#6b7280;">${esc(p.note)}</div>` : ''}` : '<span style="color:#adb5bd;">미회신</span>')
+                              + `</td>`
+                            : '')
+                        + `</tr>`;
+                    }).join('')
+                  + `</table>`;
+              }).join('');
 
-              const htmlInternal = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;">`
-                + `<p>안녕하세요, 자재 정지민입니다.</p>`
-                + `<p>아래 발주 건이 납기일을 경과하여 <b>Order Close 여부 검토</b> 요청드립니다.<br/>`
-                + `계속 진행할 건과 닫을 건을 구분해 주시면 그대로 반영하겠습니다.</p>`
-                + `<p style="margin-bottom:0;"><b>■ 납기 경과 (${src.length}건${totalTxt ? ` &middot; ${esc(totalTxt)}` : ''})</b></p>`
+              const htmlInternal = `<div style="font-family:'Malgun Gothic',sans-serif;font-size:14px;line-height:1.6;color:#212529;">`
+                + `<p>안녕하세요, 정지민입니다.</p>`
+                + `<p>현재 Open PO 중 Delivery date가 장기간 지났거나, 잔여 수량이 있는 품목들의 리스트를 공유드립니다.<br/>`
+                + `Order Close 검토 요청 부탁드립니다.</p>`
+                + `<p style="margin:18px 0 0;color:#495057;">총 <b>${src.length}건</b>`
+                + (totalTxt ? ` · <b>${esc(totalTxt)}</b>` : '')
+                + ` · ${intGroups.length}개 업체</p>`
                 + intHtml
-                + `<p style="margin-top:18px;">검토 후 회신 부탁드립니다.<br/>감사합니다.</p>`
+                + `<p style="margin-top:22px;">감사합니다.</p>`
                 + `</div>`;
 
               const html = internal ? htmlInternal
@@ -17382,8 +17419,13 @@ ${lines}
                         </div>
 
                         <div>
-                          <p className="text-xs font-semibold text-gray-600 mb-1">본문</p>
-                          <pre className="text-[11px] leading-relaxed bg-gray-50 border rounded-lg p-3 whitespace-pre-wrap text-gray-700 max-h-72 overflow-y-auto">{body}</pre>
+                          <p className="text-xs font-semibold text-gray-600 mb-1">
+                            본문{internal && <span className="ml-1 font-normal text-gray-400">— Outlook 에 가는 모양 그대로</span>}
+                          </p>
+                          {internal
+                            ? <iframe title="본문 미리보기" srcDoc={html}
+                                className="w-full h-80 bg-white border rounded-lg" />
+                            : <pre className="text-[11px] leading-relaxed bg-gray-50 border rounded-lg p-3 whitespace-pre-wrap text-gray-700 max-h-72 overflow-y-auto">{body}</pre>}
                         </div>
                       </div>
                     </div>
