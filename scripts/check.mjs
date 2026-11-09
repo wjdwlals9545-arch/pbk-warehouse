@@ -147,6 +147,45 @@ console.log('\n[1] 연결이 끊긴 곳');
   else ok('날짜 정규화는 normalizeSapDate 한 벌');
 }
 
+// ── 로컬 자정 Date 를 UTC 로 잘라 하루를 잃는가 ───────
+// toISOString() 은 UTC 로 바꾼 뒤 문자열을 준다. 로컬 자정 Date 를 이걸로
+// 자르면 KST(+9) 에서는 전날이 된다. 세 번 당했다:
+//   이번주 월요일 9/14 -> 9/13 / 이번주 금요일 -> 목요일 / 챗봇 주간 범위
+// 날짜만 쓰려면 ymdStr(d) 를 쓴다.
+{
+  const lines = src.split('\n');
+  const hits = [];
+  // setHours(0,0,0,0) 를 맞은 변수와, 그 변수로 만든 변수를 자정 Date 로 본다
+  const midnight = new Set();
+  for (const ln of lines) {
+    let m = ln.match(/(\w+)\.setHours\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/);
+    if (m) midnight.add(m[1]);
+    m = ln.match(/(?:const|let|var)\s+(\w+)\s*=\s*new Date\(\s*(\w+)\s*\)/);
+    if (m && midnight.has(m[2])) midnight.add(m[1]);
+  }
+  lines.forEach((ln, i) => {
+    if (!ln.includes('.toISOString()')) return;
+    // 1) setDate 결과를 그 자리에서 자르는 것 — 거의 항상 자정 Date 다
+    if (/setDate\(/.test(ln)) { hits.push(`src/App.jsx:${i + 1}  ${ln.trim().slice(0, 90)}`); return; }
+    // 2) 자정으로 맞춰 둔 변수를 자르는 것
+    for (const v of midnight) {
+      if (new RegExp(`\b${v}\.toISOString\(\)`).test(ln)) {
+        hits.push(`src/App.jsx:${i + 1}  ${ln.trim().slice(0, 90)}`);
+        return;
+      }
+    }
+  });
+  if (hits.length) {
+    fail('로컬 자정 Date 를 toISOString 으로 자르는 곳이 있음', [
+      ...hits,
+      'UTC 로 밀려 하루 전이 됩니다. ymdStr(d) 를 쓰십시오.',
+      '금요일 납품이 "다음주"로 세어지던 원인입니다 (2026-11-10).',
+    ]);
+  } else {
+    ok('로컬 자정 날짜는 ymdStr 로만 자름');
+  }
+}
+
 // ── 빌드는 되는데 누르면 터지는 오류 ──────────────────
 // parseDeliveryExcel is not defined 가 이 부류였다.
 {

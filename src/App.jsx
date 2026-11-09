@@ -1994,6 +1994,13 @@ function ymdLocal(v) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+// Date -> 'YYYY-MM-DD' (로컬 연·월·일). toISOString().slice(0,10) 을 쓰면 안 된다.
+// 그건 UTC 로 바꿔서 자르기 때문에, 로컬 자정 Date 가 KST 에서 전날이 된다.
+// (이번주 월요일이 9/14 인데 9/13 으로, 이번주 금요일이 목요일로 나오던 원인)
+function ymdStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // 그 날짜부터 오늘까지 며칠 지났나. 오늘 = 0, 어제 = 1.
 function daysSinceYmd(v, now) {
   const a = ymdLocal(v);
@@ -10655,8 +10662,8 @@ ${show('inv') ? `- 재고조정 구분을 반드시 다룰 것. 실물 차이만
       const dow = (now.getDay() + 6) % 7; // 월=0
       const mon = new Date(now); mon.setDate(now.getDate() - dow); mon.setHours(0, 0, 0, 0);
       const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-      const weekStart = mon.toISOString().slice(0, 10);
-      const weekEnd = sun.toISOString().slice(0, 10);
+      const weekStart = ymdStr(mon);
+      const weekEnd = ymdStr(sun);
 
       const qs = chatToolImpl.get_qstock();
       const dl = chatToolImpl.get_delivery_schedule({ days: 14 });
@@ -16051,11 +16058,8 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           const nextFriday = new Date(thisMonday);
           nextFriday.setDate(thisMonday.getDate() + 11); // 월~금 + 다음주 월~금 = 12일
           nextFriday.setHours(23,59,59,999);
-          // 로컬 자정 기준 Date 를 toISOString 으로 자르면 UTC 로 밀려 하루 전이 나온다.
-          // (이번주 월요일이 9/14 인데 9/13 으로 표시되던 원인) 로컬 연·월·일로 만든다.
-          const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const ymd = ymdStr;
           const twoWeekEnd = ymd(nextFriday);
-          const twoWeekStart = ymd(thisMonday);
           const todayStr = ymd(koNow);
 
           // Open PO 기반 + Delivery Date 매칭
@@ -16181,7 +16185,8 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
             return !bin.startsWith('F1') && !bin.startsWith('S1');
           });
 
-          const thisFriday = new Date(new Date(thisMonday).setDate(thisMonday.getDate()+4)).toISOString().slice(0,10);
+          // 여기만 ymd 를 안 써서 금요일 납품이 '다음주'로 세어지고 있었다
+          const thisFriday = ymd(new Date(new Date(thisMonday).setDate(thisMonday.getDate() + 4)));
           const thisWeekItems = upcomingDeliveries.filter(d => d.effDate <= thisFriday);
           const nextWeekItems = upcomingDeliveries.filter(d => d.effDate > thisFriday);
 
@@ -16615,7 +16620,9 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                 <div className="bg-white rounded-xl border shadow-sm">
                   <div className="p-4 border-b">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
-                      <Truck className="w-4 h-4 text-teal-600" /> 납품 예정 ({twoWeekStart} ~ {twoWeekEnd})
+                      {/* 거르는 건 오늘부터다. 월요일을 적어 두면 수요일에 보는 사람은
+                          이미 지난 이틀이 범위 안인 줄 안다 (그건 납기 지연에 있다) */}
+                      <Truck className="w-4 h-4 text-teal-600" /> 납품 예정 ({todayStr} ~ {twoWeekEnd})
                       <span className="text-sm font-normal text-gray-500 ml-1">
                         {filtered
                           ? <>{shownItems.length}건 <span className="text-gray-400">/ 전체 {upcomingDeliveries.length}건</span></>
