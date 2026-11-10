@@ -16358,135 +16358,6 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
               </div>
             )}
 
-            {/* 납기 지연 */}
-            {overdueDeliveries.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
-                  <h3 className="font-bold text-red-800 flex items-center gap-2 flex-wrap"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
-                    <DataAsOf />
-                    {overdueDismissed.length > 0 && <button onClick={() => { setOverdueDismissed([]); safeStorage.removeItem('pbk_overdue_dismissed'); }} className="text-[10px] font-normal text-gray-400 hover:text-red-500 ml-2">(숨김 {overdueDismissed.length}건 복원)</button>}
-                    {(() => {
-                      const n = overdueDeliveries.filter(d => (promisedDates[`${d.poNo}_${d.material}`] || {}).date).length;
-                      return n > 0 ? <span className="text-[11px] font-normal text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded ml-2">회신 일정 {n}건</span> : null;
-                    })()}
-                  </h3>
-                  <div className="flex gap-2">
-                    {overdueSelected.size > 0 && (
-                      <>
-                        <button onClick={() => {
-                          const selectedKeys = [...overdueSelected];
-                          const newDismissed = [...overdueDismissed, ...selectedKeys];
-                          setOverdueDismissed(newDismissed);
-                          safeStorage.setItem('pbk_overdue_dismissed', JSON.stringify(newDismissed));
-                          setOverdueSelected(new Set());
-                          showToast && showToast(`${selectedKeys.length}건 숨김 처리됨`, 'success');
-                        }} className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600 flex items-center gap-1">
-                          <X className="w-3 h-3" /> 선택 숨김 ({overdueSelected.size})
-                        </button>
-                        <button onClick={() => {
-                          const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
-                          if (!sel.length) return;
-                          setVendorMailItems(sel);
-                          setVendorMailKind('overdue');
-                          setVendorMailOpen(true);
-                        }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
-                          <Mail className="w-3 h-3" /> 선택 건 메일 초안 ({overdueSelected.size})
-                        </button>
-                      </>
-                    )}
-                    <button onClick={() => {
-                      // 체크한 게 있으면 그것만. 없으면 지금 리스트에 떠 있는 전부
-                      const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
-                      setVendorMailItems(sel.length ? sel : null);
-                      setVendorMailKind('internal');
-                      setVendorMailOpen(true);
-                      setVendorMailPick('');
-                    }} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs hover:bg-rose-700 flex items-center gap-1"
-                      title="구매담당에게 Order Close 를 요청하는 사내 메일 초안입니다. 체크한 건이 있으면 그것만 담습니다. 업체에는 가지 않습니다.">
-                      <Mail className="w-3 h-3" /> Order close 요청 ({overdueSelected.size || overdueDeliveries.length})
-                    </button>
-                    <button onClick={() => {
-                      setVendorMailItems(null);
-                      setVendorMailKind('overdue');
-                      setVendorMailOpen(true);
-                      setVendorMailPick('');
-                    }} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1"
-                      title="지연 건을 업체별로 나눠 메일 초안을 만듭니다. 발송은 직접 하십니다.">
-                      <Send className="w-3 h-3" /> 업체별 메일 초안
-                    </button>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-left text-xs text-red-600 border-b border-red-200">
-                      <th className="pb-2 pl-2 w-8"><input type="checkbox" className="rounded" checked={overdueSelected.size === overdueDeliveries.length && overdueDeliveries.length > 0} onChange={e => {
-                        if (e.target.checked) setOverdueSelected(new Set(overdueDeliveries.map(d => `${d.poNo}_${d.material}`)));
-                        else setOverdueSelected(new Set());
-                      }} /></th>
-                      <th className="pb-2 whitespace-nowrap pl-2" style={{width:'100px'}}>PO</th>
-                      <th className="pb-2 whitespace-nowrap pl-4" style={{width:'85px'}}>Material</th>
-                      <th className="pb-2 pl-4" style={{width:'26%'}}>Description</th>
-                      <th className="pb-2 pl-4" style={{width:'18%'}}>공급업체</th>
-                      <th className="pb-2 whitespace-nowrap pl-4" style={{width:'95px'}}>납기일</th>
-                      <th className="pb-2 whitespace-nowrap" style={{width:'190px'}} title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
-                      <th className="pb-2 whitespace-nowrap text-right pl-5" style={{width:'80px'}}>단가</th>
-                      <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'95px'}}>금액</th>
-                      <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'80px'}}>미입고</th>
-                      <th className="pb-2 whitespace-nowrap text-right pl-4 pr-3" style={{width:'75px'}}>현재재고</th>
-                    </tr></thead>
-                    <tbody>{overdueDeliveries.slice(0, 20).map((d, i) => {
-                      const inv = inventoryData.find(it => String(it.material) === d.material);
-                      const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
-                      const key = `${d.poNo}_${d.material}`;
-                      return (
-                        <tr key={i} className={`border-b border-red-100 hover:bg-red-100/50 ${overdueSelected.has(key) ? 'bg-red-100' : ''}`}>
-                          <td className="py-1.5 pl-2"><input type="checkbox" className="rounded" checked={overdueSelected.has(key)} onChange={e => {
-                            const next = new Set(overdueSelected);
-                            if (e.target.checked) next.add(key); else next.delete(key);
-                            setOverdueSelected(next);
-                          }} /></td>
-                          <td className="py-1.5 pl-2 text-xs whitespace-nowrap">{d.poNo}</td>
-                          <td className="py-1.5 pl-4 font-mono text-xs whitespace-nowrap">{d.material}</td>
-                          <td className="py-1.5 pl-4 text-xs truncate" title={d.description}>{d.description}</td>
-                          <td className="py-1.5 pl-4 text-xs truncate" title={d.supplier}>{d.supplier}</td>
-                          <td className="py-1.5 pl-4 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
-                          {/* 업체가 회신해 온 일정. SAP 납기일은 그대로 두고 여기에만 적는다 */}
-                          <td className="py-1.5 pr-2">
-                            <div className="flex items-center gap-1">
-                              <input type="date" value={(promisedDates[key] || {}).date || ''}
-                                onChange={e => setPromised(key, { date: e.target.value })}
-                                className={`border rounded px-1.5 py-0.5 text-[11px] w-[112px] ${
-                                  (promisedDates[key] || {}).date
-                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                    : 'border-gray-200 text-gray-400'}`} />
-                              <input type="text" value={(promisedDates[key] || {}).note || ''}
-                                onChange={e => setPromised(key, { note: e.target.value })}
-                                placeholder="메모"
-                                className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
-                            </div>
-                          </td>
-                          <td className="py-1.5 text-xs font-bold text-right pl-5 text-gray-600 whitespace-nowrap tabular-nums">
-                            {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300 font-normal">-</span>}
-                          </td>
-                          <td className="py-1.5 text-xs font-bold text-right pl-4 text-gray-800 whitespace-nowrap tabular-nums">
-                            {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300 font-normal">-</span>}
-                          </td>
-                          <td className="py-1.5 text-xs font-bold text-right pl-4 whitespace-nowrap">
-                            {d.qty} {d.unit}
-                            {d.receivedQty > 0 && d.orderQty > 0 && (
-                              <span className="block text-[10px] font-normal text-emerald-600">입고 {d.receivedQty}/{d.orderQty}</span>
-                            )}
-                          </td>
-                          <td className="py-1.5 text-xs font-bold text-right pl-4 pr-3 whitespace-nowrap">{stock > 0 ? `${stock} EA` : '-'}</td>
-                        </tr>
-                      );
-                    })}</tbody>
-                  </table>
-                  {overdueDeliveries.length > 20 && <p className="text-xs text-red-500 mt-2 text-right">외 {overdueDeliveries.length - 20}건 더</p>}
-                </div>
-              </div>
-            )}
-
             {/* 하루 전 확인 — 다음 영업일에 들어올 것이 있으면 알려준다 */}
             {d1Items.length > 0 && (
               <div className="bg-gradient-to-r from-amber-50 to-white border border-amber-200 rounded-xl p-3.5 flex items-center gap-3 flex-wrap">
@@ -16813,6 +16684,135 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                 </div>
               );
             })()}
+
+            {/* 납기 지연 */}
+            {overdueDeliveries.length > 0 && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+                  <h3 className="font-bold text-red-800 flex items-center gap-2 flex-wrap"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
+                    <DataAsOf />
+                    {overdueDismissed.length > 0 && <button onClick={() => { setOverdueDismissed([]); safeStorage.removeItem('pbk_overdue_dismissed'); }} className="text-[10px] font-normal text-gray-400 hover:text-red-500 ml-2">(숨김 {overdueDismissed.length}건 복원)</button>}
+                    {(() => {
+                      const n = overdueDeliveries.filter(d => (promisedDates[`${d.poNo}_${d.material}`] || {}).date).length;
+                      return n > 0 ? <span className="text-[11px] font-normal text-emerald-700 bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded ml-2">회신 일정 {n}건</span> : null;
+                    })()}
+                  </h3>
+                  <div className="flex gap-2">
+                    {overdueSelected.size > 0 && (
+                      <>
+                        <button onClick={() => {
+                          const selectedKeys = [...overdueSelected];
+                          const newDismissed = [...overdueDismissed, ...selectedKeys];
+                          setOverdueDismissed(newDismissed);
+                          safeStorage.setItem('pbk_overdue_dismissed', JSON.stringify(newDismissed));
+                          setOverdueSelected(new Set());
+                          showToast && showToast(`${selectedKeys.length}건 숨김 처리됨`, 'success');
+                        }} className="px-3 py-1.5 bg-gray-500 text-white rounded-lg text-xs hover:bg-gray-600 flex items-center gap-1">
+                          <X className="w-3 h-3" /> 선택 숨김 ({overdueSelected.size})
+                        </button>
+                        <button onClick={() => {
+                          const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
+                          if (!sel.length) return;
+                          setVendorMailItems(sel);
+                          setVendorMailKind('overdue');
+                          setVendorMailOpen(true);
+                        }} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
+                          <Mail className="w-3 h-3" /> 선택 건 메일 초안 ({overdueSelected.size})
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => {
+                      // 체크한 게 있으면 그것만. 없으면 지금 리스트에 떠 있는 전부
+                      const sel = overdueDeliveries.filter(d => overdueSelected.has(`${d.poNo}_${d.material}`));
+                      setVendorMailItems(sel.length ? sel : null);
+                      setVendorMailKind('internal');
+                      setVendorMailOpen(true);
+                      setVendorMailPick('');
+                    }} className="px-3 py-1.5 bg-rose-600 text-white rounded-lg text-xs hover:bg-rose-700 flex items-center gap-1"
+                      title="구매담당에게 Order Close 를 요청하는 사내 메일 초안입니다. 체크한 건이 있으면 그것만 담습니다. 업체에는 가지 않습니다.">
+                      <Mail className="w-3 h-3" /> Order close 요청 ({overdueSelected.size || overdueDeliveries.length})
+                    </button>
+                    <button onClick={() => {
+                      setVendorMailItems(null);
+                      setVendorMailKind('overdue');
+                      setVendorMailOpen(true);
+                      setVendorMailPick('');
+                    }} className="px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs hover:bg-teal-700 flex items-center gap-1"
+                      title="지연 건을 업체별로 나눠 메일 초안을 만듭니다. 발송은 직접 하십니다.">
+                      <Send className="w-3 h-3" /> 업체별 메일 초안
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="text-left text-xs text-red-600 border-b border-red-200">
+                      <th className="pb-2 pl-2 w-8"><input type="checkbox" className="rounded" checked={overdueSelected.size === overdueDeliveries.length && overdueDeliveries.length > 0} onChange={e => {
+                        if (e.target.checked) setOverdueSelected(new Set(overdueDeliveries.map(d => `${d.poNo}_${d.material}`)));
+                        else setOverdueSelected(new Set());
+                      }} /></th>
+                      <th className="pb-2 whitespace-nowrap pl-2" style={{width:'100px'}}>PO</th>
+                      <th className="pb-2 whitespace-nowrap pl-4" style={{width:'85px'}}>Material</th>
+                      <th className="pb-2 pl-4" style={{width:'26%'}}>Description</th>
+                      <th className="pb-2 pl-4" style={{width:'18%'}}>공급업체</th>
+                      <th className="pb-2 whitespace-nowrap pl-4" style={{width:'95px'}}>납기일</th>
+                      <th className="pb-2 whitespace-nowrap" style={{width:'190px'}} title="업체 회신으로 받은 새 납품 예정일. 직접 적습니다">업체 회신 일정</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-5" style={{width:'80px'}}>단가</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'95px'}}>금액</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-4" style={{width:'80px'}}>미입고</th>
+                      <th className="pb-2 whitespace-nowrap text-right pl-4 pr-3" style={{width:'75px'}}>현재재고</th>
+                    </tr></thead>
+                    <tbody>{overdueDeliveries.slice(0, 20).map((d, i) => {
+                      const inv = inventoryData.find(it => String(it.material) === d.material);
+                      const stock = inv ? (parseFloat(inv.stock) || 0) : 0;
+                      const key = `${d.poNo}_${d.material}`;
+                      return (
+                        <tr key={i} className={`border-b border-red-100 hover:bg-red-100/50 ${overdueSelected.has(key) ? 'bg-red-100' : ''}`}>
+                          <td className="py-1.5 pl-2"><input type="checkbox" className="rounded" checked={overdueSelected.has(key)} onChange={e => {
+                            const next = new Set(overdueSelected);
+                            if (e.target.checked) next.add(key); else next.delete(key);
+                            setOverdueSelected(next);
+                          }} /></td>
+                          <td className="py-1.5 pl-2 text-xs whitespace-nowrap">{d.poNo}</td>
+                          <td className="py-1.5 pl-4 font-mono text-xs whitespace-nowrap">{d.material}</td>
+                          <td className="py-1.5 pl-4 text-xs truncate" title={d.description}>{d.description}</td>
+                          <td className="py-1.5 pl-4 text-xs truncate" title={d.supplier}>{d.supplier}</td>
+                          <td className="py-1.5 pl-4 text-xs font-medium text-red-700 whitespace-nowrap">{d.deliveryDate}</td>
+                          {/* 업체가 회신해 온 일정. SAP 납기일은 그대로 두고 여기에만 적는다 */}
+                          <td className="py-1.5 pr-2">
+                            <div className="flex items-center gap-1">
+                              <input type="date" value={(promisedDates[key] || {}).date || ''}
+                                onChange={e => setPromised(key, { date: e.target.value })}
+                                className={`border rounded px-1.5 py-0.5 text-[11px] w-[112px] ${
+                                  (promisedDates[key] || {}).date
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                    : 'border-gray-200 text-gray-400'}`} />
+                              <input type="text" value={(promisedDates[key] || {}).note || ''}
+                                onChange={e => setPromised(key, { note: e.target.value })}
+                                placeholder="메모"
+                                className="border border-gray-200 rounded px-1.5 py-0.5 text-[11px] w-[60px] focus:w-[140px] transition-all" />
+                            </div>
+                          </td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-5 text-gray-600 whitespace-nowrap tabular-nums">
+                            {d.unitPrice ? won(d.unitPrice, d.currency) : <span className="text-gray-300 font-normal">-</span>}
+                          </td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-4 text-gray-800 whitespace-nowrap tabular-nums">
+                            {d.unitPrice ? won(d.unitPrice * (d.qty || 0), d.currency) : <span className="text-gray-300 font-normal">-</span>}
+                          </td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-4 whitespace-nowrap">
+                            {d.qty} {d.unit}
+                            {d.receivedQty > 0 && d.orderQty > 0 && (
+                              <span className="block text-[10px] font-normal text-emerald-600">입고 {d.receivedQty}/{d.orderQty}</span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-xs font-bold text-right pl-4 pr-3 whitespace-nowrap">{stock > 0 ? `${stock} EA` : '-'}</td>
+                        </tr>
+                      );
+                    })}</tbody>
+                  </table>
+                  {overdueDeliveries.length > 20 && <p className="text-xs text-red-500 mt-2 text-right">외 {overdueDeliveries.length - 20}건 더</p>}
+                </div>
+              </div>
+            )}
 
             {/* 업체별 Open PO — 날짜가 아니라 업체가 1차 기준.
                 "이 업체가 뭘 얼마나 안 줬나"를 업체 한 줄로 본다. 2주 창이 아니라 전체. */}
