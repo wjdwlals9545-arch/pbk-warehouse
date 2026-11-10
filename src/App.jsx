@@ -1997,6 +1997,12 @@ function ymdLocal(v) {
 // Date -> 'YYYY-MM-DD' (로컬 연·월·일). toISOString().slice(0,10) 을 쓰면 안 된다.
 // 그건 UTC 로 바꿔서 자르기 때문에, 로컬 자정 Date 가 KST 에서 전날이 된다.
 // (이번주 월요일이 9/14 인데 9/13 으로, 이번주 금요일이 목요일로 나오던 원인)
+// 섹션으로 내려보낸다. 위에 고정 헤더가 있어서 대상 쪽에 scroll-mt 를 같이 준다.
+function goSection(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function ymdStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
@@ -16246,14 +16252,37 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                 <p className="text-xs text-gray-500 mb-1">다음주 납품</p>
                 <p className="text-2xl font-bold text-indigo-600">{nextWeekItems.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
-              {<div onClick={() => setDeliveryCardExpand(prev => prev === 'overdue' ? null : 'overdue')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'overdue' ? 'ring-2 ring-red-400' : ''}`}>
-                <p className="text-xs text-gray-500 mb-1">납기 지연</p>
+              {/* 납기 지연만 모달이 아니라 아래 표로 내려간다.
+                  체크해서 메일을 뽑는 자리라 모달에서 볼 일이 끝나지 않는다 */}
+              {<div onClick={() => goSection('del-overdue')} title="아래 납기 지연 표로 내려갑니다"
+                className="group bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md hover:border-red-300 transition-all">
+                <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
+                  납기 지연
+                  <span className="text-gray-300 group-hover:text-red-400 transition-colors">↓</span>
+                </p>
                 <p className="text-2xl font-bold text-red-600">{overdueDeliveries.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>}
               <div onClick={() => setDeliveryCardExpand(prev => prev === 'qstock' ? null : 'qstock')} className={`bg-white rounded-xl p-4 border shadow-sm cursor-pointer hover:shadow-md transition-all ${deliveryCardExpand === 'qstock' ? 'ring-2 ring-amber-400' : ''}`}>
                 <p className="text-xs text-gray-500 mb-1">수입검사 대기</p>
                 <p className="text-2xl font-bold text-amber-600">{filteredQStock.length}<span className="text-sm font-normal ml-1">건</span></p>
               </div>
+            </div>
+
+            {/* 섹션 바로가기 — 섹션이 일곱 개라 아래쪽은 스크롤로 찾게 된다.
+                카드는 숫자를 보는 자리, 이 줄은 내려가는 자리로 나눠 둔다 */}
+            <div className="-mt-3 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-gray-400 mr-0.5">바로가기</span>
+              {[
+                ['del-upcoming', '🚚 납품 예정', true],
+                ['del-overdue', '⚠️ 납기 지연', overdueDeliveries.length > 0],
+                ['del-vendor', '🏭 업체별 Open PO', true],
+                ['del-qstock', '🔍 수입검사 대기', true],
+              ].filter(([, , on]) => on).map(([id, label]) => (
+                <button key={id} onClick={() => goSection(id)}
+                  className="px-2.5 py-1 rounded-full border border-gray-200 bg-white text-[11px] text-gray-600 hover:border-teal-300 hover:text-teal-700 hover:bg-teal-50 transition-colors">
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* 카드 클릭 시 모달 팝업 */}
@@ -16353,6 +16382,18 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                         </tbody>
                       </table>
                     )}
+                  </div>
+                  {/* 모달은 추려 보는 자리다. 손대려면 아래 본 목록으로 내려가야 한다 */}
+                  <div className="px-6 py-3 border-t bg-gray-50 rounded-b-2xl flex justify-end">
+                    <button onClick={() => {
+                      const id = deliveryCardExpand === 'overdue' ? 'del-overdue'
+                               : deliveryCardExpand === 'qstock' ? 'del-qstock'
+                               : 'del-upcoming';
+                      setDeliveryCardExpand(null);
+                      setTimeout(() => goSection(id), 0);
+                    }} className="text-xs font-medium text-gray-500 hover:text-teal-700">
+                      아래 전체 목록에서 보기 ↓
+                    </button>
                   </div>
                 </div>
               </div>
@@ -16488,7 +16529,7 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
               const clearAll = () => { setDelFilterSupplier(null); setDelFilterPO(null); };
 
               return (
-                <div className="bg-white rounded-xl border shadow-sm">
+                <div id="del-upcoming" className="scroll-mt-24 bg-white rounded-xl border shadow-sm">
                   <div className="p-4 border-b">
                     <h3 className="font-bold text-gray-800 flex items-center gap-2 flex-wrap">
                       {/* 거르는 건 오늘부터다. 월요일을 적어 두면 수요일에 보는 사람은
@@ -16687,7 +16728,7 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
 
             {/* 납기 지연 */}
             {overdueDeliveries.length > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div id="del-overdue" className="scroll-mt-24 bg-red-50 border border-red-200 rounded-xl p-4">
                 <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
                   <h3 className="font-bold text-red-800 flex items-center gap-2 flex-wrap"><AlertTriangle className="w-4 h-4" /> 납기 지연 ({overdueDeliveries.length}건)
                     <DataAsOf />
@@ -16885,7 +16926,7 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
               );
 
               return (
-                <div className="bg-white rounded-xl border shadow-sm">
+                <div id="del-vendor" className="scroll-mt-24 bg-white rounded-xl border shadow-sm">
                   <div className="p-4 border-b">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -17524,7 +17565,7 @@ ${lines}
                 return true;
               });
               return (
-                <div className="bg-white rounded-xl shadow-sm p-6">
+                <div id="del-qstock" className="scroll-mt-24 bg-white rounded-xl shadow-sm p-6">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
                     <h3 className="font-semibold text-lg flex items-center gap-2">
                       🔍 수입검사 대기 리스트
