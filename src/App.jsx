@@ -24524,16 +24524,20 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
           + `&body=${encodeURIComponent(body)}`;
 
         const close = () => { setTaxMailInv(null); setTaxMailTo([]); setTaxMailExtra(''); setTaxMailFiles([]); };
+        const postMail = async (send) => {
+          const r = await fetch(`${MIGO_API}/api/mail/draft`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: allTo.join('; '), cc: MAIL_CC, subject, html,
+                                   attachments: taxMailFiles, send }),
+            signal: AbortSignal.timeout(send ? 20000 : 8000),
+          });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.status);
+          return await r.json().catch(() => ({}));
+        };
+
         const openDraft = async () => {
           try {
-            const r = await fetch(`${MIGO_API}/api/mail/draft`, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ to: allTo.join('; '), cc: MAIL_CC, subject, html,
-                                     attachments: taxMailFiles }),
-              signal: AbortSignal.timeout(8000),
-            });
-            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.status);
-            const res = await r.json().catch(() => ({}));
+            const res = await postMail(false);
             const miss = (res.missing || []).length;
             showToast(miss
               ? `초안을 띄웠습니다. 첨부 ${(res.attached || []).length}건 · 못 찾은 파일 ${miss}건`
@@ -24545,6 +24549,38 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
           } catch (e) {
             showToast(`로컬 서버 연결 실패 — 메일 앱으로 엽니다 (${e.message})`, 'info');
             window.location.href = mailto;
+          }
+        };
+
+        // 업체로 바로 나간다. 되돌릴 수 없으니 받는 사람과 첨부를 적어 한 번 묻는다.
+        const sendMail = async () => {
+          if (!window.confirm(
+            `업체로 메일을 보냅니다. 보낸 뒤에는 되돌릴 수 없습니다.
+
+`
+            + `받는 사람 : ${allTo.join(', ')}
+`
+            + `제목 : ${subject}
+`
+            + (taxMailFiles.length ? `첨부 : ${taxMailFiles.join(', ')}` : `첨부 : 없음`)
+            + `
+
+보내시겠습니까?`)) return;
+          try {
+            const res = await postMail(true);
+            // 첨부를 못 찾으면 서버가 보내지 않고 초안만 띄운다.
+            // 거래명세서 빠진 세금계산서 요청은 업체가 처리할 수 없다.
+            if (res.status !== 'sent') {
+              showToast(`첨부 ${(res.missing || []).length}건을 못 찾아 보내지 않았습니다 `
+                + `(${(res.missing || []).join(', ')}). Outlook 초안을 확인하십시오.`, 'error');
+              return;       // 아직 안 나갔으므로 '요청 중' 으로 넘기지 않는다
+            }
+            showToast(`보냈습니다 — ${allTo.length}명`
+              + ((res.attached || []).length ? ` · 첨부 ${res.attached.length}건` : ''), 'success');
+            markTaxRequested(reqKeys);
+            close();
+          } catch (e) {
+            showToast(`발송 실패 — 로컬 서버를 확인하십시오 (${e.message})`, 'error');
           }
         };
 
@@ -24687,10 +24723,16 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
                     메일 앱(mailto)
                   </button>
                   <button disabled={!allTo.length} onClick={openDraft}
+                    title="보내지 않고 Outlook 작성 창만 띄웁니다. 문구를 손볼 때 쓰십시오."
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-40">
+                    초안만 열기
+                  </button>
+                  <button disabled={!allTo.length} onClick={sendMail}
+                    title="업체로 바로 보냅니다. 되돌릴 수 없습니다."
                     className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 ${
                       allTo.length ? 'bg-teal-600 text-white hover:bg-teal-700'
                                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                    <Mail className="w-3 h-3" /> Outlook 초안 열기
+                    <Mail className="w-3 h-3" /> 메일 보내기
                   </button>
                 </div>
               </div>
