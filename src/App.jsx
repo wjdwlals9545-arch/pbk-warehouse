@@ -16055,18 +16055,22 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
         {activeTab === 'delivery' && (() => {
           const now = new Date();
           const koNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-          // 이번주 월요일 ~ 다음주 금요일 (2주)
+          // 이번주 월요일 — 요약 카드의 이번주/다음주 경계를 가르는 데만 쓴다
           const dayOfWeek = koNow.getDay();
           const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
           const thisMonday = new Date(koNow);
           thisMonday.setDate(koNow.getDate() + mondayOffset);
           thisMonday.setHours(0,0,0,0);
-          const nextFriday = new Date(thisMonday);
-          nextFriday.setDate(thisMonday.getDate() + 11); // 월~금 + 다음주 월~금 = 12일
-          nextFriday.setHours(23,59,59,999);
           const ymd = ymdStr;
-          const twoWeekEnd = ymd(nextFriday);
           const todayStr = ymd(koNow);
+          // 납품 예정 표는 '오늘부터 14일' 이다.
+          // 예전엔 끝을 이번주 월요일 + 11일에 묶어 둬서 끝 날짜가 월요일에만 움직였다.
+          // 그 탓에 주가 갈수록 창이 쪼그라들었다 — 월 12일치, 금 8일치, 일 6일치.
+          // 2026-11-13(금) 에 11-24 납품 10건, 11-27 6건이 통째로 안 보였다.
+          const twoWeekTo = new Date(koNow);
+          twoWeekTo.setDate(koNow.getDate() + 13);   // 오늘 포함 14일
+          twoWeekTo.setHours(23,59,59,999);
+          const twoWeekEnd = ymd(twoWeekTo);
 
           // Open PO 기반 + Delivery Date 매칭
           // Delivery data의 schedule line을 순서대로 매칭 (consumed tracking)
