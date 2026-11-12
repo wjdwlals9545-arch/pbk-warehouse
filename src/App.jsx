@@ -16063,12 +16063,15 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
           thisMonday.setHours(0,0,0,0);
           const ymd = ymdStr;
           const todayStr = ymd(koNow);
-          // 납품 예정 표는 '오늘부터 14일' 이다.
-          // 예전엔 끝을 이번주 월요일 + 11일에 묶어 둬서 끝 날짜가 월요일에만 움직였다.
-          // 그 탓에 주가 갈수록 창이 쪼그라들었다 — 월 12일치, 금 8일치, 일 6일치.
-          // 2026-11-13(금) 에 11-24 납품 10건, 11-27 6건이 통째로 안 보였다.
+          // 납품 예정 표는 '오늘부터 2주, 그 주 금요일까지' 본다.
+          // (1) 예전엔 끝을 이번주 월요일 + 11일에 묶어 둬서 월요일에만 움직였다.
+          //     주가 갈수록 창이 쪼그라들었다 — 월 12일치, 금 8일치, 일 6일치.
+          // (2) 그렇다고 딱 14일로 끊으면 하루 차이로 금요일 납품이 잘린다
+          //     (2026-11-13 기준 11-26 까지라 11-27 6건이 밖으로 밀렸다).
+          // 그래서 14일을 깔고 끝을 그 뒤 첫 금요일까지 늘린다. 14일은 늘 보장된다.
           const twoWeekTo = new Date(koNow);
-          twoWeekTo.setDate(koNow.getDate() + 13);   // 오늘 포함 14일
+          twoWeekTo.setDate(koNow.getDate() + 13);                              // 오늘 포함 14일
+          twoWeekTo.setDate(twoWeekTo.getDate() + ((5 - twoWeekTo.getDay() + 7) % 7));  // 그 뒤 첫 금요일
           twoWeekTo.setHours(23,59,59,999);
           const twoWeekEnd = ymd(twoWeekTo);
 
