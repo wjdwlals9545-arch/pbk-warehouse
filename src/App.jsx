@@ -5231,6 +5231,26 @@ export default function PBKWarehouseSystem() {
     return () => clearInterval(interval);
   }, [activeTab, fetchMigoData]);
 
+  // 서버 생존 확인은 탭과 무관하게 돈다.
+  // 위 효과는 MIGO·세금계산서 탭에서만 돌아서, 다른 탭에서는 migoServerOnline 이
+  // 처음 값 false 에 머물렀다. 챗봇은 어느 탭에서나 뜨는 물건이라 서버가 멀쩡해도
+  // '로컬 서버에 연결되지 않았습니다' 가 떴다 (2026-11-16 Delivery 탭에서 확인).
+  // 목록까지 받아오면 무거우니 여기서는 /api/health 만 두드린다.
+  useEffect(() => {
+    let alive = true;
+    const ping = async () => {
+      try {
+        const r = await fetch(`${MIGO_API}/api/health`, { signal: AbortSignal.timeout(2500) });
+        if (alive) setMigoServerOnline(r.ok);
+      } catch {
+        if (alive) setMigoServerOnline(false);
+      }
+    };
+    ping();
+    const t = setInterval(ping, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, [MIGO_API]);
+
   useEffect(() => {
     if (activeTab !== 'testlog') return;
     fetchParseLogs();
@@ -16200,8 +16220,12 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
 
           // 여기만 ymd 를 안 써서 금요일 납품이 '다음주'로 세어지고 있었다
           const thisFriday = ymd(new Date(new Date(thisMonday).setDate(thisMonday.getDate() + 4)));
+          const nextFriday = ymd(new Date(new Date(thisMonday).setDate(thisMonday.getDate() + 11)));
           const thisWeekItems = upcomingDeliveries.filter(d => d.effDate <= thisFriday);
-          const nextWeekItems = upcomingDeliveries.filter(d => d.effDate > thisFriday);
+          // 카드는 이름대로의 숫자만 든다. 위쪽 끝이 없으면 표를 넓힌 만큼 같이 부풀어
+          // '다음주' 에 3주치가 잡힌다 (2026-11-16: 16건이어야 할 자리에 52건).
+          // 넓게 보는 건 아래 납품 예정 표가 맡는다.
+          const nextWeekItems = upcomingDeliveries.filter(d => d.effDate > thisFriday && d.effDate <= nextFriday);
 
           return (
           <div className="space-y-6">
