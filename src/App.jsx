@@ -16157,12 +16157,16 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
             fri.setDate(mon.getDate() + 4);
             return { from: ymd(mon), to: ymd(fri) };
           };
-          const weeklyRange = weeklyMailWeek === 'both'
-            ? { from: weekRange(0).from, to: weekRange(1).to }
-            : weekRange(weeklyMailWeek === 'this' ? 0 : 1);
+          // 버튼은 주 단위로 하나씩 끊는다. 예전엔 이번주/다음주/2주 였는데, '2주' 의 끝날이
+          // '다음 주' 와 똑같아서 (2026-11-16 기준 둘 다 11/27) 이름만 멀어 보이고 실제로는
+          // 이번주 몇 건이 앞에 붙을 뿐이었다. 정작 제일 바쁜 다다음주는 고를 수가 없었다.
+          // '모두' 는 아래 납품 예정 표와 같은 범위 — 표에 보이는 게 곧 메일로 나간다.
+          const WEEK_OFFSET = { this: 0, next: 1, after: 2 };
+          const weeklyRange = weeklyMailWeek === 'all'
+            ? { from: weekRange(0).from, to: twoWeekEnd }
+            : weekRange(WEEK_OFFSET[weeklyMailWeek] ?? 1);
           // 이번 주가 들어가면 이미 지난 날은 뺀다. 지난 건은 '납기 경과' 쪽 일이다.
-          const weeklyFrom = (weeklyMailWeek !== 'next' && weeklyRange.from < todayStr)
-            ? todayStr : weeklyRange.from;
+          const weeklyFrom = weeklyRange.from < todayStr ? todayStr : weeklyRange.from;
           const weeklyItems = poWithDates.filter(d =>
             d.deliveryDate && d.qty > 0 &&
             d.deliveryDate >= weeklyFrom && d.deliveryDate <= weeklyRange.to &&
@@ -16420,13 +16424,13 @@ ${getElapsedTimeDetail(deliveryLastUpdated)}`}>
                 </p>
                 <p className="text-xs text-blue-700">
                   {weeklyItems.length > 0
-                    ? `${weeklyItems.length}품목 / ${weeklyVendors.size}개 업체 — ${weeklyMailWeek === 'both' ? '2주치' : '한 주치'}를 업체별로 묶어 보냅니다`
+                    ? `${weeklyItems.length}품목 / ${weeklyVendors.size}개 업체 — ${weeklyMailWeek === 'all' ? '전체' : '한 주치'}를 업체별로 묶어 보냅니다`
                     : '해당 주에 예정된 납품이 없습니다'}
                 </p>
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <div className="flex rounded-lg border border-blue-200 overflow-hidden text-[11px]">
-                  {[['this', '이번 주'], ['next', '다음 주'], ['both', '2주']].map(([k, lbl]) => (
+                  {[['this', '이번 주'], ['next', '다음 주'], ['after', '다다음 주'], ['all', '모두']].map(([k, lbl]) => (
                     <button key={k} onClick={() => setWeeklyMailWeek(k)}
                       className={`px-2.5 py-1 transition ${weeklyMailWeek === k
                         ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 hover:bg-blue-50'}`}>
