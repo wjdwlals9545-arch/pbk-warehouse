@@ -3589,6 +3589,33 @@ export default function PBKWarehouseSystem() {
     return '';
   };
 
+  // 거래명세서 파일명에서 업체명을 뽑는다.
+  //   "4500245081외_송정하이테크_거래명세서.pdf" -> "송정하이테크"
+  const vendorFromFile = (name) => {
+    const base = String(name || '').split('/').pop().replace(/\.[^.]+$/, '');
+    const parts = base.split('_');
+    return parts.length >= 2 ? parts[1].trim() : '';
+  };
+
+  // 업체코드. PDF 에서 읽은 상호를 먼저 보고, 안 잡히면 파일명의 이름으로 한 번 더 본다.
+  // 거래명세서에 찍힌 상호는 SAP 업체명과 다른 일이 흔하다 (2026-11-17 두 건 다 그랬다).
+  //   나노전자(SAP) 인데 명세서 머리에는 '나노전자기술'
+  //   송정하이테크 인데 '승정하이테크' 로 읽혔다
+  // 파일명은 사람이 SAP 쪽 표기를 보고 붙이는 것이라 더 믿을 만하다.
+  // 비슷한 이름으로 넘겨짚지 않는다 — 틀리면 남의 업체로 메일이 나간다.
+  const vendorCodeOfRow = (row) => {
+    if (!row) return '';
+    const direct = vendorCodeOf(row.vendor) || vendorCodeOf(row.batch);
+    if (direct) return direct;
+    const files = (row.deliveries || []).map(d => d.filename)
+      .concat(row.delivery?.filename || [], row.filename || []);
+    for (const f of files) {
+      const c = vendorCodeOf(vendorFromFile(f));
+      if (c) return c;
+    }
+    return '';
+  };
+
   // contacts 가 정본. 옛 emails(주소 문자열 배열)도 읽어준다.
   const vendorContacts = (code) => {
     const c = (supplierMap.contacts || {})[code];
@@ -21362,7 +21389,7 @@ ${lines}
           const byVendor = (rows) => {
             const m = new Map();
             rows.forEach(g => {
-              const code = vendorCodeOf(g.vendor);
+              const code = vendorCodeOfRow(g);
               const key = code || g.vendor || '(업체 미상)';
               if (!m.has(key)) m.set(key, { key, code, vendor: g.vendor, items: [] });
               m.get(key).items.push(g);
@@ -21427,7 +21454,7 @@ ${lines}
           //   미스미   : 마감 리스트를 먼저 받는 순서라 거래명세서를 붙이지 않는다
           //   경제정공 등 : 거래명세서를 첨부해 검토 후 발행을 요청한다
           const openBatchMail = (b) => {
-            const code = vendorCodeOf(b.vendor) || vendorCodeOf(b.batch);
+            const code = vendorCodeOfRow(b);
             const who = code ? vendorContacts(code) : [];
             const files = (b.deliveries || []).map(d => d.filename);
             const misumi = /미스미|misumi/i.test(`${b.batch} ${b.vendor}`);
@@ -21457,7 +21484,14 @@ ${lines}
                           {n}건 묶음
                         </span>
                       )}
-                      {!grp.code && <span className="text-[10px] text-red-500">매칭 안 됨</span>}
+                      {!grp.code
+                        ? <span className="text-[10px] text-red-500">매칭 안 됨</span>
+                        : !vendorCodeOf(grp.vendor) && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200"
+                                title="명세서에 적힌 상호로는 못 찾아, 파일명의 업체명으로 찾았습니다">
+                            → {(supplierMap.names || {})[grp.code] || grp.code}
+                          </span>
+                        )}
                     </div>
                     <div className="text-[11px] text-gray-400 font-mono">
                       {n === 1 ? pos[0] : `PO ${n}건`}
@@ -21935,7 +21969,7 @@ ${lines}
 
           // 묶음 한 줄
           const BatchRow = ({ b, mode }) => {
-            const code = vendorCodeOf(b.vendor) || vendorCodeOf(b.batch);
+            const code = vendorCodeOfRow(b);
             const who = code ? vendorContacts(code) : [];
             const d = mode === 'requesting' ? daysSince(batchKey(b)) : null;
             const { stage, rule, win } = batchState(b);
@@ -21954,7 +21988,15 @@ ${lines}
                     <span className="font-semibold text-sm text-gray-800">{b.batch}</span>
                   </div>
                   <div className="text-[11px] text-gray-400">
-                    {b.vendor}{!code && <span className="text-red-500 ml-1">매칭 안 됨</span>}
+                    {b.vendor}
+                    {!code
+                      ? <span className="text-red-500 ml-1">매칭 안 됨</span>
+                      : !(vendorCodeOf(b.vendor) || vendorCodeOf(b.batch)) && (
+                        <span className="text-gray-500 ml-1"
+                              title="명세서에 적힌 상호로는 못 찾아, 파일명의 업체명으로 찾았습니다">
+                          → {(supplierMap.names || {})[code] || code}
+                        </span>
+                      )}
                   </div>
                 </div>
                 <div className="min-w-[150px]">
@@ -23198,7 +23240,7 @@ ${lines}
                                     )}
                                     {migoSelectedStage === 'completed_month' && (
                                       <button onClick={() => {
-                                        const code = vendorCodeOf(inv.vendor);
+                                        const code = vendorCodeOfRow(inv);
                                         const files = inv.filename ? [inv.filename] : [];
                                         setTaxMailInv({ ...inv, files });
                                         setTaxMailCode(code);
