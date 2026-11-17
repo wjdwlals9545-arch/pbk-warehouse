@@ -3616,6 +3616,23 @@ export default function PBKWarehouseSystem() {
     return '';
   };
 
+  // 화면에 쓸 업체명. 명세서에 찍힌 상호가 우리 장부와 다를 때가 있다.
+  // 송정하이테크(SAP)의 거래명세서에는 상호가 '승정하이테크' 로 박혀 있다
+  // (2026-11-17 PDF 로 확인 — 읽기 오류가 아니라 업체 양식이 그렇다).
+  // 그 이름을 그대로 띄우면 우리가 아는 업체가 아닌 것처럼 보인다.
+  // 그래서 파일명으로 찾아낸 경우에는 파일명 쪽 이름을 쓴다 — 메일이 나갈 업체는 그쪽이다.
+  const vendorLabelOfRow = (row, fallback) => {
+    const doc = row?.vendor || row?.batch || fallback || '';
+    if (!row || vendorCodeOf(doc)) return doc;
+    const files = (row.deliveries || []).map(d => d.filename)
+      .concat(row.delivery?.filename || [], row.filename || []);
+    for (const f of files) {
+      const nm = vendorFromFile(f);
+      if (nm && vendorCodeOf(nm)) return nm;
+    }
+    return doc;
+  };
+
   // contacts 가 정본. 옛 emails(주소 문자열 배열)도 읽어준다.
   const vendorContacts = (code) => {
     const c = (supplierMap.contacts || {})[code];
@@ -21413,7 +21430,8 @@ ${lines}
             const who = grp.code ? vendorContacts(grp.code) : [];
             const files = grp.items.flatMap(g => [g.delivery?.filename, g.tax?.filename].filter(Boolean));
             const pos = grp.items.map(g => g.po_number).filter(Boolean);
-            setTaxMailInv({ vendor: grp.vendor, po_number: pos[0] || '', po_numbers: pos, files });
+            setTaxMailInv({ vendor: vendorLabelOfRow(grp.items[0], grp.vendor),
+                            po_number: pos[0] || '', po_numbers: pos, files });
             setTaxMailCode(grp.code);
             setTaxMailTo(who.map(c => c.email));          // 등록된 담당자 전원
             setTaxMailExtra('');
@@ -21458,7 +21476,7 @@ ${lines}
             const who = code ? vendorContacts(code) : [];
             const files = (b.deliveries || []).map(d => d.filename);
             const misumi = /미스미|misumi/i.test(`${b.batch} ${b.vendor}`);
-            setTaxMailInv({ vendor: b.vendor, po_number: batchKey(b), batch: b.batch,
+            setTaxMailInv({ vendor: vendorLabelOfRow(b, b.vendor), po_number: batchKey(b), batch: b.batch,
                             po_numbers: b.po_numbers || [], files, misumi });
             setTaxMailCode(code);
             setTaxMailTo(who.map(c => c.email));          // 등록된 담당자 전원
@@ -21478,7 +21496,9 @@ ${lines}
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="min-w-[180px]">
                     <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-sm text-gray-800">{grp.vendor || '(업체 미상)'}</span>
+                      <span className="font-semibold text-sm text-gray-800">
+                        {vendorLabelOfRow(grp.items[0], grp.vendor) || '(업체 미상)'}
+                      </span>
                       {n > 1 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-200 font-semibold">
                           {n}건 묶음
@@ -21488,7 +21508,8 @@ ${lines}
                         ? <span className="text-[10px] text-red-500">매칭 안 됨</span>
                         : !vendorCodeOf(grp.vendor) && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 border border-gray-200"
-                                title="명세서에 적힌 상호로는 못 찾아, 파일명의 업체명으로 찾았습니다">
+                                title={`명세서에 찍힌 상호는 '${grp.vendor}' 입니다. `
+                                  + `우리 장부와 달라서 파일명의 업체명으로 찾았습니다.`}>
                             → {(supplierMap.names || {})[grp.code] || grp.code}
                           </span>
                         )}
@@ -21988,12 +22009,13 @@ ${lines}
                     <span className="font-semibold text-sm text-gray-800">{b.batch}</span>
                   </div>
                   <div className="text-[11px] text-gray-400">
-                    {b.vendor}
+                    {vendorLabelOfRow(b, b.vendor)}
                     {!code
                       ? <span className="text-red-500 ml-1">매칭 안 됨</span>
                       : !(vendorCodeOf(b.vendor) || vendorCodeOf(b.batch)) && (
                         <span className="text-gray-500 ml-1"
-                              title="명세서에 적힌 상호로는 못 찾아, 파일명의 업체명으로 찾았습니다">
+                              title={`명세서에 찍힌 상호는 '${b.vendor}' 입니다. `
+                                + `우리 장부와 달라서 파일명의 업체명으로 찾았습니다.`}>
                           → {(supplierMap.names || {})[code] || code}
                         </span>
                       )}
@@ -23242,7 +23264,7 @@ ${lines}
                                       <button onClick={() => {
                                         const code = vendorCodeOfRow(inv);
                                         const files = inv.filename ? [inv.filename] : [];
-                                        setTaxMailInv({ ...inv, files });
+                                        setTaxMailInv({ ...inv, vendor: vendorLabelOfRow(inv, inv.vendor), files });
                                         setTaxMailCode(code);
                                         setTaxMailTo(code ? vendorContacts(code).map(c => c.email) : []);   // 담당자 전원
                                         setTaxMailExtra('');
