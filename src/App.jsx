@@ -24615,7 +24615,9 @@ ${mon}월 세금계산서 ${cha}마감을 진행하려고 합니다.
             markTaxRequested(reqKeys);
             close();
           } catch (e) {
-            showToast(`발송 실패 — 로컬 서버를 확인하십시오 (${e.message})`, 'error');
+            // 서버가 답을 줬는데도 '로컬 서버를 확인하십시오' 라고 떠서 엉뚱한 곳을
+            // 보게 만들었다 (2026-11-17 Outlook Send 거부건). 서버 말을 그대로 보인다.
+            showToast(`발송 실패 — ${e.message}`, 'error');
           }
         };
 
