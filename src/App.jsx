@@ -4903,6 +4903,10 @@ export default function PBKWarehouseSystem() {
   const [migoHistory, setMigoHistory] = useState([]);
   const [migoTaxInvoices, setMigoTaxInvoices] = useState([]);
   const [migoServerOnline, setMigoServerOnline] = useState(false);
+  // 처리 경고 — 자동화가 조용히 넘어간 일을 사람이 볼 수 있게 모은 것.
+  // 예전에는 server.log(37만 줄)에만 남아 아무도 확인할 수 없었다.
+  const [migoAlerts, setMigoAlerts] = useState(null);
+  const [alertsOpen, setAlertsOpen] = useState({});
   const [migoSelectedStage, setMigoSelectedStage] = useState('waiting_gr');
   const [migoIssueFilter, setMigoIssueFilter]     = useState('all'); // 'all' | 'price_error' | 'failed'
   // 보관함에 실제로 있는 연/월. 없는 달을 고를 수 없게 먼저 받는다.
@@ -5147,6 +5151,10 @@ export default function PBKWarehouseSystem() {
         fetch(`${MIGO_API}/api/taxinvoices`, { signal: AbortSignal.timeout(1200) }),
         fetch(`${MIGO_API}/api/taxflow`, { signal: AbortSignal.timeout(2500) }).then(r => r.ok ? r.json() : null)
           .then(d => { if (d && d.pending) setTaxFlow(d); }).catch(() => {}),
+        // 자동화가 혼자 넘어간 일. 못 받아도 본 화면은 그대로 돈다.
+        fetch(`${MIGO_API}/api/alerts`, { signal: AbortSignal.timeout(1500) })
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d) setMigoAlerts(d); }).catch(() => {}),
       ]);
       if (invRes.ok && histRes.ok && taxRes.ok) {
         setMigoInvoices(await invRes.json());
@@ -22790,6 +22798,116 @@ ${lines}
                   >
                     📋 한 줄로 복사
                   </button>
+                </div>
+              )}
+
+              {/* 처리 경고 — 자동화가 혼자 넘어간 일을 카테고리별로 보여준다 */}
+              {migoAlerts && migoAlerts.total > 0 && (
+                <div className={`rounded-xl border overflow-hidden shadow-sm ${
+                  migoAlerts.high > 0
+                    ? (darkMode ? 'bg-red-950/30 border-red-800' : 'bg-red-50/70 border-red-200')
+                    : (darkMode ? 'bg-amber-950/25 border-amber-800' : 'bg-amber-50/70 border-amber-200')}`}>
+                  <div className={`px-4 py-2.5 flex items-center gap-2 border-b ${
+                    migoAlerts.high > 0
+                      ? (darkMode ? 'border-red-800' : 'border-red-200')
+                      : (darkMode ? 'border-amber-800' : 'border-amber-200')}`}>
+                    <span className="text-sm">{migoAlerts.high > 0 ? '🚨' : '⚠️'}</span>
+                    <p className={`text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                      처리 경고 {migoAlerts.total}건
+                      {migoAlerts.high > 0 && (
+                        <span className="ml-1.5 text-red-600 dark:text-red-400">
+                          · 확인 필요 {migoAlerts.high}건
+                        </span>
+                      )}
+                    </p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await fetch(`${MIGO_API}/api/alerts/seen`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ all: true }),
+                          });
+                          showToast('처리 경고를 모두 확인 처리했습니다', 'success');
+                          fetchMigoData();
+                        } catch { showToast('확인 처리 실패 — 로컬 서버를 확인하십시오', 'error'); }
+                      }}
+                      className={`ml-auto text-[11px] px-2.5 py-1 rounded-lg border transition ${
+                        darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                                 : 'border-gray-300 text-gray-600 hover:bg-white'}`}
+                    >
+                      전부 확인
+                    </button>
+                  </div>
+                  <div className="p-2.5 space-y-1.5">
+                    {(migoAlerts.groups || []).map(g => {
+                      const open = !!alertsOpen[g.category];
+                      return (
+                        <div key={g.category}
+                             className={`rounded-lg border ${darkMode ? 'bg-gray-800/60 border-gray-700' : 'bg-white border-gray-200'}`}>
+                          <button
+                            onClick={() => setAlertsOpen(p => ({ ...p, [g.category]: !p[g.category] }))}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left"
+                          >
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                              g.high > 0
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'}`}>
+                              {g.label}
+                            </span>
+                            <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                              {g.items.length}건
+                              {g.high > 0 && <span className="text-red-600 dark:text-red-400"> · 확인 필요 {g.high}</span>}
+                            </span>
+                            <span className={`ml-auto text-xs ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                              {open ? '▲' : '▼'}
+                            </span>
+                          </button>
+                          {open && (
+                            <div className={`px-3 pb-2.5 space-y-2 border-t pt-2 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                              {g.items.map((it, i) => (
+                                <div key={i} className="text-xs">
+                                  <div className="flex items-start gap-1.5">
+                                    {it.severity === 'high' && <span className="text-red-500 flex-shrink-0">●</span>}
+                                    <span className={`font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                      {it.message}
+                                      {it.count > 1 && <span className="ml-1 text-gray-400">×{it.count}</span>}
+                                    </span>
+                                  </div>
+                                  {it.detail && (
+                                    <p className={`mt-0.5 ml-3.5 whitespace-pre-line leading-relaxed ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                      {it.detail}
+                                    </p>
+                                  )}
+                                  <p className={`mt-0.5 ml-3.5 text-[10px] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                                    {String(it.at || '').replace('T', ' ').slice(0, 16)}
+                                  </p>
+                                </div>
+                              ))}
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`${MIGO_API}/api/alerts/seen`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ category: g.category }),
+                                    });
+                                    showToast(`${g.label} 확인 처리됨`, 'success');
+                                    fetchMigoData();
+                                  } catch { showToast('확인 처리 실패', 'error'); }
+                                }}
+                                className={`text-[11px] px-2.5 py-1 rounded-lg border transition ${
+                                  darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700'
+                                           : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+                              >
+                                이 항목 확인
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
