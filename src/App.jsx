@@ -12115,16 +12115,6 @@ function reset(){cq='';ip.value='';ip.focus();document.getElementById('ct').inne
                   🔒 Login
                 </button>
               )}
-              <a
-                href="http://172.30.49.122:8503/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 px-2 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg transition text-xs"
-                title="Operations Dashboard 열기"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Ops Dashboard
-              </a>
               {isAdmin && (
                 <>
                   <button
